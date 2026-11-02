@@ -6,8 +6,14 @@
 */
 
 #include "Cone.hpp"
-#include <iostream>
+#include <cmath>
+
 using namespace RayTracer;
+
+namespace
+{
+constexpr float CONE_EPSILON = 1e-6f;
+} // namespace
 
 Cone::Cone(const float radius, const Vec3D &center, const float height, uint materialIndex)
     : _radius(radius), _center(center), _height(height), _materialIndex(materialIndex)
@@ -24,95 +30,106 @@ void Cone::doTransformation(const ITransformation &t)
     (void)t;
 }
 
-// !GOOD ONE
 bool Cone::hit(const Ray &ray, HitPayload &payload, size_t i) const
 {
-    if (_rotation)
-        return rotation(ray, payload, i);
-
-    Vec3D oc = ray.getOrigin() - _center;
-
-    float k = _radius / _height;
-    float a = ray.getDirection().getX() * ray.getDirection().getX() +
-              ray.getDirection().getZ() * ray.getDirection().getZ() -
-              k * k * ray.getDirection().getY() * ray.getDirection().getY();
-    float b = 2 * (oc.getX() * ray.getDirection().getX() + oc.getZ() * ray.getDirection().getZ() -
-                   k * k * oc.getY() * ray.getDirection().getY());
-    float c = oc.getX() * oc.getX() + oc.getZ() * oc.getZ() - k * k * oc.getY() * oc.getY();
-
-    float discriminant = b * b - 4 * a * c;
-
-    if (discriminant < 0)
-        return false;
-
-    float sqrtD = sqrt(discriminant);
-    float distance = (-b - sqrtD) / (2 * a);
-
-    if (distance < 0.0f || distance >= payload.getHitDistance())
-        return false;
-
-    Vec3D hitPoint = ray.at(distance);
-
-    // Check if hit point is within cone's height
-    float hitY = hitPoint.getY();
-    if (hitY > _center.getY() || hitY < _center.getY() - _height)
-        return false;
-
-    // Vec3D normal_vect = Vec3D((hitPoint.getX() - _center.getX()) / _radius, -1 * (_center.getY() - hitY) / _height,
-    // (hitPoint.getZ() - _center.getZ()) / _radius);
-    Vec3D normal_vect = Vec3D((hitPoint.getX() - _center.getX()) / _radius, k * k * (_center.getY() - hitY) / _height,
-                              (hitPoint.getZ() - _center.getZ()) / _radius);
-
-    if (vec3DDot(ray.getDirection(), normal_vect) > 0)
-        normal_vect = -normal_vect;
-
-    payload.setHitDistance(distance);
-    payload.setHitPosition(hitPoint);
-    payload.setHitNormal(normal_vect);
-    payload.setHitIndex(i);
-
-    return true;
+    return intersect(ray, payload, i, _rotation);
 }
 
 bool Cone::rotation(const Ray &ray, HitPayload &payload, size_t i) const
 {
-    Vec3D oc = ray.getOrigin() - _center;
+    return intersect(ray, payload, i, true);
+}
 
-    float k = _radius / _height;
-    float a = ray.getDirection().getX() * ray.getDirection().getX() + ray.getDirection().getZ() *
-    ray.getDirection().getZ() - k * k * ray.getDirection().getY() * ray.getDirection().getY(); float b = 2 *
-    (oc.getX() * ray.getDirection().getX() + oc.getZ() * ray.getDirection().getZ() - k * k * oc.getY() *
-    ray.getDirection().getY()); float c = oc.getX() * oc.getX() + oc.getZ() * oc.getZ() - k * k * oc.getY() *
-    oc.getY();
+bool Cone::intersect(const Ray &ray, HitPayload &payload, size_t i, bool baseAbove) const
+{
+    const Vec3D origin = ray.getOrigin();
+    const Vec3D direction = ray.getDirection();
+    const Vec3D originToCenter = origin - _center;
+    const float k = static_cast<float>(_radius / _height);
+    const float k2 = k * k;
 
-    float discriminant = b * b - 4 * a * c;
+    float bestDistance = payload.getHitDistance();
+    Vec3D bestNormal(0.0f);
+    bool found = false;
 
-    if (discriminant < 0)
+    const float a = direction.getX() * direction.getX() + direction.getZ() * direction.getZ() -
+                    k2 * direction.getY() * direction.getY();
+    const float b = 2.0f * (originToCenter.getX() * direction.getX() +
+                            originToCenter.getZ() * direction.getZ() -
+                            k2 * originToCenter.getY() * direction.getY());
+    const float c = originToCenter.getX() * originToCenter.getX() +
+                    originToCenter.getZ() * originToCenter.getZ() -
+                    k2 * originToCenter.getY() * originToCenter.getY();
+
+    auto tryBody = [&](const float distance) {
+        if (distance < 0.0f || distance >= bestDistance)
+            return;
+
+        const Vec3D hitPoint = ray.at(distance);
+        const float hitY = hitPoint.getY();
+        const bool insideHeight = baseAbove
+                                      ? (hitY >= _center.getY() && hitY <= _center.getY() + _height)
+                                      : (hitY >= _center.getY() - _height && hitY <= _center.getY());
+        if (!insideHeight)
+            return;
+
+        const Vec3D normal(hitPoint.getX() - _center.getX(), k2 * (_center.getY() - hitY),
+                           hitPoint.getZ() - _center.getZ());
+        if (normal.lengthSquared() < CONE_EPSILON)
+            return;
+
+        bestDistance = distance;
+        bestNormal = normal;
+        found = true;
+    };
+
+    if (std::fabs(a) > CONE_EPSILON)
+    {
+        const float discriminant = b * b - 4.0f * a * c;
+
+        if (discriminant >= 0.0f)
+        {
+            const float sqrtD = std::sqrt(discriminant);
+            tryBody((-b - sqrtD) / (2.0f * a));
+            tryBody((-b + sqrtD) / (2.0f * a));
+        }
+    }
+    else if (std::fabs(b) > CONE_EPSILON)
+        tryBody(-c / b);
+
+    // Base cap.
+    const float baseY = _center.getY() + static_cast<float>(baseAbove ? _height : -_height);
+    const Vec3D baseNormal(0.0f, baseAbove ? 1.0f : -1.0f, 0.0f);
+
+    if (std::fabs(direction.getY()) > CONE_EPSILON)
+    {
+        const float distance = (baseY - origin.getY()) / direction.getY();
+
+        if (distance >= 0.0f && distance < bestDistance)
+        {
+            const Vec3D hitPoint = ray.at(distance);
+            const float dx = hitPoint.getX() - _center.getX();
+            const float dz = hitPoint.getZ() - _center.getZ();
+
+            if (dx * dx + dz * dz <= static_cast<float>(_radius * _radius))
+            {
+                bestDistance = distance;
+                bestNormal = baseNormal;
+                found = true;
+            }
+        }
+    }
+
+    if (!found)
         return false;
 
-    float sqrtD = sqrt(discriminant);
-    float distance = (-b - sqrtD) / (2 * a);
+    if (vec3DDot(direction, bestNormal) > 0.0f)
+        bestNormal = -bestNormal;
 
-    if (distance < 0.0f || distance >= payload.getHitDistance())
-        return false;
-
-    Vec3D hitPoint = ray.at(distance);
-
-    float hitY = hitPoint.getY();
-    if (hitY < _center.getY() || hitY > _center.getY() + _height)
-        return false;
-
-    Vec3D normal_vect = Vec3D((hitPoint.getX() - _center.getX()) / _radius, k * k * (_center.getY() - hitY) /
-    _height, (hitPoint.getZ() - _center.getZ()) / _radius);
-
-    if (vec3DDot(ray.getDirection(), normal_vect) > 0)
-        normal_vect = -normal_vect;
-
-    payload.setHitDistance(distance);
-    payload.setHitPosition(hitPoint);
-    payload.setHitNormal(normal_vect);
+    payload.setHitDistance(bestDistance);
+    payload.setHitPosition(ray.at(bestDistance));
+    payload.setHitNormal(vec3DNormalize(bestNormal));
     payload.setHitIndex(i);
-
     return true;
 }
 

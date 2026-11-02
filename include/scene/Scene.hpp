@@ -34,9 +34,9 @@ class Scene : IPrimitive
     void addMaterial(std::shared_ptr<IMaterial> material);
     void addPrimitive(std::shared_ptr<IPrimitive> primitive);
 
-    Lights getLights(void) const;
-    Materials getMaterials(void) const;
-    Primitives getPrimitives(void) const;
+    const Lights &getLights(void) const;
+    const Materials &getMaterials(void) const;
+    const Primitives &getPrimitives(void) const;
 
     uint getMaterialIndex(void) const override;
     void setMaterialIndex(const uint &index) override;

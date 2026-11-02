@@ -29,9 +29,9 @@ bool Scene::hit(const Ray &ray, HitPayload &payload, size_t i) const
 {
     bool hit = false;
 
-    for (; i < getPrimitives().size(); ++i)
+    for (; i < _primitives.size(); ++i)
     {
-        if (getPrimitives()[i]->hit(ray, payload, i))
+        if (_primitives[i]->hit(ray, payload, i))
             hit = true;
     }
     return hit;
@@ -47,12 +47,12 @@ void Scene::addPrimitive(std::shared_ptr<IPrimitive> primitive)
     _primitives.push_back(primitive);
 }
 
-Lights Scene::getLights(void) const
+const Lights &Scene::getLights(void) const
 {
     return _lights;
 }
 
-Primitives Scene::getPrimitives(void) const
+const Primitives &Scene::getPrimitives(void) const
 {
     return _primitives;
 }
@@ -72,7 +72,7 @@ void Scene::addMaterial(std::shared_ptr<IMaterial> material)
     _materials.push_back(material);
 }
 
-Materials Scene::getMaterials(void) const
+const Materials &Scene::getMaterials(void) const
 {
     return _materials;
 }

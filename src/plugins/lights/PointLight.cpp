@@ -44,9 +44,11 @@ Color3D PointLight::calculateLighting(const HitPayload &payload) const
     Vec3D lightDirection = vec3DNormalize(getPosition() - payload.getHitPosition());
     float distance = (getPosition() - payload.getHitPosition()).length();
 
-    // Compute attenuation
-    float attenuation = 0.1 * (getAttenuationConstant() + getAttenuationLinear() * distance +
-                               getAttenuationQuadratic() * distance * distance);
+    // Compute physically based attenuation. The constant term keeps the
+    // expression well-defined close to the light.
+    const float denominator = getAttenuationConstant() + getAttenuationLinear() * distance +
+                              getAttenuationQuadratic() * distance * distance;
+    const float attenuation = denominator > 0.0f ? 1.0f / denominator : 0.0f;
 
     // Compute diffuse
     float diffuseFactor = vec3DDot(lightDirection, payload.getHitNormal());

@@ -7,6 +7,7 @@
 
 #include "Renderer.hpp"
 #include "Utils.hpp"
+#include <algorithm>
 #include <thread>
 
 using namespace RayTracer;
@@ -22,12 +23,13 @@ Renderer::Renderer(int raysPerPixel, std::shared_ptr<Scene> scene, std::shared_p
     : _frameIterations(raysPerPixel), _frameIterationsScale(1.0 / _frameIterations), _scene(scene), _camera(camera),
       _gui(gui)
 {
-    if (outFile.empty())
-        _outStream = &std::cout;
-    else {
+    if (!outFile.empty())
+    {
         _fileStream.open(outFile, std::ios::out);
         _outStream = &_fileStream;
     }
+    else if (!gui)
+        _outStream = &std::cout;
 
     initialize();
 }
@@ -70,6 +72,11 @@ void Renderer::initialize(void)
 void Renderer::run(void)
 {
     render();
+    std::clog << std::endl;
+
+    if (!_gui)
+        return;
+
     while (_gui->isOpen())
     {
         manageEvent(_gui->getEvent());
@@ -82,7 +89,6 @@ void Renderer::run(void)
         }
         _gui->display();
     }
-    std::clog << std::endl;
 }
 
 /**
@@ -104,9 +110,13 @@ void Renderer::render(void)
         if (_stop)
             break;
     }
-    *_outStream << "P3" << std::endl << getCamera()->getImageWidth() << " " << getCamera()->getImageHeight() << "\n255" << std::endl;
-    for (size_t i = 0; i < _imageData.size(); ++i)
-        *_outStream << Utils::convertTo255(Utils::convertFromRGBA(_imageData[i])) << std::endl;
+    if (_outStream)
+    {
+        *_outStream << "P3" << std::endl
+                    << getCamera()->getImageWidth() << " " << getCamera()->getImageHeight() << "\n255" << std::endl;
+        for (size_t i = 0; i < _imageData.size(); ++i)
+            *_outStream << Utils::convertTo255(Utils::convertFromRGBA(_imageData[i])) << std::endl;
+    }
     std::clog << "\rDone.                                             ";
     _rayDirections.clear();
 }
@@ -116,10 +126,10 @@ void Renderer::render(void)
  */
 void Renderer::renderFrame(void)
 {
-    std::size_t numThreads = std::thread::hardware_concurrency();
+    const int height = getCamera()->getImageHeight();
+    std::size_t numThreads = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+    numThreads = std::min<std::size_t>(numThreads, static_cast<std::size_t>(std::max(height, 1)));
     std::vector<std::thread> threads(numThreads);
-
-    uint32_t seed = 999;
 
     // Clear/re-initialize the image data if it's the first frame.
     if (_frameIteration == 1)
@@ -130,7 +140,10 @@ void Renderer::renderFrame(void)
         {
             for (int x = 0; x < getCamera()->getImageWidth() && !_reset && !_stop; ++x)
             {
-                // Get the color data for the pixel.
+                // Give every pixel its own seed so threads never share RNG state.
+                const uint32_t seed = Utils::PCGHash(static_cast<uint32_t>(x) +
+                                                     0x9e3779b9u * static_cast<uint32_t>(y) +
+                                                     static_cast<uint32_t>(_frameIteration));
                 Color4D pixelColor = getPixelColor(seed, x, y);
 
                 // Accumulate the color data for the pixel.
@@ -141,7 +154,7 @@ void Renderer::renderFrame(void)
                 accumulatedColor4D /= (float)_frameIteration;
                 accumulatedColor4D.clampColor(0.0f, 1.0f);
                 _imageData[x + y * getCamera()->getImageWidth()] = Utils::convertToRGBA(accumulatedColor4D);
-                if (_mutexEvents.try_lock())
+                if (_gui && _mutexEvents.try_lock())
                 {
                     manageEvent(_gui->getEvent());
                     if (!_gui->isOpen())
@@ -156,8 +169,7 @@ void Renderer::renderFrame(void)
         }
     };
 
-    int height = getCamera()->getImageHeight();
-    int partHeight = height / numThreads;
+    int partHeight = height / static_cast<int>(numThreads);
 
     for (std::size_t i = 0; i < numThreads; ++i)
     {
@@ -179,8 +191,11 @@ void Renderer::renderFrame(void)
         initialize();
         _reset = false;
     }
-    _gui->setImage(getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
-    _gui->display();
+    if (_gui)
+    {
+        _gui->setImage(getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
+        _gui->display();
+    }
 }
 
 void Renderer::manageEvent(char evt)
@@ -224,7 +239,7 @@ void Renderer::manageEvent(char evt)
 Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payload)
 {
     Vec3D rayDirection;
-    const std::shared_ptr<IMaterial> material =
+    const auto &material =
         getScene()->getMaterials().at(getScene()->getPrimitives()[payload.getHitIndex()]->getMaterialIndex());
 
     switch (material->getType())
@@ -260,7 +275,7 @@ Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payloa
  */
 Color3D Renderer::computePhongLighting(const HitPayload &payload, const std::shared_ptr<ILight> &light)
 {
-    const std::shared_ptr<IMaterial> material =
+    const auto &material =
         getScene()->getMaterials().at(getScene()->getPrimitives()[payload.getHitIndex()]->getMaterialIndex());
     Vec3D ambient(0);
     Vec3D diffuse(0);
@@ -287,7 +302,7 @@ Color3D Renderer::computePhongLighting(const HitPayload &payload, const std::sha
  * @param y The y-coordinate of the pixel (from the image loop).
  * @return The color of the pixel.
  */
-Color4D Renderer::getPixelColor(uint32_t &seed, int x, int y)
+Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
 {
     Ray ray;
     int bounces = 15;
@@ -298,9 +313,6 @@ Color4D Renderer::getPixelColor(uint32_t &seed, int x, int y)
     // Set the origin and direction of the ray
     ray.setOrigin(getCamera()->getLookFrom());
     ray.setDirection(_rayDirections[x + y * getCamera()->getImageWidth()]);
-
-    // Random operations to generate a new seed.
-    seed = seed * x * y;
 
     // Anti-aliasing
     float pixelRandomPosX = Utils::numericGeneratePseudoRandom<float>(seed, 0.0, 0.03);
@@ -316,16 +328,16 @@ Color4D Renderer::getPixelColor(uint32_t &seed, int x, int y)
         // If we hit an object
         if (payload.getHitDistance() != std::numeric_limits<float>::infinity())
         {
-            const Lights lights = getScene()->getLights();
-            const std::shared_ptr<IPrimitive> primitive = getScene()->getPrimitives()[payload.getHitIndex()];
-            const std::shared_ptr<IMaterial> material = getScene()->getMaterials().at(primitive->getMaterialIndex());
+            const Lights &lights = getScene()->getLights();
+            const auto &primitive = getScene()->getPrimitives()[payload.getHitIndex()];
+            const auto &material = getScene()->getMaterials().at(primitive->getMaterialIndex());
 
             // If the material emits light, add its emission to the accumulated color
             if (material->getType() == IMaterial::EMISSIVE)
                 accumulatedColor += material->getEmissionColor();
 
             // Compute lighting contributions from each light source
-            for (size_t i = 0; i < getScene()->getLights().size(); ++i)
+            for (size_t i = 0; i < lights.size(); ++i)
             {
                 // Cast shadow rays to determine shadowness (cast with an offset to avoid self-intersection)
                 if (lights[i]->isPointInShadow(payload, *getScene()))

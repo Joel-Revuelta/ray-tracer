@@ -17,6 +17,7 @@
 #include "Ray.hpp"
 #include "Scene.hpp"
 #include "Vec3D.hpp"
+#include <atomic>
 #include <cstddef>
 #include <iostream>
 #include <memory>
@@ -77,10 +78,10 @@ class Renderer
     std::shared_ptr<IGUI> _gui;
 
     std::mutex _mutexEvents;
-    bool _reset = false;
-    bool _stop = false;
+    std::atomic<bool> _reset{false};
+    std::atomic<bool> _stop{false};
 
-    std::ostream *_outStream;
+    std::ostream *_outStream = nullptr;
     std::fstream _fileStream;
 
     // Private methods
@@ -89,7 +90,7 @@ class Renderer
 
     // Raytracing methods
     void renderFrame(void);
-    Color4D getPixelColor(uint32_t &seed, int x, int y);
+    Color4D getPixelColor(uint32_t seed, int x, int y);
     Color3D computePhongLighting(const HitPayload &payload, const std::shared_ptr<ILight> &light);
     Vec3D computeNextRayDirection(const Ray &ray, const HitPayload &payload);
     HitPayload shotRay(const Ray &ray);

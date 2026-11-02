@@ -8,6 +8,7 @@
 #include "SceneBuilder.hpp"
 #include "Scene.hpp"
 #include <memory>
+#include <stdexcept>
 
 using namespace RayTracer;
 
@@ -57,10 +58,22 @@ void SceneBuilder::addPrimitive(std::shared_ptr<IPrimitive> primitive)
  */
 void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
 {
+    if (!sceneToAdd)
+        return;
+
+    // Materials of a nested scene are appended to the parent scene, so every
+    // primitive coming from that scene has to shift its material index.
+    const uint materialOffset = static_cast<uint>(_scene->getMaterials().size());
+
+    for (const auto &material : sceneToAdd->getMaterials())
+        _scene->addMaterial(material);
+    for (const auto &primitive : sceneToAdd->getPrimitives())
+    {
+        primitive->setMaterialIndex(primitive->getMaterialIndex() + materialOffset);
+        _scene->addPrimitive(primitive);
+    }
     for (const auto &light : sceneToAdd->getLights())
         _scene->addLight(light);
-    for (const auto &primitive : sceneToAdd->getPrimitives())
-        _scene->addPrimitive(primitive);
 }
 
 /**
@@ -72,6 +85,13 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
  */
 std::shared_ptr<Scene> SceneBuilder::build(void)
 {
+    const Materials &materials = _scene->getMaterials();
+
+    for (const auto &primitive : _scene->getPrimitives())
+    {
+        if (primitive->getMaterialIndex() >= materials.size())
+            throw std::runtime_error("A primitive references a material index that does not exist");
+    }
     return _scene;
 }
 

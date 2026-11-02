@@ -6,6 +6,7 @@
 */
 
 #include "App.hpp"
+#include <iostream>
 
 using namespace RayTracer;
 
@@ -60,7 +61,9 @@ App::App(int ac, char **av)
             _output = optarg;
             break;
         default:
-            std::cout << "Usage: ./raytracer --path [path] --cli/--sfml --height [height] --width [width]" << std::endl;
+            std::cout << "Usage: ./raytracer --path <scene.cfg> --cli|--sfml [--width W] [--height H] "
+                         "[--frames N] [--output out.ppm]"
+                      << std::endl;
             break;
         }
     }
@@ -82,13 +85,43 @@ void App::run(void)
 {
     Factory factory;
     if (_filepath.empty() || _interface == Interface::NONE)
+    {
+        std::cerr << "Usage: ./raytracer --path <scene.cfg> --cli|--sfml [--width W] [--height H] [--frames N] "
+                     "[--output out.ppm]"
+                  << std::endl;
         exit(EXIT_FAILURE);
+    }
 
     std::shared_ptr<Scene> scene = _parser->init(_filepath);
     std::shared_ptr<Camera> camera = _parser->getParsedCamera();
 
+    if (!scene || !camera)
+    {
+        std::cerr << "Failed to load the scene or camera from: " << _filepath << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    if (_width <= 0 || _height <= 0)
+    {
+        std::cerr << "Width and height must be positive." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    if (_frames <= 0)
+    {
+        std::cerr << "Frames must be positive." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    // The parser builds a camera with its default resolution, so apply the
+    // requested render size before creating the renderer.
+    camera->initialize(_width, _height, camera->getLookAt(), camera->getLookFrom(),
+                       camera->getVerticalFovDegree());
+
     if (_interface == Interface::CLI)
     {
+        std::unique_ptr<Renderer> renderer =
+            std::make_unique<Renderer>(_frames, scene, camera, nullptr, _output);
+
+        renderer->run();
     }
     else if (_interface == Interface::GUI)
     {

@@ -34,11 +34,13 @@ class Cone : public IPrimitive
     void setRotation(bool r);
 
   private:
+    bool intersect(const Ray &ray, HitPayload &payload, size_t i, bool baseAbove) const;
+
     double _radius;
     Point3D _center;
     double _height;
     uint _materialIndex;
-    bool _rotation;
+    bool _rotation = false;
 };
 } // namespace RayTracer
 

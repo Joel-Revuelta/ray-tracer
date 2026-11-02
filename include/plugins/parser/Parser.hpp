@@ -33,14 +33,14 @@ class Parser
     void initConfig(const std::string &filename);
 
     std::shared_ptr<Camera> parseCamera(const libconfig::Setting &cameraSetting);
-    void parseMaterials(SceneBuilder scene, const libconfig::Setting &primitiveSetting);
+    void parseMaterials(SceneBuilder &scene, const libconfig::Setting &primitiveSetting);
 
-    void parseLights(SceneBuilder scene, const libconfig::Setting &lightSetting);
+    void parseLights(SceneBuilder &scene, const libconfig::Setting &lightSetting);
     std::shared_ptr<ILight> parseDirectionalLight(const libconfig::Setting &directionalSetting);
     std::shared_ptr<ILight> parsePointLight(const libconfig::Setting &pointSetting);
     std::shared_ptr<ILight> parseAmbientLight(const libconfig::Setting &ambientSetting);
 
-    void parsePrimitives(SceneBuilder scene, libconfig::Setting &primitiveSetting);
+    void parsePrimitives(SceneBuilder &scene, libconfig::Setting &primitiveSetting);
     std::shared_ptr<Scene> parseScene(const libconfig::Setting &sceneSetting);
     std::shared_ptr<IPrimitive> parseSphere(libconfig::Setting &sphereSetting);
     std::shared_ptr<IPrimitive> parsePlane(libconfig::Setting &planeSetting);

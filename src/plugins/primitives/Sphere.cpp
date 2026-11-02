@@ -45,8 +45,9 @@ bool Sphere::hit(const Ray &ray, HitPayload &payload, size_t i) const
         payload.setHitPosition(ray.at(distance));
         payload.setHitNormal((payload.getHitPosition() - getCenter()) / getRadius());
         payload.setHitIndex(i);
+        return true;
     }
-    return true;
+    return false;
 }
 
 void Sphere::setMaterialIndex(const uint &index)

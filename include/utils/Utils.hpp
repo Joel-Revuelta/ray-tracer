@@ -72,8 +72,8 @@ template <typename numeric> numeric numericGenerateRandom(numeric min, numeric m
 {
     if (max <= min)
         throw std::invalid_argument("max must be greater than min");
-    static std::uniform_real_distribution<numeric> distribution(min, max);
-    static std::mt19937 generator;
+    thread_local std::mt19937 generator(std::random_device{}());
+    std::uniform_real_distribution<numeric> distribution(min, max);
     return distribution(generator);
 }
 

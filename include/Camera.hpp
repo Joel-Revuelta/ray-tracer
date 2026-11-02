@@ -31,7 +31,7 @@ class Camera
     void setLookFrom(const Point3D eyePoint);
     void setLookAt(const Point3D lookAt);
     void setAspectRatio(const double aspectRatio);
-    void setFocalDistance(const int focalDistance); // Could be removed. Only used in initialize.
+    void setFocalDistance(const double focalDistance); // Could be removed. Only used in initialize.
     void setViewportWidth(const double viewportWidth);
     void setViewportHeight(const double viewportHeight);
     void setInitialPixelPos(const Vec3D initialPixelPos);
@@ -47,7 +47,7 @@ class Camera
     int getImageHeight(void) const;
     Point3D getLookFrom(void) const;
     Point3D getLookAt(void) const;
-    int getFocalDistance(void) const; // Could be removed. Only used in initialize.
+    double getFocalDistance(void) const; // Could be removed. Only used in initialize.
     double getAspectRatio(void) const;
     double getViewportWidth(void) const;
     double getViewportHeight(void) const;
@@ -69,7 +69,7 @@ class Camera
 
     // Distance between viewport and eye point.
     //? Note: Could be removed. Only used in initialize.
-    int _focalDistance;
+    double _focalDistance;
 
     // Aspect ratio of the camera width and height.
     double _aspectRatio;

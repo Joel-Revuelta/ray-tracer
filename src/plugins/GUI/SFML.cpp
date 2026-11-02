@@ -110,7 +110,7 @@ void SFML::setImage(const std::size_t &width, const std::size_t &height, std::ve
 
 void SFML::setPixel(const std::size_t &x, const std::size_t &y, const Color4D &color)
 {
-    if (x > _width || y > _height)
+    if (x >= _width || y >= _height)
         return;
 
     _pixels[y][x] = color;
@@ -123,6 +123,16 @@ void SFML::display()
         _window.close();
     if (!isOpen())
         return;
+
+    const sf::Vector2u textureSize = _texture.getSize();
+    if (textureSize.x == 0 || textureSize.y == 0)
+        return;
+
+    // Keep the whole image visible and stretch it to the current window size.
+    const sf::View view(sf::FloatRect(sf::Vector2f(0.0f, 0.0f),
+                                      sf::Vector2f(static_cast<float>(textureSize.x),
+                                                   static_cast<float>(textureSize.y))));
+    _window.setView(view);
 
     sf::Sprite sprite(_texture);
 

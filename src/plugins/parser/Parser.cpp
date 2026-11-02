@@ -6,6 +6,8 @@
 */
 
 #include "Parser.hpp"
+#include <iostream>
+#include <stdexcept>
 
 using namespace RayTracer;
 
@@ -29,26 +31,39 @@ Parser::~Parser(void)
 std::shared_ptr<Scene> Parser::init(const std::string &filename)
 {
     SceneBuilder sceneBuilder;
-    std::shared_ptr<Scene> scene;
-    initConfig(filename);
+    _camera.reset();
+
     try
     {
+        initConfig(filename);
         _camera = parseCamera(_config.lookup("camera"));
         parseMaterials(sceneBuilder, _config.lookup("materials"));
         parsePrimitives(sceneBuilder, _config.lookup("primitives"));
         parseLights(sceneBuilder, _config.lookup("lights"));
+        return sceneBuilder.build();
     }
     catch (const libconfig::SettingNotFoundException &e)
     {
-        std::cout << "Any " << e.getPath() << " setting in configuration file." << std::endl;
+        std::cerr << "Missing setting in configuration file: " << e.getPath() << std::endl;
     }
     catch (const libconfig::SettingTypeException &e)
     {
-        std::cout << e.getPath() << " setting is not the right type." << std::endl;
+        std::cerr << "Setting has the wrong type: " << e.getPath() << std::endl;
     }
-    scene = sceneBuilder.build();
+    catch (const libconfig::FileIOException &)
+    {
+        std::cerr << "Error while reading configuration file: " << filename << std::endl;
+    }
+    catch (const libconfig::ParseException &e)
+    {
+        std::cerr << "Parse error at " << e.getFile() << ":" << e.getLine() << " - " << e.getError() << std::endl;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Failed to parse scene: " << e.what() << std::endl;
+    }
 
-    return scene;
+    return nullptr;
 }
 
 /**
@@ -61,18 +76,7 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
  */
 void Parser::initConfig(const std::string &filename)
 {
-    try
-    {
-        _config.readFile(filename.c_str());
-    }
-    catch (const libconfig::FileIOException &e)
-    {
-        std::cout << "Error while reading file." << std::endl;
-    }
-    catch (const libconfig::ParseException &e)
-    {
-        std::cout << "Parse error at " << e.getFile() << ":" << e.getLine() << " - " << e.getError() << std::endl;
-    }
+    _config.readFile(filename.c_str());
 }
 
 /**
@@ -98,40 +102,46 @@ std::shared_ptr<Camera> Parser::parseCamera(const libconfig::Setting &cameraSett
  * @param sceneBuilder The scene builder to add the materials.
  * @param primitiveSetting The primitive setting to parse.
  */
-void Parser::parseMaterials(SceneBuilder sceneBuilder, const libconfig::Setting &materialSetting)
+void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting &materialSetting)
 {
     for (int i = 0; i < materialSetting.getLength(); i++)
     {
         std::shared_ptr<IMaterial> material;
         libconfig::Setting &setting = materialSetting[i];
+        const std::string type = setting.lookup("type");
 
-        if (std::string(setting.lookup("type")) == "diffuse")
+        if (type == "diffuse")
         {
             material = _factory.create<IMaterial>("DiffuseMaterial", double(setting.lookup("ambientReflection")),
                                                   double(setting.lookup("diffuseReflection")),
                                                   parseColor(setting.lookup("color")));
         }
-        else if (std::string(setting.lookup("type")) == "emissive")
+        else if (type == "emissive")
         {
             material = _factory.create<IMaterial>("EmissiveMaterial", parseColor(setting.lookup("color")),
                                                   double(setting.lookup("intensity")),
                                                   parseColor(setting.lookup("emissionColor")));
         }
-        else if (std::string(setting.lookup("type")) == "metallic")
+        else if (type == "metallic")
         {
             material = _factory.create<IMaterial>("MetallicMaterial", parseColor(setting.lookup("color")));
         }
-        else if (std::string(setting.lookup("type")) == "flatColor")
+        else if (type == "flatColor")
         {
             material = _factory.create<IMaterial>("FlatColorMaterial", parseColor(setting.lookup("color")));
         }
         else
         {
+            const IMaterial::MaterialType materialType = parseMaterialType(type);
+
+            if (materialType == IMaterial::TYPE_COUNT)
+                throw std::runtime_error("Unknown material type: " + type);
+
             material = _factory.create<IMaterial>(
                 "CustomMaterial", double(setting.lookup("ambientReflection")),
                 double(setting.lookup("diffuseReflection")), double(setting.lookup("specularReflection")),
                 parseColor(setting.lookup("diffuseColor")), double(setting.lookup("emissionPower")),
-                parseColor(setting.lookup("emissionColor")), parseMaterialType(setting.lookup("type")));
+                parseColor(setting.lookup("emissionColor")), materialType);
         }
         sceneBuilder.addMaterial(material);
     }
@@ -144,7 +154,7 @@ void Parser::parseMaterials(SceneBuilder sceneBuilder, const libconfig::Setting 
  * @param sceneBuilder The scene builder to add the lights.
  * @param lightSetting The light setting to parse.
  */
-void Parser::parseLights(SceneBuilder sceneBuilder, const libconfig::Setting &lightSetting)
+void Parser::parseLights(SceneBuilder &sceneBuilder, const libconfig::Setting &lightSetting)
 {
     if (lightSetting.exists("point"))
     {
@@ -221,7 +231,7 @@ std::shared_ptr<ILight> Parser::parseAmbientLight(const libconfig::Setting &ambi
  * @param sceneBuilder The scene builder to add the primitives.
  * @param primitiveSetting The primitive setting to parse.
  */
-void Parser::parsePrimitives(SceneBuilder sceneBuilder, libconfig::Setting &primitiveSetting)
+void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &primitiveSetting)
 {
     for (int i = 0; primitiveSetting.exists("spheres")
         &&  i < primitiveSetting.lookup("spheres").getLength(); i++) {
@@ -262,26 +272,22 @@ void Parser::parsePrimitives(SceneBuilder sceneBuilder, libconfig::Setting &prim
 std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting)
 {
     SceneBuilder sceneBuilder;
-    std::shared_ptr<Scene> scene;
 
-    if (sceneSetting.exists("camera"))
-        parseCamera(sceneSetting.lookup("camera"));
-    
-    if (sceneSetting.exists("lights"))
-        parseLights(sceneBuilder, sceneSetting.lookup("lights"));
-    
-    if (sceneSetting.exists("primitives"))
-        parsePrimitives(sceneBuilder, sceneSetting.lookup("primitives"));
-    
+    // Materials must be registered before primitives, because a nested scene
+    // offsets its primitive material indices by the parent material count.
     if (sceneSetting.exists("materials"))
         parseMaterials(sceneBuilder, sceneSetting.lookup("materials"));
 
+    if (sceneSetting.exists("primitives"))
+        parsePrimitives(sceneBuilder, sceneSetting.lookup("primitives"));
+
+    if (sceneSetting.exists("lights"))
+        parseLights(sceneBuilder, sceneSetting.lookup("lights"));
+
     if (sceneSetting.exists("scene"))
-        parseScene(sceneSetting.lookup("scene"));
+        sceneBuilder.addScene(parseScene(sceneSetting.lookup("scene")));
 
-    scene = sceneBuilder.build();
-
-    return scene;
+    return sceneBuilder.build();
 }
 
 /**
@@ -408,7 +414,7 @@ IMaterial::MaterialType Parser::parseMaterialType(const std::string &type)
         return IMaterial::MaterialType::DIFFUSE;
     else if (type == "emissive")
         return IMaterial::MaterialType::EMISSIVE;
-    else if (type == "metalic")
+    else if (type == "metallic" || type == "metalic")
         return IMaterial::MaterialType::METALLIC;
     else if (type == "dielectric")
         return IMaterial::MaterialType::DIELECTRIC;

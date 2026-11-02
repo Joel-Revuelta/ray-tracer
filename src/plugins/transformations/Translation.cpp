@@ -33,7 +33,7 @@ void Translation::doTransformationScene(ITransformable &obj)
 {
     Scene *scene = dynamic_cast<Scene *>(&obj);
 
-    for (auto &primitive : scene->getPrimitives())
+    for (const auto &primitive : scene->getPrimitives())
         doTransformationPrimitive(*primitive);
 }
 

@@ -174,7 +174,7 @@ void Camera::setLookAt(const Vec3D lookAt)
     _lookAt = lookAt;
 }
 
-void Camera::setFocalDistance(const int focalDistance)
+void Camera::setFocalDistance(const double focalDistance)
 {
     _focalDistance = focalDistance;
 }
@@ -254,7 +254,7 @@ Vec3D Camera::getLookAt(void) const
     return _lookAt;
 }
 
-int Camera::getFocalDistance(void) const
+double Camera::getFocalDistance(void) const
 {
     return _focalDistance;
 }
