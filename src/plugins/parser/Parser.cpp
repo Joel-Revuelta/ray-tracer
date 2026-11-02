@@ -146,8 +146,18 @@ void Parser::parseMaterials(SceneBuilder sceneBuilder, const libconfig::Setting 
  */
 void Parser::parseLights(SceneBuilder sceneBuilder, const libconfig::Setting &lightSetting)
 {
-    for (int i = 0; lightSetting.exists("point") && i < lightSetting.lookup("point").getLength(); i++)
-        sceneBuilder.addLight(parsePointLight(lightSetting.lookup("point")));
+    if (lightSetting.exists("point"))
+    {
+        const libconfig::Setting &pointSetting = lightSetting.lookup("point");
+
+        if (pointSetting.isList())
+        {
+            for (int i = 0; i < pointSetting.getLength(); i++)
+                sceneBuilder.addLight(parsePointLight(pointSetting[i]));
+        }
+        else
+            sceneBuilder.addLight(parsePointLight(pointSetting));
+    }
 
     if (lightSetting.exists("ambient"))
         sceneBuilder.addLight(parseAmbientLight(lightSetting.lookup("ambient")));

@@ -63,12 +63,13 @@ bool PointLight::isPointInShadow(const HitPayload &payload, const Scene &scene) 
 
     // Create a shadow ray from the hitpoint in the direction of the light
     Ray shadowRay(payload.getHitPosition() + offset, vec3DNormalize(getPosition() - payload.getHitPosition()));
+    const float lightDistance = (getPosition() - payload.getHitPosition()).length();
 
     // Send the shadow ray to the objects in the scene
     scene.hit(shadowRay, possibleHitInfo, 0);
 
-    // Check if the shadow has hit anything
-    if (possibleHitInfo.getHitDistance() == std::numeric_limits<float>::infinity())
+    // Only an occluder closer than the light can cast a shadow
+    if (possibleHitInfo.getHitDistance() >= lightDistance)
         return false;
     return true;
 }

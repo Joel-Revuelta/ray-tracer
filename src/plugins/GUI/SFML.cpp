@@ -6,22 +6,26 @@
 */
 
 #include "SFML.hpp"
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 using namespace RayTracer;
 
 SFML::SFML(const std::size_t &width, const std::size_t &height)
-    : _width(width), _height(height), _window(sf::VideoMode(width, height), "Raytracer")
+    : _width(width), _height(height),
+      _window(sf::VideoMode({static_cast<unsigned int>(width), static_cast<unsigned int>(height)}), "Raytracer")
 {
     _pixels.resize(_height, std::vector<Color4D>(_width));
     textureUpdate();
 }
 
 SFML::SFML(const std::size_t &width, const std::size_t &height, const Pixels &pixels)
-    : _width(width), _height(height), _pixels(pixels), _window(sf::VideoMode(width, height), "Raytracer")
+    : _width(width), _height(height), _pixels(pixels),
+      _window(sf::VideoMode({static_cast<unsigned int>(width), static_cast<unsigned int>(height)}), "Raytracer")
 {
     _pixels.resize(_height, std::vector<Color4D>(_width));
     textureUpdate();
@@ -50,11 +54,10 @@ void SFML::loadPPM(const std::string &path)
     if (maxColorValue != 255)
         throw std::runtime_error("Invalid max color value in PPM file: " + path);
 
-    sf::Image image;
-    image.create(_width, _height);
+    sf::Image image({static_cast<unsigned int>(_width), static_cast<unsigned int>(_height)});
     _pixels.resize(_height, std::vector<Color4D>(_width));
     _window.close();
-    _window.create(sf::VideoMode(_width, _height), "Raytracer");
+    _window.create(sf::VideoMode({static_cast<unsigned int>(_width), static_cast<unsigned int>(_height)}), "Raytracer");
 
     for (std::size_t y = 0; y < _height; ++y)
     {
@@ -63,10 +66,12 @@ void SFML::loadPPM(const std::string &path)
             std::uint16_t color[3];
             file >> color[0] >> color[1] >> color[2];
             _pixels[y][x] = Color4D(color[0], color[1], color[2]);
-            image.setPixel(x, y, sf::Color(color[0], color[1], color[2]));
+            image.setPixel({static_cast<unsigned int>(x), static_cast<unsigned int>(y)},
+                           sf::Color(color[0], color[1], color[2]));
         }
     }
-    _texture.loadFromImage(image);
+    if (!_texture.loadFromImage(image))
+        throw std::runtime_error("Failed to load texture from image: " + path);
     file.close();
 }
 
@@ -88,13 +93,12 @@ void SFML::setPixels(const Pixels &pixels)
 
 void SFML::setImage(const std::size_t &width, const std::size_t &height, std::vector<uint32_t> &pixels)
 {
-    sf::Uint8 *ptr = reinterpret_cast<sf::Uint8 *>(pixels.data());
+    std::uint8_t *ptr = reinterpret_cast<std::uint8_t *>(pixels.data());
 
     // std::cerr << (int)vec8[0] << " " << (int)vec8[1] << " " << (int)vec8[2] << " " << (int)vec8[3] << std::endl;
 
-    // sf::Uint8* ptr = vec8.data();
-    sf::Image img;
-    img.create(width, height, ptr);
+    // std::uint8_t* ptr = vec8.data();
+    sf::Image img({static_cast<unsigned int>(width), static_cast<unsigned int>(height)}, ptr);
     if (!_texture.loadFromImage(img))
     {
         std::cerr << "Failed to load texture from image" << std::endl;
@@ -129,19 +133,27 @@ void SFML::display()
 
 char SFML::getEvent()
 {
-    sf::Event event;
-
-    if (!isOpen() || !_window.pollEvent(event))
+    if (!isOpen())
         return 0;
-    if (event.type == sf::Event::Closed ||
-        (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape))
+
+    const std::optional event = _window.pollEvent();
+    if (!event)
+        return 0;
+    if (event->is<sf::Event::Closed>())
     {
         _close = true;
         return 0;
     }
-    if (event.type != sf::Event::KeyPressed)
+
+    const auto *keyPressed = event->getIf<sf::Event::KeyPressed>();
+    if (!keyPressed)
         return 0;
-    return sfKeyToAscii(event.key.code);
+    if (keyPressed->code == sf::Keyboard::Key::Escape)
+    {
+        _close = true;
+        return 0;
+    }
+    return sfKeyToAscii(keyPressed->code);
 }
 
 bool SFML::isOpen()
@@ -151,33 +163,35 @@ bool SFML::isOpen()
 
 void SFML::textureUpdate()
 {
-    sf::Image image;
-    image.create(_width, _height);
+    sf::Image image({static_cast<unsigned int>(_width), static_cast<unsigned int>(_height)});
 
     for (std::size_t y = 0; !_pixels.empty() && y < _height; ++y)
     {
         for (std::size_t x = 0; x < _width; ++x)
         {
             Color4D color = _pixels[y][x];
-            image.setPixel(x, y, sf::Color(color.getX(), color.getY(), color.getZ()));
+            image.setPixel({static_cast<unsigned int>(x), static_cast<unsigned int>(y)},
+                           sf::Color(color.getX(), color.getY(), color.getZ()));
         }
     }
 
-    _texture.loadFromImage(image);
+    if (!_texture.loadFromImage(image))
+        std::cerr << "Failed to load texture from image" << std::endl;
 }
 
 char SFML::sfKeyToAscii(sf::Keyboard::Key key)
 {
-    if (key == sf::Keyboard::Unknown)
+    if (key == sf::Keyboard::Key::Unknown)
         return '\0';
-    if (key >= sf::Keyboard::A && key <= sf::Keyboard::Z)
-        return 'a' + (key - sf::Keyboard::A);
-    if (key >= sf::Keyboard::Num0 && key <= sf::Keyboard::Num9)
-        return '0' + (key - sf::Keyboard::Num0);
+    if (key >= sf::Keyboard::Key::A && key <= sf::Keyboard::Key::Z)
+        return static_cast<char>('a' + (static_cast<int>(key) - static_cast<int>(sf::Keyboard::Key::A)));
+    if (key >= sf::Keyboard::Key::Num0 && key <= sf::Keyboard::Key::Num9)
+        return static_cast<char>('0' + (static_cast<int>(key) - static_cast<int>(sf::Keyboard::Key::Num0)));
 
     const std::unordered_map<sf::Keyboard::Key, char> keyMap = {
-        {sf::Keyboard::Space, ' '}, {sf::Keyboard::Enter, '\n'}, {sf::Keyboard::Escape, 27}, {sf::Keyboard::Left, 'a'},
-        {sf::Keyboard::Right, 'd'}, {sf::Keyboard::Up, 'w'},     {sf::Keyboard::Down, 's'}};
+        {sf::Keyboard::Key::Space, ' '}, {sf::Keyboard::Key::Enter, '\n'}, {sf::Keyboard::Key::Escape, 27},
+        {sf::Keyboard::Key::Left, 'a'},  {sf::Keyboard::Key::Right, 'd'}, {sf::Keyboard::Key::Up, 'w'},
+        {sf::Keyboard::Key::Down, 's'}};
 
     auto it = keyMap.find(key);
     if (it != keyMap.end())

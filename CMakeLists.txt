@@ -52,10 +52,10 @@ file(GLOB_RECURSE SOURCES_CLI "src/plugins/CLI/*.cpp")
 add_library(raytracer_cli SHARED ${SOURCES_CLI})
 
 # GUI
-find_package(SFML 2.5 COMPONENTS graphics window system REQUIRED)
+find_package(SFML 3.0 COMPONENTS Graphics Window System Audio REQUIRED)
 file(GLOB_RECURSE SOURCES_GUI "src/plugins/GUI/*.cpp")
 add_library(raytracer_gui SHARED ${SOURCES_GUI} ${SOURCES_UTILS})
-target_link_libraries(raytracer_gui sfml-graphics sfml-window sfml-system sfml-audio)
+target_link_libraries(raytracer_gui SFML::Graphics SFML::Window SFML::System SFML::Audio)
 
 # Lights
 # AmbientLight
