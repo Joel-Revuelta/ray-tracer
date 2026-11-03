@@ -171,6 +171,85 @@ __device__ inline Vec3 randomCosineHemisphere(const Vec3 &normal, unsigned int &
     return scale(direction, 1.0f / sqrtf(lenSquared));
 }
 
+__device__ inline Vec3 cross(const Vec3 &a, const Vec3 &b)
+{
+    return makeVec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+
+__device__ inline float smithGGX(float ndot, float alpha)
+{
+    const float a2 = alpha * alpha;
+
+    return (2.0f * ndot) / (ndot + sqrtf(a2 + (1.0f - a2) * ndot * ndot));
+}
+
+__device__ inline Vec3 fresnelSchlick(const Vec3 &f0, float cosTheta)
+{
+    const float factor = powf(fmaxf(1.0f - cosTheta, 0.0f), 5.0f);
+    const Vec3 white = makeVec3(1.0f, 1.0f, 1.0f);
+
+    return add(f0, scale(sub(white, f0), factor));
+}
+
+__device__ inline float blinnShininess(float roughness)
+{
+    if (roughness <= 1e-3f)
+        return 64.0f;
+
+    const float alpha = fmaxf(roughness, 1e-3f);
+    const float exponent = 2.0f / (alpha * alpha * alpha * alpha) - 2.0f;
+
+    return fminf(fmaxf(exponent, 1.0f), 4096.0f);
+}
+
+__device__ inline Vec3 sampleGGXHalfVector(const Vec3 &normal, float roughness, unsigned int &state)
+{
+    const float alpha = fmaxf(roughness * roughness, 1e-4f);
+    const float u1 = randomFloat(state);
+    const float u2 = randomFloat(state);
+    const float phi = 2.0f * 3.14159265358979323846f * u1;
+    const float cosTheta = sqrtf((1.0f - u2) / (1.0f + (alpha * alpha - 1.0f) * u2));
+    const float sinTheta = sqrtf(fmaxf(0.0f, 1.0f - cosTheta * cosTheta));
+    const Vec3 tangent = normalize(cross(fabsf(normal.x) < 0.999f ? makeVec3(1.0f, 0.0f, 0.0f)
+                                                                   : makeVec3(0.0f, 1.0f, 0.0f),
+                                         normal));
+    const Vec3 bitangent = cross(normal, tangent);
+
+    return normalize(add(add(scale(tangent, cosf(phi) * sinTheta), scale(bitangent, sinf(phi) * sinTheta)),
+                         scale(normal, cosTheta)));
+}
+
+__device__ inline bool sampleMetallic(const Vec3 &viewDirection, const Vec3 &normal, const Vec3 &f0,
+                                      float roughness, unsigned int &state, Vec3 &direction, Vec3 &weight)
+{
+    if (roughness <= 1e-3f)
+    {
+        direction = normalize(reflect(negate(viewDirection), normal));
+        weight = f0;
+        return lengthSquared(direction) >= 1e-12f;
+    }
+
+    const Vec3 halfVector = sampleGGXHalfVector(normal, roughness, state);
+
+    direction = normalize(reflect(negate(viewDirection), halfVector));
+
+    const float ndotL = dot(normal, direction);
+    const float ndotV = fmaxf(dot(normal, viewDirection), 1e-4f);
+    const float ndotH = fmaxf(dot(normal, halfVector), 1e-4f);
+    const float vdotH = fmaxf(dot(viewDirection, halfVector), 1e-4f);
+
+    if (ndotL <= 0.0f)
+        return false;
+
+    const float alpha = fmaxf(roughness * roughness, 1e-4f);
+    const Vec3 fresnel = fresnelSchlick(f0, vdotH);
+    const float geometry = smithGGX(ndotV, alpha) * smithGGX(ndotL, alpha);
+    const float factor = fminf(fmaxf(geometry * vdotH / (ndotV * ndotH), 0.0f), 1.0f);
+
+    weight = scale(fresnel, factor);
+    return lengthSquared(weight) >= 1e-12f;
+}
+
 struct Ray
 {
     Vec3 origin;
@@ -768,7 +847,8 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
             {
                 const float diffuseFactor = fmaxf(dot(normal, sample.direction), 0.0f);
                 const Vec3 halfDirection = normalize(add(sample.direction, viewDirection));
-                const float specularFactor = powf(fmaxf(dot(normal, halfDirection), 0.0f), 64.0f);
+                const float specularFactor =
+                    powf(fmaxf(dot(normal, halfDirection), 0.0f), blinnShininess(material.roughness));
 
                 contribution = add(scale(sample.radiance, phongCoefficient * diffuseFactor),
                                    scale(sample.radiance, material.specularReflection * specularFactor));
@@ -782,7 +862,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         if (material.type == MATERIAL_EMISSIVE || material.type == MATERIAL_FLAT_COLOR)
             break;
 
-        if (material.type == MATERIAL_DIFFUSE || material.type == MATERIAL_METALLIC)
+        if (material.type == MATERIAL_DIFFUSE)
         {
             throughput = multiply(throughput, material.diffuseColor);
 
@@ -795,7 +875,18 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         if (material.type == MATERIAL_DIFFUSE)
             nextDirection = randomCosineHemisphere(normal, state);
         else if (material.type == MATERIAL_METALLIC)
-            nextDirection = normalize(reflect(ray.direction, normal));
+        {
+            Vec3 weight;
+
+            if (!sampleMetallic(viewDirection, normal, material.diffuseColor, material.roughness, state,
+                                nextDirection, weight))
+                break;
+
+            throughput = multiply(throughput, weight);
+
+            if (lengthSquared(throughput) < 1e-6f)
+                break;
+        }
         else
             break;
 

@@ -35,6 +35,7 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
         data.diffuseReflection = material->getDiffuseReflectionCoefficient();
         data.specularReflection = material->getSpecularReflectionCoefficient();
         data.ior = material->getIndexOfRefraction();
+        data.roughness = material->getRoughness();
         snapshot.materials.push_back(data);
     }
 

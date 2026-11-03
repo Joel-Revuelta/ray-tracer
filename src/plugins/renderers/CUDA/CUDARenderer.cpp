@@ -161,6 +161,7 @@ std::vector<Cuda::Material> convertMaterials(const SceneSnapshot &snapshot)
         converted.diffuseReflection = material.diffuseReflection;
         converted.specularReflection = material.specularReflection;
         converted.ior = material.ior;
+        converted.roughness = material.roughness;
         materials.push_back(converted);
     }
     return materials;

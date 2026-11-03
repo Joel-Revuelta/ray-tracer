@@ -43,6 +43,13 @@ class IMaterial
         return 1.5f;
     }
 
+    // Metallic microsurface roughness in [0, 1]. Non-metallic materials use
+    // the default and ignore it.
+    virtual float getRoughness(void) const
+    {
+        return 0.0f;
+    }
+
     // Returns an independent copy for scene composition. Materials that do not
     // implement cloning fall back to sharing the original instance.
     virtual std::shared_ptr<IMaterial> clone(void) const

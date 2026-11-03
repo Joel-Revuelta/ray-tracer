@@ -11,8 +11,9 @@
 
 using namespace RayTracer;
 
-MetallicMaterial::MetallicMaterial(const Color3D &color)
-    : AMaterial(0.05, 0.001, 0.8, color, 0.0, Color3D(0.0, 0.0, 0.0), IMaterial::MaterialType::METALLIC)
+MetallicMaterial::MetallicMaterial(const Color3D &color, float roughness)
+    : AMaterial(0.05, 0.001, 0.8, color, 0.0, Color3D(0.0, 0.0, 0.0), IMaterial::MaterialType::METALLIC),
+      _roughness(roughness)
 {
 }
 
@@ -20,12 +21,17 @@ MetallicMaterial::~MetallicMaterial(void)
 {
 }
 
+float MetallicMaterial::getRoughness(void) const
+{
+    return _roughness;
+}
+
 std::shared_ptr<IMaterial> MetallicMaterial::clone(void) const
 {
     return std::make_shared<MetallicMaterial>(*this);
 }
 
-extern "C" std::shared_ptr<IMaterial> create(Color3D color)
+extern "C" std::shared_ptr<IMaterial> create(Color3D color, double roughness)
 {
-    return std::make_shared<MetallicMaterial>(color);
+    return std::make_shared<MetallicMaterial>(color, static_cast<float>(roughness));
 }

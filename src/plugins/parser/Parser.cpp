@@ -39,6 +39,14 @@ void requireNonZeroVector(const Vec3D &vector, const std::string &name)
         throw std::runtime_error(name + " must be a non-zero vector");
 }
 
+void requireRange(double value, double minimum, double maximum, const std::string &name)
+{
+    requireFinite(value, name);
+    if (value < minimum || value > maximum)
+        throw std::runtime_error(name + " must be between " + std::to_string(minimum) + " and " +
+                                 std::to_string(maximum));
+}
+
 uint parseMaterialIndex(const libconfig::Setting &setting)
 {
     const int index = setting.lookup("material");
@@ -190,7 +198,10 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
         }
         else if (type == "metallic" || type == "metalic")
         {
-            material = _factory.create<IMaterial>("MetallicMaterial", parseColor(setting.lookup("color")));
+            const double roughness = setting.exists("roughness") ? double(setting.lookup("roughness")) : 0.0;
+
+            requireRange(roughness, 0.0, 1.0, "Metallic material roughness");
+            material = _factory.create<IMaterial>("MetallicMaterial", parseColor(setting.lookup("color")), roughness);
         }
         else if (type == "dielectric")
         {

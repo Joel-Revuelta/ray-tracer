@@ -105,8 +105,13 @@ name = {
 name = {
     type = "metallic";
     color = { r = 0.9; g = 0.9; b = 1.0; };
+    roughness = 0.12;
 };
 ```
+
+`roughness` is optional and must be in `[0, 1]`; it defaults to `0.0`.
+`0.0` is a perfect mirror; higher values produce a GGX microfacet blur with a
+Schlick Fresnel response.
 
 The legacy spelling `metalic` is accepted as an alias for `metallic`.
 
@@ -340,6 +345,7 @@ The parser rejects:
 - negative diffuse material reflection coefficients or emissive intensity,
 - non-positive dielectric IOR,
 - negative background intensity,
+- metallic roughness outside `[0, 1]`,
 - non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,
 - a camera position equal to its look-at point,

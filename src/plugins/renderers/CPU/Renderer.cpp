@@ -7,6 +7,7 @@
 
 #include "plugins/renderers/CPU/Renderer.hpp"
 #include "Utils.hpp"
+#include "render/Brdf.hpp"
 #include "plugins/renderers/PPM.hpp"
 #include <algorithm>
 #include <chrono>
@@ -443,7 +444,8 @@ void Renderer::manageEvent(char evt)
  * @param payload The hit payload containing information about the intersection.
  * @return The direction of the next ray to be traced.
  */
-Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed)
+Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed,
+                                         Color3D &throughput)
 {
     Vec3D rayDirection;
     const auto &material =
@@ -457,12 +459,20 @@ Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payloa
         rayDirection = vec3DRandomCosineHemisphere(payload.getHitNormal(), seed);
         break;
     case IMaterial::METALLIC:
-        // Reflect the ray direction about the hit normal
-        rayDirection = vec3DNormalize(reflect(ray.getDirection(), payload.getHitNormal()));
+    {
+        const Vec3D viewDirection = vec3DNormalize(ray.getOrigin() - payload.getHitPosition());
+        Color3D weight;
+
+        if (!sampleMetallic(viewDirection, payload.getHitNormal(), material->getDiffuseColor(),
+                            material->getRoughness(), seed, rayDirection, weight))
+            return Vec3D(0.0f);
+
+        throughput *= weight;
         break;
+    }
     case IMaterial::EMISSIVE:   // Return 0 light (it should have stoped befor this funcion in an if condition)
     case IMaterial::FLAT_COLOR: // (Does not bounce)
-    case IMaterial::DIELECTRIC: // Not implemented
+    case IMaterial::DIELECTRIC: // Handled separately in getPixelColor.
     case IMaterial::TYPE_COUNT: // None
     default:
         break;
@@ -501,7 +511,7 @@ Color3D Renderer::computePhongLighting(const HitPayload &payload, const IMateria
 
     const Vec3D viewDirection = vec3DNormalize(ray.getOrigin() - payload.getHitPosition());
     const Vec3D halfDirection = vec3DNormalize(lightDirection + viewDirection);
-    constexpr float shininess = 64.0f;
+    const float shininess = blinnShininess(material.getRoughness());
     const float specularFactor = std::pow(std::max(vec3DDot(normal, halfDirection), 0.0f), shininess);
 
     return reflectionCoefficient * radiance * diffuseFactor +
@@ -625,8 +635,9 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             if (materialType == IMaterial::EMISSIVE || materialType == IMaterial::FLAT_COLOR)
                 break;
 
-            // Diffuse and metallic paths are attenuated by the surface colour.
-            if (materialType == IMaterial::DIFFUSE || materialType == IMaterial::METALLIC)
+            // Diffuse paths are attenuated by the surface colour. Metallic
+            // paths apply their Fresnel/GGX weight inside the sampler.
+            if (materialType == IMaterial::DIFFUSE)
             {
                 throughput *= material->getDiffuseColor();
 
@@ -635,7 +646,10 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             }
 
             // Handle set direction and origin for the next ray
-            const Vec3D nextDirection = computeNextRayDirection(ray, payload, sampler);
+            const Vec3D nextDirection = computeNextRayDirection(ray, payload, sampler, throughput);
+
+            if (throughput.lengthSquared() < 1e-6f)
+                break;
 
             // A zero or inward-facing direction would trace a degenerate ray
             // forever, so stop instead.

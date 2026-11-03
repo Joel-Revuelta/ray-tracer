@@ -26,9 +26,11 @@ full-HD and 8K still renders.
   resolution/samples, exposure and tonemapping.
 - **Visual pipeline** — exact sRGB output, optional Reinhard/ACES tonemapping,
   and scene background gradients for reflections.
+- **Materials** — diffuse, emissive, flat-colour, Fresnel glass and GGX-rough
+  metallic surfaces.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 18 scenes, from material studies to glass showcases and 8K hero renders.
+- **Included scenes** — 19 scenes, from material studies to glass showcases and 8K hero renders.
 
 ## Requirements
 

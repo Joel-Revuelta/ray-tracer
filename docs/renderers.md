@@ -108,7 +108,8 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
 - Uses the same 15-bounce path tracing, material and light logic as the CUDA
   renderer. Path throughput is attenuated by diffuse/metallic surface colour,
-  diffuse bounces use cosine-weighted hemisphere sampling, and direct lighting
+  diffuse bounces use cosine-weighted hemisphere sampling, metallic surfaces
+  use GGX/Smith roughness sampling with Schlick Fresnel, and direct lighting
   includes Blinn-Phong specular highlights.
 - Supports `--gui sfml` and `--gui opengl`, plus the shared `CameraController`
   controls.

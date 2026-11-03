@@ -71,6 +71,7 @@ struct Material
     float diffuseReflection;
     float specularReflection;
     float ior;
+    float roughness;
 };
 
 struct Light

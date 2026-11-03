@@ -98,7 +98,7 @@ class Renderer
     Color4D getPixelColor(uint32_t seed, int x, int y);
     Color3D computePhongLighting(const HitPayload &payload, const IMaterial &material,
                                  const std::shared_ptr<ILight> &light, const Ray &ray);
-    Vec3D computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed);
+    Vec3D computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed, Color3D &throughput);
     HitPayload shotRay(const Ray &ray);
     HitPayload missHit(void);
     void manageEvent(char evt);

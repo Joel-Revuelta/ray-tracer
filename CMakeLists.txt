@@ -321,8 +321,24 @@ add_test(
             --tonemap reinhard --exposure 0.75
             --output ${CMAKE_BINARY_DIR}/post_process_smoke.ppm
 )
+add_test(
+    NAME roughness_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/roughness_study.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2
+            --output ${CMAKE_BINARY_DIR}/roughness_smoke.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_roughness
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_roughness.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_roughness.ppm
+)
 set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_process_smoke
-    PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
+    roughness_smoke PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
+set_tests_properties(parser_rejects_invalid_roughness PROPERTIES
+    WILL_FAIL TRUE
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
+)
 set_tests_properties(parser_rejects_negative_material PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
