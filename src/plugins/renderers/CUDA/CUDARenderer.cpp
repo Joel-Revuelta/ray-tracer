@@ -130,7 +130,8 @@ Cuda::PostProcess toDevice(const PostProcessSettings &settings)
 Cuda::Background toDeviceBackground(const Background &background)
 {
     return Cuda::Background{toDevice(background.zenith), toDevice(background.horizon), toDevice(background.ground),
-                            background.intensity, background.enabled ? 1 : 0};
+                            background.intensity, background.enabled ? 1 : 0,
+                            background.environmentTextureIndex};
 }
 
 std::vector<Cuda::Primitive> convertPrimitives(const SceneSnapshot &snapshot)

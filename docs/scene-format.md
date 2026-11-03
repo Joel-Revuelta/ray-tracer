@@ -85,8 +85,10 @@ camera:
 
 ## Background
 
-An optional gradient background is returned when a camera or bounce ray misses
-all geometry:
+An optional background is returned when a camera or bounce ray misses all
+geometry. It can be a vertical gradient or an equirectangular environment map.
+
+Gradient:
 
 ```libconfig
 background:
@@ -98,10 +100,31 @@ background:
 };
 ```
 
-- `zenith`, `horizon`, and `ground` define the vertical gradient.
+Environment map:
+
+```libconfig
+background:
+{
+    texture = "textures/sky.ppm";
+    intensity = 1.0;
+};
+```
+
+- `texture` is an equirectangular PPM environment map. Paths resolve relative
+  to the scene file. `u` wraps around the horizon and `v` is clamped from the
+  north to the south pole.
+- When a texture is present it takes precedence over the gradient fields.
+- `zenith`, `horizon`, and `ground` remain the fallback when no texture is
+  given.
 - `intensity` must be non-negative and defaults to `1.0`.
 - If the block is omitted, the background is black.
+- Environment maps are visible in reflections and illuminate diffuse/metallic
+  paths through ordinary path tracing. They are LDR PPM images; HDR/EXR
+  environments are not supported.
 - Backgrounds are top-level only; nested scenes inherit the parent background.
+
+`scenes/environment.cfg` demonstrates an equirectangular sky used for the
+background, reflections and path-traced lighting.
 
 ## Materials
 

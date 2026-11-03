@@ -68,6 +68,7 @@ letterboxes it to preserve aspect ratio.
 | `soft_shadows.cfg` | Two sphere area lights over a floor and three spheres |
 | `textures.cfg` | Checker PPM textures on a plane, primitives and a mesh |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback |
+| `environment.cfg` | An equirectangular sky used for reflections and IBL |
 
 ## Material showcase renders
 

@@ -228,6 +228,32 @@ throughput. A missing texture keeps the old constant-colour path. For CUDA,
 global `Vec3` texel buffer plus one `TextureRange` per texture; `Cuda::Material`
 stores an index and the device samples with the same bilinear repeat mapping.
 
+### Environment maps
+
+`Background` optionally stores a shared environment `Texture`. When present,
+`Background::sample()` maps the miss direction to equirectangular coordinates:
+
+```text
+u = 0.5 + atan2(z, x) / (2π)
+v = acos(clamp(y, -1, 1)) / π
+```
+
+U wraps and V is clamped, using `Texture::sampleClamped()` so the poles do not
+wrap into each other. The environment replaces the gradient background and is
+also returned by every path-traced miss, so it provides reflections and
+indirect illumination without a separate light-sampling path.
+
+`buildSceneSnapshot()` registers the background texture in the same
+deduplicated texture list as material albedo maps and stores its index in
+`Background::environmentTextureIndex`. CUDA uploads that list once;
+`skyColor()` samples the environment when the index is valid, otherwise it
+keeps the original gradient calculation. Gradient-only scenes therefore render
+identically.
+
+Environment lighting is unbiased but can be noisy without importance sampling;
+higher sample counts are recommended. Only LDR PPM equirectangular maps are
+supported for now.
+
 ### OBJ material groups
 
 The OBJ loader records `usemtl` names in `MeshAsset::materialNames` and stores

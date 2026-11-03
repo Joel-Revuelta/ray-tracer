@@ -126,6 +126,7 @@ struct Background
     Vec3 ground;
     float intensity;
     int enabled;
+    int environmentTextureIndex;
 };
 
 struct BVHNode

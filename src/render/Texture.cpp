@@ -106,21 +106,32 @@ const std::vector<Color3D> &Texture::getPixels(void) const
     return _pixels;
 }
 
-Color3D Texture::texel(int x, int y) const
+Color3D Texture::texel(int x, int y, bool clampY) const
 {
     x %= _width;
     if (x < 0)
         x += _width;
-    y %= _height;
-    if (y < 0)
-        y += _height;
+
+    if (clampY)
+        y = std::clamp(y, 0, _height - 1);
+    else
+    {
+        y %= _height;
+        if (y < 0)
+            y += _height;
+    }
+
     return _pixels[static_cast<std::size_t>(y) * static_cast<std::size_t>(_width) + static_cast<std::size_t>(x)];
 }
 
-Color3D Texture::sample(float u, float v) const
+Color3D Texture::sampleInternal(float u, float v, bool clampV) const
 {
     u -= std::floor(u);
-    v -= std::floor(v);
+
+    if (clampV)
+        v = std::clamp(v, 0.0f, 1.0f);
+    else
+        v -= std::floor(v);
 
     const float x = u * static_cast<float>(_width) - 0.5f;
     const float y = v * static_cast<float>(_height) - 0.5f;
@@ -129,10 +140,20 @@ Color3D Texture::sample(float u, float v) const
     const float fx = x - static_cast<float>(x0);
     const float fy = y - static_cast<float>(y0);
 
-    const Color3D top = texel(x0, y0) * (1.0f - fx) + texel(x0 + 1, y0) * fx;
-    const Color3D bottom = texel(x0, y0 + 1) * (1.0f - fx) + texel(x0 + 1, y0 + 1) * fx;
+    const Color3D top = texel(x0, y0, clampV) * (1.0f - fx) + texel(x0 + 1, y0, clampV) * fx;
+    const Color3D bottom = texel(x0, y0 + 1, clampV) * (1.0f - fx) + texel(x0 + 1, y0 + 1, clampV) * fx;
 
     return top * (1.0f - fy) + bottom * fy;
+}
+
+Color3D Texture::sample(float u, float v) const
+{
+    return sampleInternal(u, v, false);
+}
+
+Color3D Texture::sampleClamped(float u, float v) const
+{
+    return sampleInternal(u, v, true);
 }
 
 std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path)

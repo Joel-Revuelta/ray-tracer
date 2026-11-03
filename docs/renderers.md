@@ -114,6 +114,8 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 - Material albedo textures are sampled bilinearly with repeat wrapping at the
   hit UV. UVs come from analytic primitive mappings or interpolated OBJ `vt`
   data.
+- Equirectangular environment backgrounds are sampled on miss with a clamped
+  V coordinate and provide reflections plus path-traced indirect lighting.
 - OBJ `usemtl` groups resolve to per-triangle material overrides. Unmapped
   groups use the mesh's fallback material.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
@@ -178,6 +180,9 @@ uses the same `SceneSnapshot` data path.
 - **OBJ materials:** per-primitive group maps are uploaded as a flat `int`
   array with ranges. Triangle hits report a group and `intersectMesh` resolves
   it to a material override.
+- **Environment maps:** the background texture shares the material texture
+  upload path. `skyColor` samples it with clamped-V equirectangular mapping and
+  falls back to the gradient when no environment is configured.
 - **Architecture:** compiled for `89` by default (RTX 4070 Laptop / Ada). Set
   `-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 - **Runtime:** the plugin links `CUDA::cudart_static`, so it does not require a

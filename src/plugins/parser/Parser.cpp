@@ -777,9 +777,25 @@ Background Parser::parseBackground(const libconfig::Setting &backgroundSetting)
     Background background;
 
     background.enabled = true;
-    background.zenith = parseColor(backgroundSetting.lookup("zenith"));
-    background.horizon = parseColor(backgroundSetting.lookup("horizon"));
-    background.ground = parseColor(backgroundSetting.lookup("ground"));
+
+    if (backgroundSetting.exists("texture"))
+    {
+        const std::string texturePath = resolveAssetPath(backgroundSetting.lookup("texture"));
+
+        background.environment = loadTexture(texturePath);
+    }
+
+    if (backgroundSetting.exists("zenith"))
+        background.zenith = parseColor(backgroundSetting.lookup("zenith"));
+    if (backgroundSetting.exists("horizon"))
+        background.horizon = parseColor(backgroundSetting.lookup("horizon"));
+    if (backgroundSetting.exists("ground"))
+        background.ground = parseColor(backgroundSetting.lookup("ground"));
+
+    if (!background.environment &&
+        (!backgroundSetting.exists("zenith") || !backgroundSetting.exists("horizon") ||
+         !backgroundSetting.exists("ground")))
+        throw std::runtime_error("Background requires a texture or zenith/horizon/ground colours");
 
     if (backgroundSetting.exists("intensity"))
     {

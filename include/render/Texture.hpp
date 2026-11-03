@@ -30,9 +30,11 @@ class Texture
     const std::vector<Color3D> &getPixels(void) const;
 
     Color3D sample(float u, float v) const;
+    Color3D sampleClamped(float u, float v) const;
 
   private:
-    Color3D texel(int x, int y) const;
+    Color3D texel(int x, int y, bool clampY) const;
+    Color3D sampleInternal(float u, float v, bool clampV) const;
 
     int _width;
     int _height;

@@ -63,6 +63,17 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
         snapshot.materials.push_back(data);
     }
 
+    if (snapshot.background.environment)
+    {
+        const auto inserted = textureIndices.emplace(snapshot.background.environment.get(),
+                                                     static_cast<int>(snapshot.textures.size()));
+
+        if (inserted.second)
+            snapshot.textures.push_back(snapshot.background.environment);
+
+        snapshot.background.environmentTextureIndex = inserted.first->second;
+    }
+
     for (const auto &light : scene.getLights())
     {
         LightData data;

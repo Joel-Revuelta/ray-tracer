@@ -100,17 +100,29 @@ __device__ inline float linearToSRGB(float value)
     return 1.055f * powf(clamped, 1.0f / 2.4f) - 0.055f;
 }
 
-__device__ inline Vec3 skyColor(const Background &background, const Vec3 &direction)
+__device__ Vec3 sampleTextureClamped(const SceneView &scene, int index, float u, float v);
+
+__device__ inline Vec3 skyColor(const SceneView &scene, const Vec3 &direction)
 {
     const Vec3 unit = normalize(direction);
+
+    if (scene.background.environmentTextureIndex >= 0)
+    {
+        const float u = 0.5f + atan2f(unit.z, unit.x) / (2.0f * PI_F);
+        const float v = acosf(fmaxf(-1.0f, fminf(1.0f, unit.y))) / PI_F;
+
+        return scale(sampleTextureClamped(scene, scene.background.environmentTextureIndex, u, v),
+                     scene.background.intensity);
+    }
+
     const float vertical = fminf(fmaxf(unit.y, -1.0f), 1.0f);
     const float blend = sqrtf(fabsf(vertical));
 
     if (vertical >= 0.0f)
-        return scale(add(scale(background.horizon, 1.0f - blend), scale(background.zenith, blend)),
-                     background.intensity);
-    return scale(add(scale(background.horizon, 1.0f - blend), scale(background.ground, blend)),
-                 background.intensity);
+        return scale(add(scale(scene.background.horizon, 1.0f - blend), scale(scene.background.zenith, blend)),
+                     scene.background.intensity);
+    return scale(add(scale(scene.background.horizon, 1.0f - blend), scale(scene.background.ground, blend)),
+                 scene.background.intensity);
 }
 
 __device__ inline float postProcessChannel(float linear, const PostProcess &settings)
@@ -1111,18 +1123,30 @@ __device__ LightSample sampleLight(const SceneView &scene, const Light &light, c
     return sample;
 }
 
-__device__ Vec3 textureTexel(const SceneView &scene, const TextureRange &range, int x, int y)
+__device__ Vec3 textureTexel(const SceneView &scene, const TextureRange &range, int x, int y, bool clampY)
 {
     x %= range.width;
     if (x < 0)
         x += range.width;
-    y %= range.height;
-    if (y < 0)
-        y += range.height;
+
+    if (clampY)
+    {
+        if (y < 0)
+            y = 0;
+        else if (y >= range.height)
+            y = range.height - 1;
+    }
+    else
+    {
+        y %= range.height;
+        if (y < 0)
+            y += range.height;
+    }
+
     return scene.texels[range.start + y * range.width + x];
 }
 
-__device__ Vec3 sampleTexture(const SceneView &scene, int index, float u, float v)
+__device__ Vec3 sampleTextureInternal(const SceneView &scene, int index, float u, float v, bool clampV)
 {
     if (index < 0 || index >= scene.textureCount || scene.texels == nullptr || scene.textures == nullptr)
         return makeVec3(1.0f, 1.0f, 1.0f);
@@ -1133,7 +1157,11 @@ __device__ Vec3 sampleTexture(const SceneView &scene, int index, float u, float 
         return makeVec3(1.0f, 1.0f, 1.0f);
 
     u -= floorf(u);
-    v -= floorf(v);
+
+    if (clampV)
+        v = fmaxf(0.0f, fminf(1.0f, v));
+    else
+        v -= floorf(v);
 
     const float x = u * static_cast<float>(range.width) - 0.5f;
     const float y = v * static_cast<float>(range.height) - 0.5f;
@@ -1142,12 +1170,22 @@ __device__ Vec3 sampleTexture(const SceneView &scene, int index, float u, float 
     const float fx = x - static_cast<float>(x0);
     const float fy = y - static_cast<float>(y0);
 
-    const Vec3 top = add(scale(textureTexel(scene, range, x0, y0), 1.0f - fx),
-                         scale(textureTexel(scene, range, x0 + 1, y0), fx));
-    const Vec3 bottom = add(scale(textureTexel(scene, range, x0, y0 + 1), 1.0f - fx),
-                            scale(textureTexel(scene, range, x0 + 1, y0 + 1), fx));
+    const Vec3 top = add(scale(textureTexel(scene, range, x0, y0, clampV), 1.0f - fx),
+                         scale(textureTexel(scene, range, x0 + 1, y0, clampV), fx));
+    const Vec3 bottom = add(scale(textureTexel(scene, range, x0, y0 + 1, clampV), 1.0f - fx),
+                            scale(textureTexel(scene, range, x0 + 1, y0 + 1, clampV), fx));
 
     return add(scale(top, 1.0f - fy), scale(bottom, fy));
+}
+
+__device__ Vec3 sampleTexture(const SceneView &scene, int index, float u, float v)
+{
+    return sampleTextureInternal(scene, index, u, v, false);
+}
+
+__device__ Vec3 sampleTextureClamped(const SceneView &scene, int index, float u, float v)
+{
+    return sampleTextureInternal(scene, index, u, v, true);
 }
 
 __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
@@ -1207,7 +1245,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         if (!intersectScene(scene, ray, distance, normal, shadingNormal, u, v, materialIndex, primitiveIndex))
         {
             if (scene.background.enabled != 0)
-                accumulated = add(accumulated, multiply(throughput, skyColor(scene.background, ray.direction)));
+                accumulated = add(accumulated, multiply(throughput, skyColor(scene, ray.direction)));
             break;
         }
 
