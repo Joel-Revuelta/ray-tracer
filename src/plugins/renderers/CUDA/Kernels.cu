@@ -954,7 +954,7 @@ struct LightSample
 };
 
 __device__ LightSample sampleLight(const SceneView &scene, const Light &light, const Vec3 &hitPosition,
-                                   const Vec3 &hitNormal, const Vec3 &shadingNormal)
+                                   const Vec3 &hitNormal, const Vec3 &shadingNormal, unsigned int &state)
 {
     LightSample sample{makeVec3(0.0f, 0.0f, 0.0f), makeVec3(0.0f, 0.0f, 0.0f), false};
 
@@ -985,6 +985,38 @@ __device__ LightSample sampleLight(const SceneView &scene, const Light &light, c
         const float distance = length(toLight);
 
         sample.direction = normalize(toLight);
+
+        if (dot(sample.direction, shadingNormal) <= 0.0f)
+            return sample;
+
+        const float denominator = light.attenuationConstant + light.attenuationLinear * distance +
+                                  light.attenuationQuadratic * distance * distance;
+        const float attenuation = denominator > 0.0f ? 1.0f / denominator : 0.0f;
+
+        if (occluded(scene, Ray{add(hitPosition, scale(hitNormal, RAY_EPSILON)), sample.direction}, distance))
+            return sample;
+
+        sample.radiance = scale(light.color, light.intensity * attenuation);
+        sample.valid = true;
+        return sample;
+    }
+
+    if (light.type == LIGHT_AREA_SPHERE)
+    {
+        const float u = randomFloat(state);
+        const float v = randomFloat(state);
+        const float z = 1.0f - 2.0f * u;
+        const float radial = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+        const float angle = 2.0f * PI_F * v;
+        const Vec3 sphereNormal = makeVec3(radial * cosf(angle), radial * sinf(angle), z);
+        const Vec3 lightPoint = add(light.position, scale(sphereNormal, light.radius));
+        const Vec3 toLight = sub(lightPoint, hitPosition);
+        const float distance = length(toLight);
+
+        if (!isfinite(distance) || distance <= 1e-6f)
+            return sample;
+
+        sample.direction = scale(toLight, 1.0f / distance);
 
         if (dot(sample.direction, shadingNormal) <= 0.0f)
             return sample;
@@ -1115,7 +1147,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         for (int lightIndex = 0; lightIndex < scene.lightCount; ++lightIndex)
         {
             const Light &light = scene.lights[lightIndex];
-            const LightSample sample = sampleLight(scene, light, hitPosition, normal, shadingNormal);
+            const LightSample sample = sampleLight(scene, light, hitPosition, normal, shadingNormal, state);
 
             if (!sample.valid)
                 continue;

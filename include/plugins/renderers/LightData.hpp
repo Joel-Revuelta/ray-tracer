@@ -18,7 +18,8 @@ enum class LightType
     NONE,
     AMBIENT,
     DIRECTIONAL,
-    POINT
+    POINT,
+    AREA_SPHERE
 };
 
 /**
@@ -33,6 +34,7 @@ struct LightData
     Color3D color;
     Vec3D position;
     Vec3D direction;
+    float radius = 0.0f;
     float intensity = 0.0f;
     float attenuationConstant = 1.0f;
     float attenuationLinear = 0.0f;

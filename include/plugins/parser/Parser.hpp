@@ -41,6 +41,7 @@ class Parser
     void parseLights(SceneBuilder &scene, const libconfig::Setting &lightSetting);
     std::shared_ptr<ILight> parseDirectionalLight(const libconfig::Setting &directionalSetting);
     std::shared_ptr<ILight> parsePointLight(const libconfig::Setting &pointSetting);
+    std::shared_ptr<ILight> parseSphereLight(const libconfig::Setting &sphereSetting);
     std::shared_ptr<ILight> parseAmbientLight(const libconfig::Setting &ambientSetting);
 
     void parsePrimitives(SceneBuilder &scene, libconfig::Setting &primitiveSetting);

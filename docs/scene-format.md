@@ -415,6 +415,36 @@ Attenuation is:
 intensity / (constant + linear * distance + quadratic * distance^2)
 ```
 
+### Sphere (area light)
+
+```libconfig
+spheres = (
+    {
+        position = { x = -3.8; y = 4.0; z = -3.0; };
+        radius = 1.1;
+        color = { r = 1.0; g = 0.70; b = 0.45; };
+        intensity = 3.6;
+        attenuation = {
+            constant = 1.0;
+            linear = 0.05;
+            quadratic = 0.003;
+        };
+    }
+);
+```
+
+- `position` is the centre of the sphere light.
+- `radius` must be positive.
+- `intensity` must be non-negative.
+- `attenuation` is optional and defaults to `constant = 1`, `linear = 0`,
+  `quadratic = 0`. The same rules and formula as point lights apply.
+- `spheres` may also be a single object instead of a list.
+
+Sphere lights are sampled as area sources. Each shading query picks a point on
+the sphere and casts a shadow ray to it, producing soft shadows. Larger radii
+give wider penumbrae, and soft shadows need more samples to converge cleanly.
+`scenes/soft_shadows.cfg` demonstrates two sphere lights over a floor.
+
 ## Material indices
 
 Material indices are positional:
@@ -450,7 +480,8 @@ The parser rejects:
 - sphere/cylinder/cone radius or height `<= 0`,
 - zero plane normals,
 - zero directional-light directions,
-- non-positive point-light attenuation constants,
+- non-positive point-light or sphere-light attenuation constants,
+- non-positive sphere-light radii,
 - negative intensities and negative linear/quadratic attenuation,
 - negative diffuse material reflection coefficients or emissive intensity,
 - non-positive dielectric IOR,

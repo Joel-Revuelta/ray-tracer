@@ -164,6 +164,10 @@ file(GLOB_RECURSE SOURCES_POINT CONFIGURE_DEPENDS "src/plugins/lights/PointLight
 add_library(raytracer_light_point SHARED ${SOURCES_POINT})
 target_link_libraries(raytracer_light_point PRIVATE raytracer_core)
 
+file(GLOB_RECURSE SOURCES_SPHERE_LIGHT CONFIGURE_DEPENDS "src/plugins/lights/SphereLight.cpp")
+add_library(raytracer_light_sphere SHARED ${SOURCES_SPHERE_LIGHT})
+target_link_libraries(raytracer_light_sphere PRIVATE raytracer_core)
+
 # Primitives
 file(GLOB_RECURSE SOURCES_PLANE CONFIGURE_DEPENDS "src/plugins/primitives/Plane.cpp")
 file(GLOB_RECURSE EXTERN_PLANE CONFIGURE_DEPENDS "src/plugins/primitives/ExternPlane.cpp")
@@ -256,7 +260,12 @@ if (TARGET raytracer_renderer_cuda)
     add_dependencies(renderers raytracer_renderer_cuda)
 endif()
 
-add_custom_target(lights DEPENDS raytracer_light_ambient raytracer_light_directional raytracer_light_point)
+add_custom_target(lights DEPENDS
+    raytracer_light_ambient
+    raytracer_light_directional
+    raytracer_light_point
+    raytracer_light_sphere
+)
 
 add_custom_target(materials DEPENDS
     raytracer_material_custom
@@ -286,6 +295,7 @@ set_target_properties(
     raytracer_light_ambient
     raytracer_light_directional
     raytracer_light_point
+    raytracer_light_sphere
     raytracer_plane
     raytracer_sphere
     raytracer_cylinder
@@ -434,6 +444,23 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_focus.ppm
 )
 add_test(
+    NAME soft_shadow_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/soft_shadows.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/soft_shadow_smoke.ppm
+)
+add_test(
+    NAME deterministic_soft_shadow_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_soft_shadow.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_invalid_area_light
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_area_light.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_area_light.ppm
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -448,10 +475,12 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     bvh_matches_linear transform_smoke mesh_smoke mesh_bvh_matches_linear
     mesh_smooth_normals mesh_flat_fallback
     dof_smoke deterministic_dof_render dof_cli_override
+    soft_shadow_smoke deterministic_soft_shadow_render
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_transform parser_rejects_invalid_obj
-    parser_rejects_invalid_lens parser_rejects_invalid_focus PROPERTIES
+    parser_rejects_invalid_lens parser_rejects_invalid_focus
+    parser_rejects_invalid_area_light PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )
@@ -470,6 +499,7 @@ set(RAYTRACER_PLUGIN_TARGETS
     raytracer_light_ambient
     raytracer_light_directional
     raytracer_light_point
+    raytracer_light_sphere
     raytracer_plane
     raytracer_sphere
     raytracer_cylinder

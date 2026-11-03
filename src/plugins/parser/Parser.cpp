@@ -273,6 +273,19 @@ void Parser::parseLights(SceneBuilder &sceneBuilder, const libconfig::Setting &l
 
     if (lightSetting.exists("directional"))
         sceneBuilder.addLight(parseDirectionalLight(lightSetting.lookup("directional")));
+
+    if (lightSetting.exists("spheres"))
+    {
+        const libconfig::Setting &sphereSetting = lightSetting.lookup("spheres");
+
+        if (sphereSetting.isList())
+        {
+            for (int i = 0; i < sphereSetting.getLength(); i++)
+                sceneBuilder.addLight(parseSphereLight(sphereSetting[i]));
+        }
+        else
+            sceneBuilder.addLight(parseSphereLight(sphereSetting));
+    }
 }
 
 /**
@@ -320,6 +333,44 @@ std::shared_ptr<ILight> Parser::parsePointLight(const libconfig::Setting &pointS
         attenuationConstant, attenuationLinear, attenuationQuadratic);
 
     return light;
+}
+
+/**
+ * Parses a spherical area light. The radius controls the softness of the
+ * shadows and the attenuation follows the point-light model.
+ *
+ * @param sphereSetting The sphere light setting to parse.
+ * @return The light object.
+ */
+std::shared_ptr<ILight> Parser::parseSphereLight(const libconfig::Setting &sphereSetting)
+{
+    const Vec3D position = parsePoint(sphereSetting.lookup("position"));
+    const double radius = sphereSetting.lookup("radius");
+    const double intensity = sphereSetting.lookup("intensity");
+    const Color3D color = parseColor(sphereSetting.lookup("color"));
+
+    requirePositive(radius, "Sphere light radius");
+    requireNonNegative(intensity, "Sphere light intensity");
+
+    double attenuationConstant = 1.0;
+    double attenuationLinear = 0.0;
+    double attenuationQuadratic = 0.0;
+
+    if (sphereSetting.exists("attenuation"))
+    {
+        const libconfig::Setting &attenuation = sphereSetting.lookup("attenuation");
+
+        attenuationConstant = attenuation.lookup("constant");
+        attenuationLinear = attenuation.lookup("linear");
+        attenuationQuadratic = attenuation.lookup("quadratic");
+    }
+
+    requirePositive(attenuationConstant, "Sphere light attenuation constant");
+    requireNonNegative(attenuationLinear, "Sphere light attenuation linear");
+    requireNonNegative(attenuationQuadratic, "Sphere light attenuation quadratic");
+
+    return _factory.create<ILight>("SphereLight", position, radius, color, intensity, attenuationConstant,
+                                   attenuationLinear, attenuationQuadratic);
 }
 
 /**

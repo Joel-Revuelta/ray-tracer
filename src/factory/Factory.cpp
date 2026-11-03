@@ -19,6 +19,7 @@ Factory::Factory(void)
             {"Translation", "raytracer_transformation_translation.so"},
             {"AmbientLight", "raytracer_light_ambient.so"},
             {"PointLight", "raytracer_light_point.so"},
+            {"SphereLight", "raytracer_light_sphere.so"},
             {"DirectionalLight", "raytracer_light_directional.so"},
             {"SFML", "raytracer_gui.so"},
             {"OpenGL", "raytracer_gui_opengl.so"},

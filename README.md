@@ -33,9 +33,11 @@ full-HD and 8K still renders.
   BVHs with cheap instancing and smooth vertex-normal shading.
 - **Depth of field** — world-space lens radius and focus distance, with live
   keyboard focus controls in both interactive backends.
+- **Area lights** — sampled sphere lights produce soft shadows in both
+  renderers, with the same attenuation controls as point lights.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 22 scenes, from material studies to glass showcases, mesh instancing, depth of field and 8K hero renders.
+- **Included scenes** — 23 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows and 8K hero renders.
 
 ## Requirements
 
@@ -256,6 +258,7 @@ architecture and CUDA build details.
 | `transforms.cfg` | Translated, rotated and non-uniformly scaled primitives. |
 | `meshes.cfg` | Instanced, smooth-shaded OBJ icospheres and a torus with shared geometry. |
 | `depth_of_field.cfg` | Spheres at several depths with a focused middle plane. |
+| `soft_shadows.cfg` | Two sphere area lights over a floor and three spheres. |
 
 ### HD hero scenes
 

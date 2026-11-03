@@ -47,6 +47,7 @@ static_assert(static_cast<int>(IMaterial::DIELECTRIC) == Cuda::MATERIAL_DIELECTR
 static_assert(static_cast<int>(LightType::AMBIENT) == Cuda::LIGHT_AMBIENT, "light enum mismatch");
 static_assert(static_cast<int>(LightType::DIRECTIONAL) == Cuda::LIGHT_DIRECTIONAL, "light enum mismatch");
 static_assert(static_cast<int>(LightType::POINT) == Cuda::LIGHT_POINT, "light enum mismatch");
+static_assert(static_cast<int>(LightType::AREA_SPHERE) == Cuda::LIGHT_AREA_SPHERE, "light enum mismatch");
 
 namespace
 {
@@ -192,6 +193,7 @@ std::vector<Cuda::Light> convertLights(const SceneSnapshot &snapshot)
         converted.color = toDevice(light.color);
         converted.position = toDevice(light.position);
         converted.direction = toDevice(light.direction);
+        converted.radius = light.radius;
         converted.intensity = light.intensity;
         converted.attenuationConstant = light.attenuationConstant;
         converted.attenuationLinear = light.attenuationLinear;

@@ -309,6 +309,27 @@ and polar disk mapping; keep that order if you change either path.
 `CameraData`/`Cuda::Camera` carry `viewRight`, `viewUp`, `lensRadius`,
 `focusDistance` and `focalDistance` to the device.
 
+### Lights and area sampling
+
+`ILight::sample(payload, scene, seed)` returns a `LightSample` containing a
+direction, attenuated radiance and a validity flag. Its default implementation
+calls `isPointInShadow()`, `getLightDirection()` and `getRadiance()`, so
+ambient, directional and point lights keep their previous behavior and consume
+no random values.
+
+`SphereLight` overrides `sample()`:
+
+- two random values select a uniform point on the sphere,
+- samples below the shading surface are rejected,
+- a shadow ray is cast from the geometric-normal offset to the sampled point,
+- radiance uses the same constant/linear/quadratic attenuation as point lights.
+
+The CPU and CUDA light loops must stay aligned: same light order and exactly
+two random values per sphere-light sample. The shadow-ray offset uses the
+geometric normal, while the N·L visibility test uses the shading normal.
+Soft-shadow noise is expected; higher sample counts are required for clean
+penumbrae.
+
 ## Adding components
 
 ### Primitive
@@ -437,6 +458,14 @@ Depth-of-field check:
   --width 320 --height 180 --frames 32 --lens-radius 0 \
   --focus-distance 12 --output /tmp/pinhole.ppm
 bash tests/deterministic_dof.sh ./raytracer . build
+```
+
+Soft-shadow check:
+
+```bash
+./raytracer --path scenes/soft_shadows.cfg --cli --renderer cpu \
+  --width 320 --height 180 --frames 32 --output /tmp/soft.ppm
+bash tests/deterministic_soft_shadow.sh ./raytracer . build
 ```
 
 See [performance.md](performance.md) for the benchmark scripts and reference

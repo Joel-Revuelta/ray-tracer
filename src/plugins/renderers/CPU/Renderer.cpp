@@ -586,41 +586,41 @@ Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payloa
 }
 
 /**
- * Computes the Phong lighting model for a given hit payload and light source.
+ * Computes the Phong contribution of one light sample.
  *
- * This method calculates the Phong lighting model for a given hit payload and light source.
- * The Phong lighting model combines ambient, diffuse, and specular lighting components to
- * simulate the interaction of light with a surface.
+ * Ambient samples only contribute their radiance. Directional and area samples
+ * combine diffuse and specular terms using the sampled direction and radiance.
  *
  * @param payload The hit payload containing information about the intersection point.
- * @param light The light source used for computing the lighting.
- * @return The computed color using the Phong lighting model.
+ * @param material The material of the hit primitive.
+ * @param sample The sampled light connection.
+ * @param ambient Whether the light is ambient.
+ * @param ray The current camera or bounce ray.
+ * @return The computed colour contribution.
  */
-Color3D Renderer::computePhongLighting(const HitPayload &payload, const IMaterial &material,
-                                       const std::shared_ptr<ILight> &light, const Ray &ray)
+Color3D Renderer::computeLightContribution(const HitPayload &payload, const IMaterial &material,
+                                           const LightSample &sample, bool ambient, const Ray &ray)
 {
-    const Color3D radiance = light->getRadiance(payload);
     const float reflectionCoefficient = material.getAmbientReflectionCoefficient() +
                                         material.getDiffuseReflectionCoefficient() +
                                         material.getSpecularReflectionCoefficient();
 
-    if (light->isAmbient())
-        return reflectionCoefficient * radiance;
+    if (ambient)
+        return reflectionCoefficient * sample.radiance;
 
     const Vec3D normal = payload.getShadingNormal();
-    const Vec3D lightDirection = light->getLightDirection(payload);
-    const float diffuseFactor = std::max(vec3DDot(normal, lightDirection), 0.0f);
+    const float diffuseFactor = std::max(vec3DDot(normal, sample.direction), 0.0f);
 
     if (diffuseFactor <= 0.0f)
         return Color3D(0.0f);
 
     const Vec3D viewDirection = vec3DNormalize(ray.getOrigin() - payload.getHitPosition());
-    const Vec3D halfDirection = vec3DNormalize(lightDirection + viewDirection);
+    const Vec3D halfDirection = vec3DNormalize(sample.direction + viewDirection);
     const float shininess = blinnShininess(material.getRoughness());
     const float specularFactor = std::pow(std::max(vec3DDot(normal, halfDirection), 0.0f), shininess);
 
-    return reflectionCoefficient * radiance * diffuseFactor +
-           material.getSpecularReflectionCoefficient() * radiance * specularFactor;
+    return reflectionCoefficient * sample.radiance * diffuseFactor +
+           material.getSpecularReflectionCoefficient() * sample.radiance * specularFactor;
 }
 
 /**
@@ -739,12 +739,14 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             // Compute lighting contributions from each light source
             for (size_t i = 0; i < lights.size(); ++i)
             {
-                // Cast shadow rays to determine shadowness (cast with an offset to avoid self-intersection)
-                if (lights[i]->isPointInShadow(payload, scene))
+                const LightSample lightSample = lights[i]->sample(payload, scene, sampler);
+
+                if (!lightSample.valid)
                     continue;
 
                 // Calculate Phong lighting model for the hit point and the current light
-                Color3D phongLighting = computePhongLighting(payload, *material, lights[i], ray);
+                Color3D phongLighting =
+                    computeLightContribution(payload, *material, lightSample, lights[i]->isAmbient(), ray);
 
                 // Reduce the Phong lighting because it's too bright
                 // phongLighting /= brightReduction;

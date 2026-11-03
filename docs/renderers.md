@@ -121,6 +121,9 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
   controls, including live lens-radius and focus-distance adjustment.
 - Camera rays support a world-space lens disk and focus plane for depth of
   field; a zero lens radius keeps the pinhole path.
+- Sphere area lights are sampled as area sources, producing soft shadows. The
+  light loop uses `ILight::sample()` for a consistent direction, radiance and
+  visibility query.
 - In GUI mode, window events are polled while workers trace a frame. A camera
   event aborts the current frame and restarts with the new pose, so heavy CPU
   frames do not freeze the window.
@@ -161,6 +164,9 @@ uses the same `SceneSnapshot` data path.
 - **Depth of field:** `CameraData` carries the lens radius, focus distance and
   camera basis. The kernel consumes lens samples in the same order as the CPU
   and skips them entirely when the lens radius is zero.
+- **Area lights:** sphere lights consume two random values per shading query,
+  sample a point on the sphere, and trace a shadow ray. The CPU and CUDA loops
+  must use the same light order and sampling order for parity.
 - **Architecture:** compiled for `89` by default (RTX 4070 Laptop / Ada). Set
   `-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 - **Runtime:** the plugin links `CUDA::cudart_static`, so it does not require a

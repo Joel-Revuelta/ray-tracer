@@ -13,12 +13,27 @@
 #include "Point3D.hpp"
 #include "Transformable.hpp"
 #include "plugins/renderers/LightData.hpp"
+#include <cstdint>
 #include <memory>
 
 namespace RayTracer
 {
 
 class Scene;
+
+/**
+ * One sampled connection from a surface point to a light.
+ *
+ * `direction` points from the surface towards the light, `radiance` already
+ * includes the light's attenuation, and `valid` is false when the sample is
+ * below the surface or occluded.
+ */
+struct LightSample
+{
+    Vec3D direction;
+    Color3D radiance;
+    bool valid = false;
+};
 
 class ILight : public ITransformable
 {
@@ -36,6 +51,24 @@ class ILight : public ITransformable
     // Unit vector from the hit point towards the light. Ambient lights return
     // a zero vector because they have no direction.
     virtual Vec3D getLightDirection(const HitPayload &payload) const = 0;
+
+    // Samples one connection to the light, including visibility. The default
+    // implementation keeps point, directional and ambient lights unchanged and
+    // consumes no random values. Area lights override it.
+    virtual LightSample sample(const HitPayload &payload, const Scene &scene, uint32_t &seed) const
+    {
+        (void)seed;
+
+        LightSample result;
+
+        if (isPointInShadow(payload, scene))
+            return result;
+
+        result.direction = getLightDirection(payload);
+        result.radiance = getRadiance(payload);
+        result.valid = true;
+        return result;
+    }
 
     virtual bool isAmbient(void) const
     {

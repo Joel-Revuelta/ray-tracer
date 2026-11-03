@@ -42,7 +42,8 @@ enum LightKind
     LIGHT_NONE = 0,
     LIGHT_AMBIENT = 1,
     LIGHT_DIRECTIONAL = 2,
-    LIGHT_POINT = 3
+    LIGHT_POINT = 3,
+    LIGHT_AREA_SPHERE = 4
 };
 
 struct Vec3
@@ -86,6 +87,7 @@ struct Light
     Vec3 color;
     Vec3 position;
     Vec3 direction;
+    float radius;
     float intensity;
     float attenuationConstant;
     float attenuationLinear;
