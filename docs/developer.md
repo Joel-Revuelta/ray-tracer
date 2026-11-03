@@ -30,6 +30,7 @@ hooks.
 - C++20 compiler (tested with GCC 15.2)
 - `libconfig++` development package
 - Optional SFML 3.0.x development package (Graphics, Window, System)
+- Optional GLFW 3.3+ and GLEW 2.x development packages for the OpenGL GUI
 - Optional CUDA Toolkit 13.x (tested with 13.4)
 - Optional Python 3 + Pillow for the scene render scripts
 
@@ -48,6 +49,9 @@ Useful configurations:
 ```bash
 # CPU-only build
 cmake -S . -B build -DRAYTRACER_ENABLE_CUDA=OFF
+
+# Without the GLFW/OpenGL GUI plugin
+cmake -S . -B build -DRAYTRACER_ENABLE_OPENGL_GUI=OFF
 
 # Explicit CUDA toolkit
 cmake -S . -B build -DCUDAToolkit_ROOT=/usr/local/cuda-13.4
@@ -75,7 +79,7 @@ the repository root so that `./plugins/` resolves.
 | `src/plugins/lights/` | Ambient, directional and point lights. |
 | `src/plugins/renderers/CPU/` | CPU renderer plugin. |
 | `src/plugins/renderers/CUDA/` | CUDA host plugin and device kernels. |
-| `src/plugins/GUI/` | SFML 3 GUI plugin. |
+| `src/plugins/GUI/` | SFML 3 and GLFW/OpenGL GUI plugins. |
 | `src/render/` | Renderer registry, PPM writer, camera controller, scene snapshot. |
 | `include/plugins/renderers/` | Renderer interface, snapshot data, registry, PPM and camera controller headers. |
 | `scenes/` | Scene files, render scripts and scene documentation. |
@@ -192,10 +196,19 @@ the flat scene data model.
 
 ### GUI
 
-`IGUI` is implemented by the SFML plugin. Renderers receive an optional
+`IGUI` is implemented by the SFML plugin (`--gui sfml` / `--sfml`) and the
+GLFW/OpenGL plugin (`--gui opengl`). Renderers receive an optional
 `shared_ptr<IGUI>` in `RenderContext`. Renderers call
 `CameraController::captureInitial()` once before interactive rendering so `R`
-can restore the starting pose. The shared `CameraController` implements:
+can restore the starting pose.
+
+The OpenGL backend uses GLFW for the window and input, GLEW for modern GL entry
+points, and an OpenGL 3.3 core context. Frames are uploaded as an RGBA texture
+and rendered through a fullscreen triangle; the viewport preserves the image
+aspect ratio with letterboxing. GLFW is forced to the X11 platform so GLEW can
+use GLX; a working X11/GLX display is required.
+
+The shared `CameraController` implements:
 
 - `W`/`S`, `A`/`D`: camera-relative forward/back and strafe,
 - `Q`/`E`: world-space up/down,
@@ -250,6 +263,16 @@ Use the existing sphere/plane/cylinder/cone implementations as references.
    mapping in `src/factory/Factory.cpp`.
 5. Implement availability checks and error reporting.
 6. Update the root README, [renderers.md](renderers.md) and the CLI docs.
+
+### GUI backend
+
+1. Add a class under `src/plugins/GUI/` implementing `IGUI`.
+2. Export `extern "C" std::shared_ptr<IGUI> create(int width, int height)`.
+3. Add a CMake target linking `raytracer_core` and the backend libraries.
+4. Add the backend key to `src/factory/Factory.cpp`.
+5. Add the backend name to `App::normalizeGuiName()` and the CLI docs.
+6. Upload rendered RGBA frames through `setImage()`; keep `getEvent()` mapping
+   compatible with `CameraController`.
 
 ## Coding conventions
 

@@ -9,7 +9,8 @@ configuration reference.
 Run one interactively with:
 
 ```bash
-./raytracer --path scenes/<name>.cfg --sfml
+./raytracer --path scenes/<name>.cfg --gui sfml
+./raytracer --path scenes/<name>.cfg --gui opengl
 ```
 
 Or render it headlessly without a display server:
@@ -22,12 +23,12 @@ Useful options:
 
 - `--cli` — render without opening a window. The PPM image is written to
   `--output`, or to standard output when `--output` is omitted.
-- `--sfml` — open the interactive SFML window. A PPM is only written when
-  `--output` is given.
+- `--gui sfml|opengl` — open an interactive window. `--sfml` is an alias for
+  `--gui sfml`. A PPM is only written when `--output` is given.
 - `--frames N` — samples per pixel (higher = cleaner, slower; default 10).
   Use 30+ for quick previews and 100+ for final stills.
 - `--output out.ppm` — write the rendered image as a binary P6 PPM.
-- `--width/--height` — render resolution, SFML window size and PPM size
+- `--width/--height` — render resolution, GUI window size and PPM size
   (default 960x540).
 - `--renderer cpu|cuda` — choose the renderer plugin (default `cpu`).
 - `--list-renderers` — list the available renderer plugins and their status.
@@ -36,7 +37,8 @@ Useful options:
 While the window is open: `WASD` moves relative to the current view, `Q/E` moves
 up/down, arrow keys or `IJKL` look around, `+/-` zooms, `R` restores the starting
 pose, `X` locks the look-at point, `C` locks the camera position, and `Esc` quits.
-Resizing the window stretches the rendered image to the new size.
+Resizing the SFML window stretches the rendered image; the OpenGL backend
+letterboxes it to preserve aspect ratio.
 
 | Scene | What it shows |
 | --- | --- |

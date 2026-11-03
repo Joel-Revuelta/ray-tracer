@@ -36,6 +36,7 @@ class App
     std::string _filepath;
     std::string _output;
     std::string _rendererName;
+    std::string _guiName;
     Interface _interface;
     int _width;
     int _height;

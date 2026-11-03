@@ -20,6 +20,7 @@ Factory::Factory(void)
             {"PointLight", "raytracer_light_point.so"},
             {"DirectionalLight", "raytracer_light_directional.so"},
             {"SFML", "raytracer_gui.so"},
+            {"OpenGL", "raytracer_gui_opengl.so"},
             {"Material", "raytracer_material_custom.so"},
             {"EmissiveMaterial", "raytracer_material_emissive.so"},
             {"FlatColorMaterial", "raytracer_material_flat.so"},

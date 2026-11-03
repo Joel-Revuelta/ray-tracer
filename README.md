@@ -1,7 +1,8 @@
 # Ray Tracer
 
-A C++20 ray tracer with a plugin-based architecture, an interactive SFML
-previewer, a multithreaded CPU renderer, and an optional CUDA GPU renderer.
+A C++20 ray tracer with a plugin-based architecture, interactive SFML and
+GLFW/OpenGL previewers, a multithreaded CPU renderer, and an optional CUDA GPU
+renderer.
 
 The project includes a strict libconfig scene parser, a reusable shared core,
 runtime-loaded primitives/materials/lights/GUI/renderers, and scripts for
@@ -19,8 +20,8 @@ full-HD and 8K still renders.
   loaded from `plugins/` at runtime.
 - **Strict scene parser** — validates dimensions, normals, lights, camera
   settings and material indices before rendering.
-- **Interactive SFML 3 window** — camera-relative movement, look controls,
-  FOV zoom, reset, camera locks and resize stretching.
+- **Interactive GUI backends** — SFML 3 or GLFW/OpenGL 3.3, with
+  camera-relative movement, look controls, FOV zoom, reset and camera locks.
 - **Headless CLI** — binary PPM output, stdout support and configurable
   resolution/samples.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
@@ -35,19 +36,23 @@ full-HD and 8K still renders.
 | C++20 compiler | Tested with GCC 15.2. |
 | `libconfig++` | Found through `pkg-config`. |
 | SFML 3.0.x | Optional GUI plugin; Graphics, Window and System. Tested with SFML 3.0.2. |
+| GLFW 3.3+ | Optional OpenGL GUI plugin. Tested with GLFW 3.4. |
+| GLEW 2.x | Optional OpenGL GUI loader. Tested with GLEW 2.2. |
 | Threads / `dl` | Standard system libraries. |
 | CUDA Toolkit | Optional. Tested with CUDA 13.4. |
 | NVIDIA driver | Required for the CUDA renderer. |
 | Python 3 + Pillow | Used by the render scripts for PNG and preview conversion. |
 
 For Debian/Ubuntu, the package names are typically `build-essential`, `cmake`,
-`pkg-config`, `libconfig++-dev` and `libsfml-dev`; make sure `libsfml-dev`
-provides SFML 3.0.x, or build SFML 3 from source. `python3-pil` provides Pillow.
+`pkg-config`, `libconfig++-dev`, `libsfml-dev`, `libglfw3-dev` and `libglew-dev`;
+make sure `libsfml-dev` provides SFML 3.0.x, or build SFML 3 from source.
+`python3-pil` provides Pillow.
 
-Install the native dependencies with your package manager. SFML must be 3.0.x;
-older SFML 2.x releases are not compatible. The CUDA renderer builds for
-compute capability `89` by default (Ada / RTX 4070 Laptop). Set
-`-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
+Install the native dependencies with your package manager. SFML and the
+OpenGL GUI are optional; each plugin is built only when its dependencies are
+available. SFML must be 3.0.x; older SFML 2.x releases are not compatible.
+The CUDA renderer builds for compute capability `89` by default (Ada / RTX
+4070 Laptop). Set `-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 
 ## Build
 
@@ -82,6 +87,9 @@ cmake -S . -B build -DRAYTRACER_ENABLE_CUDA=OFF
 # Build a headless client without the SFML GUI plugin
 cmake -S . -B build -DRAYTRACER_ENABLE_GUI=OFF
 
+# Build without the GLFW/OpenGL GUI plugin
+cmake -S . -B build -DRAYTRACER_ENABLE_OPENGL_GUI=OFF
+
 # Point CMake at a specific toolkit
 cmake -S . -B build -DCUDAToolkit_ROOT=/usr/local/cuda-13.4
 
@@ -112,8 +120,16 @@ Render the same scene with CUDA:
 Open the interactive SFML window:
 
 ```bash
-./raytracer --path scenes/showcase.cfg --sfml --renderer cuda
+./raytracer --path scenes/showcase.cfg --gui sfml --renderer cuda
 ```
+
+Or use the raw GLFW/OpenGL window:
+
+```bash
+./raytracer --path scenes/showcase.cfg --gui opengl --renderer cuda
+```
+
+`--sfml` remains an alias for `--gui sfml`.
 
 GUI controls: `WASD` moves relative to the current view, `Q/E` moves up/down,
 arrow keys or `IJKL` look around, `+`/`-` zooms, `R` restores the starting pose,
@@ -136,16 +152,17 @@ Available renderers:
 ## CLI
 
 ```text
-Usage: ./raytracer --path <scene.cfg> --cli|--sfml [--renderer cpu|cuda]
-       [--width W] [--height H] [--frames N] [--output out.ppm]
-       [--list-renderers]
+Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
+       [--renderer cpu|cuda] [--width W] [--height H] [--frames N]
+       [--output out.ppm] [--list-renderers]
 ```
 
 | Option | Description | Default |
 | --- | --- | --- |
 | `--path <file>` | Scene configuration file. | required |
 | `--cli` | Render headlessly. | |
-| `--sfml` | Open the interactive SFML window. | |
+| `--gui <backend>` | Interactive backend: `sfml` or `opengl`. | `sfml` |
+| `--sfml` | Alias for `--gui sfml`. | |
 | `--renderer <name>` | Renderer plugin: `cpu` or `cuda`. Case-insensitive. | `cpu` |
 | `--list-renderers` | List renderers and exit. | |
 | `--width <N>` | Render width and window width. Must be positive. | `960` |
@@ -161,7 +178,7 @@ Important details:
 - PPM output is binary `P6`, so 8K images are roughly 95 MB instead of several
   hundred MB of ASCII.
 - In CLI mode, omitting `--output` writes the PPM to standard output.
-- In SFML mode, no file is written unless `--output` is provided.
+- In GUI mode, no file is written unless `--output` is provided.
 - Errors exit with status `1` and do not write an image.
 - `--list-renderers` and `--help` exit with status `0`.
 
@@ -176,8 +193,8 @@ The optional `cuda` renderer flattens the scene through `SceneSnapshot`, uploads
 it to the GPU, and implements the same intersections, materials, lights, shadow
 rays and bounce rules. It uses a seeded PCG sampler and static `cudart`.
 
-CUDA rendering is progressive in the SFML window: samples are rendered in small
-batches while window events are pumped continuously, so camera movement is
+CUDA rendering is progressive in both GUI backends: samples are rendered in
+small batches while window events are pumped continuously, so camera movement is
 detected during a heavy kernel instead of freezing the window.
 
 Representative performance on an RTX 4070 Laptop:
@@ -325,9 +342,10 @@ scripts convert to PNG if needed.
 8K is intended for `--cli`. Use the 4K or 1080p previews for inspection. The
 Infinity Mirror scene is the most expensive because of its nested reflections.
 
-**SFML window issues**
-The GUI requires SFML 3.0.x and a working display. Use `--cli` for headless
-rendering.
+**GUI window issues**
+SFML needs SFML 3.0.x; the OpenGL backend needs GLFW 3.3+, GLEW and an
+X11/GLX-capable display. Use `--gui sfml` or `--gui opengl` to choose, and
+`--cli` for headless rendering. `--list-renderers` does not test GUI plugins.
 
 ## Development
 

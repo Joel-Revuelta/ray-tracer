@@ -8,6 +8,8 @@
 #include "App.hpp"
 #include "plugins/renderers/IRenderer.hpp"
 #include "plugins/renderers/RendererRegistry.hpp"
+#include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <iostream>
@@ -20,8 +22,20 @@ using namespace RayTracer;
 namespace
 {
 const char *const USAGE =
-    "Usage: ./raytracer --path <scene.cfg> --cli|--sfml [--renderer cpu|cuda] [--width W] [--height H] "
-    "[--frames N] [--output out.ppm] [--list-renderers]";
+    "Usage: ./raytracer --path <scene.cfg> --cli|--sfml|--gui sfml|opengl "
+    "[--renderer cpu|cuda] [--width W] [--height H] [--frames N] [--output out.ppm] [--list-renderers]";
+
+std::string normalizeGuiName(std::string name)
+{
+    std::transform(name.begin(), name.end(), name.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+
+    if (name == "sfml")
+        return "SFML";
+    if (name == "opengl")
+        return "OpenGL";
+    return {};
+}
 
 void printUsage(std::ostream &stream)
 {
@@ -92,7 +106,7 @@ void listRenderers(void)
  */
 App::App(int ac, char **av)
     : _parser(std::make_unique<Parser>()), _filepath(""), _output(""), _rendererName("cpu"),
-      _interface(Interface::NONE), _width(960), _height(540), _frames(10)
+      _guiName("SFML"), _interface(Interface::NONE), _width(960), _height(540), _frames(10)
 {
     int opt;
 
@@ -106,6 +120,7 @@ App::App(int ac, char **av)
                                       {"help", 0, NULL, 8},
                                       {"renderer", required_argument, NULL, 9},
                                       {"list-renderers", 0, NULL, 10},
+                                      {"gui", required_argument, NULL, 11},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -123,6 +138,7 @@ App::App(int ac, char **av)
             break;
         case 3:
             _interface = Interface::GUI;
+            _guiName = "SFML";
             break;
         case 4:
             _height = parsePositiveInt(optarg, "height");
@@ -146,6 +162,10 @@ App::App(int ac, char **av)
         case 10:
             listRenderers();
             std::exit(EXIT_SUCCESS);
+        case 11:
+            _interface = Interface::GUI;
+            _guiName = optarg;
+            break;
         case '?':
         default:
             std::cerr << "Unknown or incomplete option." << std::endl;
@@ -164,7 +184,7 @@ App::~App(void)
  * Start by parsing the scene and the camera.
  * Then render the scene with the selected renderer plugin.
  * If the interface is set to CLI, output the result in a PPM file.
- * If the interface is set to GUI, output the result using SFML.
+ * If the interface is set to GUI, output the result using the selected backend.
  * If the interface or the path is not set, exit the program.
  */
 void App::run(void)
@@ -239,7 +259,26 @@ void App::run(void)
         context.options.outputPath = _output;
 
         if (_interface == Interface::GUI)
-            context.gui = factory.create<IGUI>("SFML", _width, _height);
+        {
+            const std::string guiName = normalizeGuiName(_guiName);
+
+            if (guiName.empty())
+            {
+                std::cerr << "Unknown GUI backend: " << _guiName << std::endl;
+                std::cerr << "Available GUI backends: sfml, opengl" << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+
+            try
+            {
+                context.gui = factory.create<IGUI>(guiName, _width, _height);
+            }
+            catch (const std::exception &error)
+            {
+                std::cerr << "GUI '" << _guiName << "' is unavailable: " << error.what() << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+        }
 
         renderer->run(context);
     }

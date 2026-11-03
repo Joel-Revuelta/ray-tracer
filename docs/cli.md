@@ -1,16 +1,17 @@
 # CLI reference
 
 The `raytracer` executable parses a libconfig scene, selects a renderer plugin
-and either renders headlessly or opens the SFML window.
+and either renders headlessly or opens a GUI window.
 
 ## Synopsis
 
 ```text
-./raytracer --path <scene.cfg> --cli|--sfml [options]
+./raytracer --path <scene.cfg> --cli|--gui sfml|opengl [options]
 ```
 
-At least one of `--cli` or `--sfml` is required. `--help` and
-`--list-renderers` work without a scene.
+At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
+`--list-renderers` work without a scene. `--sfml` is an alias for
+`--gui sfml`.
 
 ## Options
 
@@ -18,7 +19,8 @@ At least one of `--cli` or `--sfml` is required. `--help` and
 | --- | --- | --- | --- |
 | `--path` | scene file | Scene configuration to load. | required |
 | `--cli` | — | Headless rendering. | |
-| `--sfml` | — | Interactive SFML window. | |
+| `--gui` | `sfml` or `opengl` | Select the interactive GUI backend. | `sfml` |
+| `--sfml` | — | Alias for `--gui sfml`. | |
 | `--renderer` | `cpu` or `cuda` | Renderer plugin name. Case-insensitive. | `cpu` |
 | `--list-renderers` | — | Print renderer availability and exit `0`. | |
 | `--width` | positive integer | Render width, window width and PPM width. | `960` |
@@ -38,7 +40,7 @@ roughly linearly.
 - PPM values are gamma-corrected from the renderer's linear radiance.
 - CLI mode with `--output` writes a binary `P6` PPM file.
 - CLI mode without `--output` writes the PPM to standard output.
-- SFML mode writes a PPM only when `--output` is provided.
+- GUI mode writes a PPM only when `--output` is provided.
 - Parent directories are not created automatically.
 - On errors, the program exits with status `1` and does not write an image.
 
@@ -52,6 +54,18 @@ roughly linearly.
 
 `--list-renderers` reports missing plugins and unavailable devices. If CUDA is
 not built or no CUDA device is available, use `cpu` or rebuild with CUDA enabled.
+
+## GUI selection
+
+```bash
+./raytracer --path scenes/showcase.cfg --gui sfml --renderer cuda
+./raytracer --path scenes/showcase.cfg --gui opengl --renderer cuda
+./raytracer --path scenes/showcase.cfg --sfml --renderer cuda
+```
+
+The `opengl` backend uses GLFW with an OpenGL 3.3 core context and preserves
+the image aspect ratio. The `sfml` backend remains the default. If a selected
+GUI plugin was not built, the program reports the missing plugin and exits.
 
 ## Exit codes
 
@@ -83,11 +97,12 @@ Movement is camera-relative: `W`/`S` follow the horizontal view direction and
 movement. `X` keeps the look-at point fixed while the camera moves; `C` keeps the
 camera position fixed while the look target moves.
 
-Resizing the window stretches the rendered image to the new window size. The
-CUDA renderer updates progressively and processes input continuously while a
-sample is rendering.
+The SFML backend stretches the rendered image to the new window size. The
+OpenGL backend preserves the image aspect ratio with black letterbox bars.
+The CUDA renderer updates progressively and processes input continuously while
+a sample is rendering.
 
-For 8K or very large renders, use `--cli`; opening a 7680×4320 SFML window is not
+For 8K or very large renders, use `--cli`; opening a 7680×4320 GUI window is not
 practical on most displays.
 
 ## Examples

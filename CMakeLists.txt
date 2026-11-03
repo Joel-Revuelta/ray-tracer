@@ -45,8 +45,14 @@ include_directories(${LIBCONFIG++_INCLUDE_DIRS})
 find_package(Threads REQUIRED)
 
 option(RAYTRACER_ENABLE_GUI "Build the SFML GUI plugin" ON)
+option(RAYTRACER_ENABLE_OPENGL_GUI "Build the GLFW/OpenGL GUI plugin" ON)
 if (RAYTRACER_ENABLE_GUI)
     find_package(SFML 3.0 COMPONENTS Graphics Window System REQUIRED)
+endif()
+if (RAYTRACER_ENABLE_OPENGL_GUI)
+    find_package(OpenGL QUIET)
+    find_package(glfw3 3.3 QUIET)
+    find_package(GLEW QUIET)
 endif()
 
 # Shared core runtime used by the executable and every plugin.
@@ -123,13 +129,26 @@ endif()
 
 # GUI plugin (optional)
 if (RAYTRACER_ENABLE_GUI)
-    file(GLOB_RECURSE SOURCES_GUI CONFIGURE_DEPENDS "src/plugins/GUI/*.cpp")
+    file(GLOB_RECURSE SOURCES_GUI CONFIGURE_DEPENDS "src/plugins/GUI/SFML.cpp")
     add_library(raytracer_gui SHARED ${SOURCES_GUI})
     target_link_libraries(raytracer_gui PRIVATE raytracer_core SFML::Graphics SFML::Window SFML::System)
     set_target_properties(raytracer_gui PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
         PREFIX ""
     )
+endif()
+
+# OpenGL GUI plugin (GLFW + GLEW)
+if (RAYTRACER_ENABLE_OPENGL_GUI AND OpenGL_FOUND AND glfw3_FOUND AND GLEW_FOUND)
+    add_library(raytracer_gui_opengl SHARED src/plugins/GUI/OpenGL.cpp)
+    target_link_libraries(raytracer_gui_opengl PRIVATE raytracer_core glfw GLEW::GLEW OpenGL::GL)
+    set_target_properties(raytracer_gui_opengl PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
+        PREFIX ""
+    )
+    message(STATUS "OpenGL GUI enabled (GLFW ${glfw3_VERSION}, GLEW ${GLEW_VERSION})")
+elseif (RAYTRACER_ENABLE_OPENGL_GUI)
+    message(STATUS "OpenGL GUI disabled: install libglfw3-dev and libglew-dev to enable it")
 endif()
 
 # Lights
@@ -216,8 +235,15 @@ target_link_libraries(raytracer_transformation_rotation PRIVATE raytracer_core)
 # Custom targets
 add_custom_target(core DEPENDS raytracer)
 
+set(RAYTRACER_GUI_TARGETS)
 if (TARGET raytracer_gui)
-    add_custom_target(gui DEPENDS raytracer_gui)
+    list(APPEND RAYTRACER_GUI_TARGETS raytracer_gui)
+endif()
+if (TARGET raytracer_gui_opengl)
+    list(APPEND RAYTRACER_GUI_TARGETS raytracer_gui_opengl)
+endif()
+if (RAYTRACER_GUI_TARGETS)
+    add_custom_target(gui DEPENDS ${RAYTRACER_GUI_TARGETS})
 endif()
 
 add_custom_target(renderers DEPENDS raytracer_renderer_cpu)
@@ -317,6 +343,9 @@ set(RAYTRACER_PLUGIN_TARGETS
 )
 if (TARGET raytracer_gui)
     list(APPEND RAYTRACER_PLUGIN_TARGETS raytracer_gui)
+endif()
+if (TARGET raytracer_gui_opengl)
+    list(APPEND RAYTRACER_PLUGIN_TARGETS raytracer_gui_opengl)
 endif()
 if (TARGET raytracer_renderer_cuda)
     list(APPEND RAYTRACER_PLUGIN_TARGETS raytracer_renderer_cuda)
