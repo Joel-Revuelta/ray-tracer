@@ -141,12 +141,16 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
     _camera.reset();
     _materialCount = 0;
     _mtlMaterialIndices.clear();
+    _prefabScenes.clear();
+    _parsingPrefab = false;
 
     try
     {
         initConfig(filename);
         _camera = parseCamera(_config.lookup("camera"));
         parseMaterials(sceneBuilder, _config.lookup("materials"));
+        if (_config.exists("prefabs"))
+            parsePrefabs(_config.lookup("prefabs"));
         parsePrimitives(sceneBuilder, _config.lookup("primitives"));
         parseLights(sceneBuilder, _config.lookup("lights"));
         if (_config.exists("background"))
@@ -478,8 +482,42 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
         sceneBuilder.addPrimitive(parseMesh(sceneBuilder, primitiveSetting.lookup("meshes")[i]));
     }
 
-    if (primitiveSetting.exists("scene")) {
-        sceneBuilder.addScene(parseScene(primitiveSetting.lookup("scene")));
+    if (primitiveSetting.exists("instances"))
+    {
+        if (_parsingPrefab)
+            throw std::runtime_error("Prefabs cannot contain prefab instances");
+
+        const libconfig::Setting &instances = primitiveSetting.lookup("instances");
+        const int count = instances.isList() ? instances.getLength() : 1;
+
+        for (int i = 0; i < count; ++i)
+        {
+            const libconfig::Setting &instance = instances.isList() ? instances[i] : instances;
+            const std::string prefabName = instance.lookup("prefab");
+            const auto prefab = _prefabScenes.find(prefabName);
+
+            if (prefab == _prefabScenes.end())
+                throw std::runtime_error("Unknown prefab: " + prefabName);
+
+            TransformData transform;
+            if (instance.exists("transform"))
+                transform = parseTransform(instance.lookup("transform"));
+
+            sceneBuilder.addScene(prefab->second, transform);
+            _materialCount = static_cast<uint>(sceneBuilder.getMaterialCount());
+        }
+    }
+
+    if (primitiveSetting.exists("scene"))
+    {
+        const libconfig::Setting &nestedScene = primitiveSetting.lookup("scene");
+        TransformData transform;
+
+        if (nestedScene.exists("transform"))
+            transform = parseTransform(nestedScene.lookup("transform"));
+
+        sceneBuilder.addScene(parseScene(nestedScene), transform);
+        _materialCount = static_cast<uint>(sceneBuilder.getMaterialCount());
     }
 }
 
@@ -514,12 +552,41 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
         parseLights(sceneBuilder, sceneSetting.lookup("lights"));
 
     if (sceneSetting.exists("scene"))
-        sceneBuilder.addScene(parseScene(sceneSetting.lookup("scene")));
+    {
+        const libconfig::Setting &nestedScene = sceneSetting.lookup("scene");
+        TransformData transform;
+
+        if (nestedScene.exists("transform"))
+            transform = parseTransform(nestedScene.lookup("transform"));
+
+        sceneBuilder.addScene(parseScene(nestedScene), transform);
+        _materialCount = static_cast<uint>(sceneBuilder.getMaterialCount());
+    }
 
     std::shared_ptr<Scene> scene = sceneBuilder.build();
 
     _mtlMaterialIndices = parentMtlIndices;
     return scene;
+}
+
+void Parser::parsePrefabs(const libconfig::Setting &prefabsSetting)
+{
+    const bool previous = _parsingPrefab;
+
+    _parsingPrefab = true;
+
+    for (int i = 0; i < prefabsSetting.getLength(); ++i)
+    {
+        const libconfig::Setting &prefab = prefabsSetting[i];
+        const std::string name = prefab.getName();
+
+        if (_prefabScenes.find(name) != _prefabScenes.end())
+            throw std::runtime_error("Duplicate prefab: " + name);
+
+        _prefabScenes[name] = parseScene(prefab);
+    }
+
+    _parsingPrefab = previous;
 }
 
 /**

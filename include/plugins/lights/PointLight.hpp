@@ -25,6 +25,7 @@ class PointLight : public ILight
     ~PointLight(void);
 
     void doTransformation(const ITransformation &t) override;
+    void applyTransform(const TransformData &transform) override;
     std::shared_ptr<ILight> clone(void) const override;
     Color3D calculateLighting(const HitPayload &payload) const override;
     bool isPointInShadow(const HitPayload &payload, const Scene &scene) const override;

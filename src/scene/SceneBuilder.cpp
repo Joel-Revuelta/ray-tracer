@@ -6,7 +6,9 @@
 */
 
 #include "SceneBuilder.hpp"
+#include "InstancePrimitive.hpp"
 #include "Scene.hpp"
+#include "Transform.hpp"
 #include <memory>
 #include <stdexcept>
 
@@ -74,7 +76,7 @@ void SceneBuilder::addPrimitive(std::shared_ptr<IPrimitive> primitive)
  *
  * @param sceneToAdd The scene to add.
  */
-void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
+void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformData &transform)
 {
     if (!sceneToAdd)
         return;
@@ -107,6 +109,10 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
 
         copy->setMaterialIndex(copy->getMaterialIndex() + materialOffset);
         copy->shiftMaterialIndices(materialOffset);
+
+        if (!isIdentityTransform(transform))
+            copy = std::make_shared<InstancePrimitive>(copy, transform);
+
         _scene->addPrimitive(copy);
     }
     for (const auto &light : sceneToAdd->getLights())
@@ -116,8 +122,14 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
         if (!copy)
             copy = light;
 
+        copy->applyTransform(transform);
         _scene->addLight(copy);
     }
+}
+
+std::size_t SceneBuilder::getMaterialCount(void) const
+{
+    return _scene ? _scene->getMaterials().size() : 0;
 }
 
 /**

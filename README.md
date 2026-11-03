@@ -45,7 +45,7 @@ full-HD and 8K still renders.
   fallback.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 27 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ/MTL materials, environment lighting and 8K hero renders.
+- **Included scenes** — 29 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ/MTL materials, environment lighting, group transforms, prefabs and 8K hero renders.
 
 ## Requirements
 
@@ -271,6 +271,8 @@ architecture and CUDA build details.
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback. |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL. |
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face. |
+| `group_transform.cfg` | A nested scene of spheres and a point light transformed as a group. |
+| `prefabs.cfg` | One lamp prefab instantiated three times with different transforms. |
 
 ### HD hero scenes
 

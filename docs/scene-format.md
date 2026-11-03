@@ -444,6 +444,11 @@ primitives:
     spheres = ( /* parent spheres */ );
 
     scene = {
+        transform = {
+            translate = { x = 0.0; y = 0.8; z = 0.0; };
+            rotate = { x = 0.0; y = 30.0; z = 0.0; };
+            scale = 1.15;
+        };
         materials = { /* nested materials */ };
         primitives = { /* nested primitives */ };
         lights = { /* nested lights */ };
@@ -456,10 +461,75 @@ When merged:
 - nested materials are appended to the parent material list,
 - nested primitive material indices are shifted to point at the appended
   materials,
-- nested lights are added to the parent lights.
+- nested lights are added to the parent lights,
+- an optional `transform` moves primitives and lights as one group.
 
 A nested scene should define its own materials. Its material indices are local
 to that nested scene before merging.
+
+Group transforms use the same translation, rotation and scale rules as
+primitive transforms. Primitives are wrapped in an instance transform; lights
+are transformed in place:
+
+- point lights have their position transformed,
+- directional lights have their direction rotated and normalised,
+- sphere area lights have their centre transformed and radius scaled by the
+  largest basis length (conservative under non-uniform scale),
+- ambient lights are unaffected.
+
+`scenes/group_transform.cfg` moves three spheres and a point light together.
+
+### Prefabs
+
+Top-level `prefabs` define reusable scene fragments. Each prefab may contain
+`materials`, `primitives` and `lights`, but no camera:
+
+```libconfig
+prefabs:
+{
+    lamp = {
+        materials = { /* ... */ };
+        primitives = { /* ... */ };
+        lights = { /* ... */ };
+    };
+};
+```
+
+Instantiate prefabs through `primitives.instances`, with an optional
+`transform`:
+
+```libconfig
+primitives:
+{
+    instances = (
+        {
+            prefab = "lamp";
+            transform = { translate = { x = -2.8; y = 0.0; z = 0.4; }; };
+        },
+        {
+            prefab = "lamp";
+            transform = {
+                translate = { x = 2.8; y = 0.0; z = 0.0; };
+                rotate = { x = 0.0; y = 25.0; z = 0.0; };
+                scale = 1.1;
+            };
+        }
+    );
+};
+```
+
+Each instance copies the prefab's materials, primitives and lights, then
+applies the instance transform. Material indices are adjusted independently
+per instance, so repeated instantiations do not share mutable state.
+
+- Prefabs must be defined at the top level.
+- Prefabs may contain nested scenes, but **not** prefab instances. Referencing
+  a prefab from inside another prefab is rejected to rule out recursion.
+- Unknown prefab names and duplicate prefab definitions are parser errors.
+- Prefabs are parsed before primitives, so order inside the file is not
+  significant for top-level definitions.
+
+`scenes/prefabs.cfg` instantiates one lamp prefab three times.
 
 ## Lights
 

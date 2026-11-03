@@ -47,6 +47,7 @@ class Parser
     std::shared_ptr<ILight> parseAmbientLight(const libconfig::Setting &ambientSetting);
 
     void parsePrimitives(SceneBuilder &scene, libconfig::Setting &primitiveSetting);
+    void parsePrefabs(const libconfig::Setting &prefabsSetting);
     std::shared_ptr<Scene> parseScene(const libconfig::Setting &sceneSetting);
     std::shared_ptr<IPrimitive> parseSphere(libconfig::Setting &sphereSetting);
     std::shared_ptr<IPrimitive> parsePlane(libconfig::Setting &planeSetting);
@@ -78,6 +79,8 @@ class Parser
     std::unordered_map<std::string, std::shared_ptr<const Texture>> _textureCache;
     std::unordered_map<std::string, std::vector<MtlMaterial>> _mtlCache;
     std::unordered_map<std::string, uint> _mtlMaterialIndices;
+    std::unordered_map<std::string, std::shared_ptr<Scene>> _prefabScenes;
+    bool _parsingPrefab = false;
     uint _materialCount = 0;
     int _sceneNestingDepth = 0;
 };

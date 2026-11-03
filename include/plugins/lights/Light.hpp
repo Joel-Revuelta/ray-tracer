@@ -11,6 +11,7 @@
 #include "Color.hpp"
 #include "HitPayload.hpp"
 #include "Point3D.hpp"
+#include "TransformData.hpp"
 #include "Transformable.hpp"
 #include "plugins/renderers/LightData.hpp"
 #include <cstdint>
@@ -41,6 +42,14 @@ class ILight : public ITransformable
     virtual ~ILight(void) = default;
 
     virtual void doTransformation(const ITransformation &t) = 0;
+
+    // Applies a data-driven transform when a scene is composed as a group or
+    // prefab instance. Lights that have no position or direction ignore it.
+    virtual void applyTransform(const TransformData &transform)
+    {
+        (void)transform;
+    }
+
     virtual Color3D calculateLighting(const HitPayload &payload) const = 0;
     virtual bool isPointInShadow(const HitPayload &payload, const Scene &scene) const = 0;
 

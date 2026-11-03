@@ -276,7 +276,26 @@ resolves it through the primitive's uploaded range. `traceSample` then selects
 the override or the primitive fallback.
 
 `SceneBuilder::addScene` shifts both primitive material indices and mesh group
-maps when nested scenes are merged, so nested group indices remain valid.
+maps when nested scenes are merged, so nested group indices remain valid. It
+also accepts an optional `TransformData`:
+
+- primitives are cloned, material-adjusted, then wrapped in
+  `InstancePrimitive` when the transform is non-identity;
+- lights are cloned and receive `ILight::applyTransform`;
+- `getMaterialCount()` exposes the scene's material total so the parser keeps
+  `_materialCount` in sync after composition.
+
+`ILight::applyTransform` defaults to a no-op. Point lights transform their
+position, directional lights rotate and normalise their direction, and sphere
+area lights transform their centre and scale the radius by
+`transformScaleFactor()` (the largest basis-column length). Ambient lights
+ignore transforms.
+
+Prefabs are parsed into a name → `Scene` map before top-level primitives.
+`primitives.instances` looks up the prefab, parses an optional transform, and
+calls `addScene`. Prefab parsing sets a parser flag so any `instances` block
+inside a prefab raises an error, which keeps recursion impossible. Unknown
+prefab names are rejected.
 
 ### MTL import
 

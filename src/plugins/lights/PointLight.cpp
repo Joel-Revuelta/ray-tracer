@@ -8,6 +8,7 @@
 #include "PointLight.hpp"
 #include "HitPayload.hpp"
 #include "Ray.hpp"
+#include "Transform.hpp"
 #include "Vec3D.hpp"
 #include <algorithm>
 #include <iostream>
@@ -35,6 +36,11 @@ PointLight::~PointLight(void)
 void PointLight::doTransformation(const ITransformation &t)
 {
     t.doTransformation(*this);
+}
+
+void PointLight::applyTransform(const TransformData &transform)
+{
+    _position = transformPoint(transform, _position);
 }
 
 std::shared_ptr<ILight> PointLight::clone(void) const

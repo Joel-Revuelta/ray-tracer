@@ -535,6 +535,35 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_mtl.ppm
 )
 add_test(
+    NAME group_transform_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/group_transform.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/group_transform_smoke.ppm
+)
+add_test(
+    NAME prefab_instances_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/prefabs.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/prefab_instances_smoke.ppm
+)
+add_test(
+    NAME deterministic_prefabs_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_prefabs.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_unknown_prefab
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_unknown_prefab.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_unknown_prefab.ppm
+)
+add_test(
+    NAME parser_rejects_prefab_instances_in_prefabs
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_prefab_recursion.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_prefab_recursion.ppm
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -554,13 +583,15 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     obj_materials_smoke deterministic_obj_materials_render
     environment_smoke deterministic_environment_render
     mtl_materials_smoke deterministic_mtl_materials_render
+    group_transform_smoke prefab_instances_smoke deterministic_prefabs_render
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_transform parser_rejects_invalid_obj
     parser_rejects_invalid_lens parser_rejects_invalid_focus
     parser_rejects_invalid_area_light parser_rejects_invalid_texture
     parser_rejects_invalid_material_group parser_rejects_invalid_environment
-    parser_rejects_invalid_mtl PROPERTIES
+    parser_rejects_invalid_mtl parser_rejects_unknown_prefab
+    parser_rejects_prefab_instances_in_prefabs PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )

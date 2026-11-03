@@ -26,6 +26,7 @@ class SphereLight : public ILight
     ~SphereLight(void) override;
 
     void doTransformation(const ITransformation &t) override;
+    void applyTransform(const TransformData &transform) override;
     Color3D calculateLighting(const HitPayload &payload) const override;
     bool isPointInShadow(const HitPayload &payload, const Scene &scene) const override;
     Color3D getRadiance(const HitPayload &payload) const override;

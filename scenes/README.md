@@ -70,6 +70,8 @@ letterboxes it to preserve aspect ratio.
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL |
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face |
+| `group_transform.cfg` | A nested scene of spheres and a point light transformed as a group |
+| `prefabs.cfg` | One lamp prefab instantiated three times with different transforms |
 
 ## Material showcase renders
 

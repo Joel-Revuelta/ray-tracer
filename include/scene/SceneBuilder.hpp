@@ -12,6 +12,8 @@
 #include "Light.hpp"
 #include "Primitive.hpp"
 #include "Scene.hpp"
+#include "TransformData.hpp"
+#include <cstddef>
 #include <memory>
 
 namespace RayTracer
@@ -29,8 +31,10 @@ class SceneBuilder
     void addLight(std::shared_ptr<ILight> light);
     void addMaterial(std::shared_ptr<IMaterial> material);
     void addPrimitive(std::shared_ptr<IPrimitive> primitive);
-    void addScene(std::shared_ptr<Scene> sceneToAdd);
+    void addScene(std::shared_ptr<Scene> sceneToAdd, const TransformData &transform = TransformData{});
     void setBackground(const Background &background);
+
+    std::size_t getMaterialCount(void) const;
 
   private:
     void ensureScene(void);

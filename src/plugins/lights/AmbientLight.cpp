@@ -27,6 +27,11 @@ void AmbientLight::doTransformation(const ITransformation &t)
     t.doTransformation(*this);
 }
 
+void AmbientLight::applyTransform(const TransformData &transform)
+{
+    (void)transform;
+}
+
 std::shared_ptr<ILight> AmbientLight::clone(void) const
 {
     return std::make_shared<AmbientLight>(*this);

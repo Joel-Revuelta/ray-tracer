@@ -209,6 +209,21 @@ Vec3D RayTracer::transformNormal(const TransformData &transform, const Vec3D &no
                      transform.inverseLinear[8] * normal.getZ());
 }
 
+float RayTracer::transformScaleFactor(const TransformData &transform)
+{
+    const float x = std::sqrt(transform.linear[0] * transform.linear[0] +
+                              transform.linear[3] * transform.linear[3] +
+                              transform.linear[6] * transform.linear[6]);
+    const float y = std::sqrt(transform.linear[1] * transform.linear[1] +
+                              transform.linear[4] * transform.linear[4] +
+                              transform.linear[7] * transform.linear[7]);
+    const float z = std::sqrt(transform.linear[2] * transform.linear[2] +
+                              transform.linear[5] * transform.linear[5] +
+                              transform.linear[8] * transform.linear[8]);
+
+    return std::max(x, std::max(y, z));
+}
+
 AABB RayTracer::transformBounds(const TransformData &transform, const AABB &localBounds)
 {
     AABB result;

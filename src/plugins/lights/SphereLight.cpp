@@ -8,6 +8,7 @@
 #include "SphereLight.hpp"
 #include "Ray.hpp"
 #include "Scene.hpp"
+#include "Transform.hpp"
 #include "Utils.hpp"
 #include <algorithm>
 #include <cmath>
@@ -39,6 +40,13 @@ SphereLight::~SphereLight(void)
 void SphereLight::doTransformation(const ITransformation &t)
 {
     t.doTransformation(*this);
+}
+
+void SphereLight::applyTransform(const TransformData &transform)
+{
+    _position = transformPoint(transform, _position);
+    _radius *= transformScaleFactor(transform);
+    _radius = std::max(_radius, 1e-6f);
 }
 
 float SphereLight::attenuationAt(float distance) const

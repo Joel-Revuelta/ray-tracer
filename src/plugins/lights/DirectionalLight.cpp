@@ -7,6 +7,7 @@
 
 #include "DirectionalLight.hpp"
 #include "Color.hpp"
+#include "Transform.hpp"
 #include "Vec3D.hpp"
 #include <algorithm>
 
@@ -29,6 +30,11 @@ DirectionalLight::~DirectionalLight(void)
 void DirectionalLight::doTransformation(const ITransformation &t)
 {
     t.doTransformation(*this);
+}
+
+void DirectionalLight::applyTransform(const TransformData &transform)
+{
+    _direction = vec3DNormalize(transformVector(transform, _direction));
 }
 
 std::shared_ptr<ILight> DirectionalLight::clone(void) const

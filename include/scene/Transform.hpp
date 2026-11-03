@@ -37,6 +37,13 @@ Vec3D transformInverseVector(const TransformData &transform, const Vec3D &vector
 Vec3D transformNormal(const TransformData &transform, const Vec3D &normal);
 
 /**
+ * Conservative uniform scale of the transform: the maximum length of its
+ * three basis columns. Used to scale spherical lights under non-uniform
+ * transforms.
+ */
+float transformScaleFactor(const TransformData &transform);
+
+/**
  * Returns the world-space bounding box of a local-space box.
  */
 AABB transformBounds(const TransformData &transform, const AABB &localBounds);
