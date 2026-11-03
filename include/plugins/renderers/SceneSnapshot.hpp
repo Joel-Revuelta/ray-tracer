@@ -11,8 +11,10 @@
 #include "Background.hpp"
 #include "IMaterial.hpp"
 #include "LightData.hpp"
+#include "Mesh.hpp"
 #include "PrimitiveData.hpp"
 #include "Vec3D.hpp"
+#include <memory>
 #include <vector>
 
 namespace RayTracer
@@ -54,6 +56,7 @@ struct SceneSnapshot
     std::vector<PrimitiveData> primitives;
     std::vector<MaterialData> materials;
     std::vector<LightData> lights;
+    std::vector<std::shared_ptr<const MeshAsset>> meshes;
     Background background;
 };
 

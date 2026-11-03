@@ -7,7 +7,9 @@
 
 #include "Parser.hpp"
 #include "InstancePrimitive.hpp"
+#include "MeshLoader.hpp"
 #include "Transform.hpp"
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 
@@ -147,6 +149,10 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
 void Parser::initConfig(const std::string &filename)
 {
     _config.readFile(filename.c_str());
+
+    const std::filesystem::path scenePath(filename);
+
+    _sceneDirectory = scenePath.parent_path().empty() ? "." : scenePath.parent_path().string();
 }
 
 /**
@@ -352,6 +358,11 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
         sceneBuilder.addPrimitive(cone);
     }
 
+    for (int i = 0; primitiveSetting.exists("meshes")
+        && i < primitiveSetting.lookup("meshes").getLength(); i++) {
+        sceneBuilder.addPrimitive(parseMesh(primitiveSetting.lookup("meshes")[i]));
+    }
+
     if (primitiveSetting.exists("scene")) {
         sceneBuilder.addScene(parseScene(primitiveSetting.lookup("scene")));
     }
@@ -471,6 +482,47 @@ std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
                                     parseMaterialIndex(coneSetting));
 
     return applyTransform(cone, coneSetting);
+}
+
+std::string Parser::resolveMeshPath(const std::string &path) const
+{
+    const std::filesystem::path candidate(path);
+
+    if (candidate.is_absolute())
+        return candidate.lexically_normal().string();
+
+    return (std::filesystem::path(_sceneDirectory) / candidate).lexically_normal().string();
+}
+
+std::shared_ptr<const MeshAsset> Parser::loadMesh(const std::string &path)
+{
+    const auto cached = _meshCache.find(path);
+
+    if (cached != _meshCache.end())
+        return cached->second;
+
+    std::shared_ptr<const MeshAsset> asset = loadObjMesh(path);
+
+    _meshCache.emplace(path, asset);
+    return asset;
+}
+
+/**
+ * Parses a mesh primitive. The mesh asset is loaded once per resolved path
+ * and shared by every instance.
+ *
+ * @param meshSetting The mesh entry to parse.
+ * @return The mesh primitive, optionally wrapped in a transform.
+ */
+std::shared_ptr<IPrimitive> Parser::parseMesh(libconfig::Setting &meshSetting)
+{
+    const std::string path = resolveMeshPath(meshSetting.lookup("path"));
+    const std::shared_ptr<const MeshAsset> asset = loadMesh(path);
+
+    std::shared_ptr<IPrimitive> mesh =
+        _factory.create<IPrimitive>("Mesh", asset, parseMaterialIndex(meshSetting));
+
+    return applyTransform(mesh, meshSetting);
 }
 
 /**

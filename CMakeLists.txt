@@ -185,6 +185,11 @@ file(GLOB_RECURSE EXTERN_CONE CONFIGURE_DEPENDS "src/plugins/primitives/ExternCo
 add_library(raytracer_cone SHARED ${SOURCES_CONE} ${EXTERN_CONE})
 target_link_libraries(raytracer_cone PRIVATE raytracer_core)
 
+file(GLOB_RECURSE SOURCES_MESH CONFIGURE_DEPENDS "src/plugins/primitives/MeshPrimitive.cpp")
+file(GLOB_RECURSE EXTERN_MESH CONFIGURE_DEPENDS "src/plugins/primitives/ExternMesh.cpp")
+add_library(raytracer_mesh SHARED ${SOURCES_MESH} ${EXTERN_MESH})
+target_link_libraries(raytracer_mesh PRIVATE raytracer_core)
+
 # Materials
 file(GLOB_RECURSE SOURCES_CUSTOM_MATERIAL CONFIGURE_DEPENDS "src/plugins/materials/CustomMaterial.cpp")
 add_library(raytracer_material_custom SHARED ${SOURCES_CUSTOM_MATERIAL})
@@ -262,7 +267,13 @@ add_custom_target(materials DEPENDS
     raytracer_material_diffuse
 )
 
-add_custom_target(primitives DEPENDS raytracer_plane raytracer_sphere raytracer_cylinder raytracer_cone)
+add_custom_target(primitives DEPENDS
+    raytracer_plane
+    raytracer_sphere
+    raytracer_cylinder
+    raytracer_cone
+    raytracer_mesh
+)
 
 add_custom_target(transformations DEPENDS raytracer_transformation_translation raytracer_transformation_rotation)
 
@@ -279,6 +290,7 @@ set_target_properties(
     raytracer_sphere
     raytracer_cylinder
     raytracer_cone
+    raytracer_mesh
     raytracer_material_custom
     raytracer_material_emissive
     raytracer_material_flat
@@ -363,6 +375,23 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_transform.ppm
 )
 add_test(
+    NAME mesh_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/meshes.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/mesh_smoke.ppm
+)
+add_test(
+    NAME mesh_bvh_matches_linear
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/mesh_parity.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_invalid_obj
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_obj.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_obj.ppm
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -374,10 +403,10 @@ add_test(
 )
 set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_process_smoke
     roughness_smoke seed_deterministic_cpu_render threads_smoke list_guis
-    bvh_matches_linear transform_smoke
+    bvh_matches_linear transform_smoke mesh_smoke mesh_bvh_matches_linear
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
-    parser_rejects_invalid_transform PROPERTIES
+    parser_rejects_invalid_transform parser_rejects_invalid_obj PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )
@@ -400,6 +429,7 @@ set(RAYTRACER_PLUGIN_TARGETS
     raytracer_sphere
     raytracer_cylinder
     raytracer_cone
+    raytracer_mesh
     raytracer_material_custom
     raytracer_material_emissive
     raytracer_material_flat

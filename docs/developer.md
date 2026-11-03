@@ -177,6 +177,22 @@ both renderers see the same world-space primitive. The legacy
 `Rotation`/`Translation` plugins remain available but the parser uses the
 data-driven transform path.
 
+Mesh geometry is an immutable `MeshAsset`
+(`include/scene/Mesh.hpp`) holding local-space triangles, a local AABB and a
+local triangle BVH built with the same `buildBVHFromItems()` helper. The parser
+caches assets by resolved OBJ path, so repeated `primitives.meshes` entries
+share geometry and differ only by material and `InstancePrimitive` transform.
+`MeshPrimitive` implements `IPrimitive`; `getMeshAsset()` exposes the shared
+asset to the snapshot builder. The CPU traversal is two-level: the scene BVH
+finds the mesh instance, then `MeshPrimitive` traverses its triangle BVH.
+
+For CUDA, `buildSceneSnapshot()` deduplicates assets by pointer and stores
+`shared_ptr<const MeshAsset>` in the snapshot, so camera moves do not copy
+triangle data. `CudaRenderSession` flattens every asset's triangles, BVH nodes
+and indices into global buffers once, offsets the node/index references per
+mesh, and stores a `MeshRange` per asset. `Cuda::Primitive::meshIndex` selects
+the range; device traversal is scene BVH → mesh BVH → Möller–Trumbore.
+
 ### Renderer interface
 
 Renderers implement `RayTracer::IRenderer` from
@@ -371,7 +387,15 @@ RAYTRACER_BVH_STATS=1 ./raytracer --path scenes/transforms.cfg --cli \
   --renderer cpu --width 64 --height 36 --frames 1 --output /tmp/stats.ppm
 ```
 
-See [performance.md](performance.md) for the benchmark script and reference
+Mesh checks:
+
+```bash
+./raytracer --path scenes/meshes.cfg --cli --renderer cpu \
+  --width 320 --height 180 --frames 8 --output /tmp/meshes.ppm
+bash tests/mesh_parity.sh ./raytracer . build
+```
+
+See [performance.md](performance.md) for the benchmark scripts and reference
 numbers.
 
 CUDA memory checking:

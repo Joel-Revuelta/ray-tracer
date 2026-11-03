@@ -9,6 +9,10 @@ raytracer
 *.o
 *.obj
 
+# Wavefront OBJ meshes (the pattern above targets compiler object files)
+!scenes/models/*.obj
+!tests/*.obj
+
 # Precompiled Headers
 *.gch
 *.pch

@@ -8,6 +8,8 @@
 #include "plugins/renderers/SceneSnapshot.hpp"
 #include "Camera.hpp"
 #include "Scene.hpp"
+#include <cstdint>
+#include <unordered_map>
 
 using namespace RayTracer;
 
@@ -47,12 +49,32 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
             snapshot.lights.push_back(data);
     }
 
+    std::unordered_map<const MeshAsset *, std::uint32_t> meshIndices;
+
     for (const auto &primitive : scene.getPrimitives())
     {
         PrimitiveData data;
 
-        if (primitive->getData(data))
-            snapshot.primitives.push_back(data);
+        if (!primitive->getData(data))
+            continue;
+
+        if (data.type == PrimitiveType::MESH)
+        {
+            const std::shared_ptr<const MeshAsset> asset = primitive->getMeshAsset();
+
+            if (asset)
+            {
+                const auto inserted =
+                    meshIndices.emplace(asset.get(), static_cast<std::uint32_t>(snapshot.meshes.size()));
+
+                if (inserted.second)
+                    snapshot.meshes.push_back(asset);
+
+                data.meshIndex = inserted.first->second;
+            }
+        }
+
+        snapshot.primitives.push_back(data);
     }
 
     return snapshot;

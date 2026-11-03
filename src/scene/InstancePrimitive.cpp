@@ -82,6 +82,11 @@ bool InstancePrimitive::getData(PrimitiveData &data) const
     return true;
 }
 
+std::shared_ptr<const MeshAsset> InstancePrimitive::getMeshAsset(void) const
+{
+    return _child ? _child->getMeshAsset() : nullptr;
+}
+
 uint InstancePrimitive::getMaterialIndex(void) const
 {
     return _child ? _child->getMaterialIndex() : 0;

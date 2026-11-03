@@ -21,7 +21,8 @@ enum class PrimitiveType
     SPHERE,
     PLANE,
     CYLINDER,
-    CONE
+    CONE,
+    MESH
 };
 
 /**
@@ -42,6 +43,9 @@ struct PrimitiveData
     float radius = 0.0f;
     float height = 0.0f;
     bool coneBaseAbove = false;
+    std::uint32_t meshIndex = 0;
+    Vec3D localMin;
+    Vec3D localMax;
     TransformData transform;
 };
 

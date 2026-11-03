@@ -17,6 +17,8 @@
 namespace RayTracer
 {
 
+class MeshAsset;
+
 class IPrimitive : public ITransformable
 {
   public:
@@ -37,6 +39,13 @@ class IPrimitive : public ITransformable
     {
         (void)data;
         return false;
+    }
+
+    // Returns the shared geometry for mesh primitives. Instance wrappers
+    // delegate so the scene snapshot can deduplicate assets.
+    virtual std::shared_ptr<const MeshAsset> getMeshAsset(void) const
+    {
+        return nullptr;
     }
 
     virtual uint getMaterialIndex(void) const = 0;

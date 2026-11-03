@@ -29,6 +29,7 @@ class InstancePrimitive : public IPrimitive
     bool hit(const Ray &ray, HitPayload &payload, size_t i) const override;
     std::shared_ptr<IPrimitive> clone(void) const override;
     bool getData(PrimitiveData &data) const override;
+    std::shared_ptr<const MeshAsset> getMeshAsset(void) const override;
 
     uint getMaterialIndex(void) const override;
     void setMaterialIndex(const uint &index) override;

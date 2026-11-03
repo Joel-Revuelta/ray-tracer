@@ -52,6 +52,10 @@ inline bool computePrimitiveBounds(const PrimitiveData &data, AABB &bounds)
         local.expand(base + allRadius);
         break;
     }
+    case PrimitiveType::MESH:
+        local.expand(data.localMin);
+        local.expand(data.localMax);
+        break;
     case PrimitiveType::PLANE:
     case PrimitiveType::NONE:
     default:

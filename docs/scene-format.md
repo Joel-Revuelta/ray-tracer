@@ -223,6 +223,52 @@ cones = (
 - Use a `transform` block to tilt or scale a cone (see
   [Transforms](#transforms)).
 
+### Meshes
+
+Meshes are loaded from Wavefront OBJ files and declared in a `meshes` list:
+
+```libconfig
+primitives:
+{
+    meshes = (
+        {
+            material = 0;
+            path = "models/icosphere.obj";
+            transform = {
+                translate = { x = -2.0; y = 0.0; z = 0.0; };
+                scale = 1.5;
+            };
+        },
+        {
+            material = 1;
+            path = "models/icosphere.obj";
+            transform = {
+                translate = { x = 2.0; y = 0.5; z = 0.0; };
+                rotate = { x = 0.0; y = 35.0; z = 0.0; };
+            };
+        }
+    );
+};
+```
+
+- `path` is required and resolves relative to the scene file's directory.
+  Absolute paths are also accepted.
+- `material` is required, like every other primitive.
+- `transform` is optional and follows the same rules as
+  [Transforms](#transforms).
+- Repeating the same resolved path shares one immutable mesh asset. Each entry
+  still gets its own material and transform, which is how instancing works.
+- The loader supports `v` positions and `f` faces. Polygons are fan
+  triangulated, negative indices are supported, and `vt`, `vn`, groups,
+  objects, comments and `usemtl` are ignored.
+- Shading uses flat geometric triangle normals. Triangles are double-sided.
+- The parser rejects unreadable files, malformed numbers, face indices out of
+  range, faces with fewer than three vertices, empty meshes and meshes above
+  the internal triangle limit.
+
+The sample assets live in `scenes/models/`; `scenes/meshes.cfg` demonstrates
+shared geometry and per-instance transforms.
+
 ### Transforms
 
 Every primitive accepts an optional `transform` group. It is applied to the
@@ -385,6 +431,7 @@ The parser rejects:
 - negative background intensity,
 - metallic roughness outside `[0, 1]`,
 - transform scale components equal to zero or non-invertible transforms,
+- unreadable or malformed OBJ files, out-of-range mesh face indices, or empty meshes,
 - non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,
 - a camera position equal to its look-at point,

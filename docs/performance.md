@@ -1,7 +1,8 @@
 # Performance
 
-The renderer builds one binned-SAH BVH per scene. This page records the
-methodology and reference numbers for the scale milestone.
+The renderer builds a binned-SAH BVH per scene and one per unique mesh asset.
+This page records the methodology and reference numbers for the scale
+milestones.
 
 ## Reproduce
 
@@ -53,6 +54,34 @@ CUDA (same scenes; startup and host-side BVH upload dominate small counts):
 For 512 bounded spheres the builder reports roughly 339 nodes and a build time
 around `0.3 ms` on the reference machine.
 
+## Mesh benchmark
+
+```bash
+BENCH_MESH_SEGMENTS=64 BENCH_MESH_RINGS=32 \
+    bash tests/benchmark_mesh.sh ./raytracer . /tmp/mesh-bench
+```
+
+The script generates a UV sphere, writes a temporary scene, and compares the
+mesh BVH against a linear triangle scan.
+
+Default run (`4096` triangles, `320x180`, 1 sample):
+
+| Renderer | Linear | BVH | Speedup |
+| --- | ---: | ---: | ---: |
+| CPU | 439 ms | 38 ms | 11.5x |
+| CUDA | 228 ms | 298 ms | startup-dominated |
+
+Larger run (`16384` triangles):
+
+| Renderer | Settings | Linear | BVH | Speedup |
+| --- | --- | ---: | ---: | ---: |
+| CPU | `320x180`, 1 sample | 1802 ms | 49 ms | 36.8x |
+| CUDA | `640x360`, 8 samples | 715 ms | 335 ms | 2.1x |
+
+At very small workloads CUDA is dominated by plugin loading, host-side BVH
+construction and the first upload; the mesh BVH becomes worthwhile at higher
+resolution/sample counts.
+
 ## Notes
 
 - These are single-run wall-clock numbers. Treat small differences, especially
@@ -64,4 +93,6 @@ around `0.3 ms` on the reference machine.
   `tests/bvh_parity.sh` uses a scene without coincident surfaces and requires a
   byte-identical PPM. The difference is negligible for ordinary scenes.
 - Small scenes (fewer than eight bounded primitives) intentionally use a linear
-  scan.
+  scan. The same threshold applies to meshes with fewer than eight triangles.
+- Mesh BVHs are built once per unique asset at load time and shared by every
+  instance.

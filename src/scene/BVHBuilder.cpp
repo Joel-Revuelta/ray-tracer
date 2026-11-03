@@ -25,12 +25,12 @@ constexpr std::size_t MINIMUM_BVH_SIZE = 8;
 constexpr int MAX_SAH_DEPTH = 48;
 constexpr float CENTROID_EPSILON = 1e-9f;
 
-struct BVHEntry
+bool statsEnabled(void)
 {
-    std::uint32_t index;
-    AABB bounds;
-    Vec3D centroid;
-};
+    const char *value = std::getenv("RAYTRACER_BVH_STATS");
+
+    return value != nullptr && *value != '\0' && std::strcmp(value, "0") != 0;
+}
 
 struct Bin
 {
@@ -60,21 +60,21 @@ int binIndex(float centroid, float minimum, float extent)
     return std::clamp(index, 0, BIN_COUNT - 1);
 }
 
-std::size_t medianSplit(std::vector<BVHEntry> &entries, std::size_t start, std::size_t end)
+std::size_t medianSplit(std::vector<BVHItem> &items, std::size_t start, std::size_t end)
 {
     AABB centroidBounds;
 
     for (std::size_t i = start; i < end; ++i)
-        centroidBounds.expand(entries[i].centroid);
+        centroidBounds.expand(items[i].centroid);
 
     const int axis = chooseSplitAxis(centroidBounds);
 
     const std::size_t middle = start + (end - start) / 2;
 
-    std::nth_element(entries.begin() + static_cast<std::ptrdiff_t>(start),
-                     entries.begin() + static_cast<std::ptrdiff_t>(middle),
-                     entries.begin() + static_cast<std::ptrdiff_t>(end),
-                     [axis](const BVHEntry &left, const BVHEntry &right) {
+    std::nth_element(items.begin() + static_cast<std::ptrdiff_t>(start),
+                     items.begin() + static_cast<std::ptrdiff_t>(middle),
+                     items.begin() + static_cast<std::ptrdiff_t>(end),
+                     [axis](const BVHItem &left, const BVHItem &right) {
                          return left.centroid[axis] < right.centroid[axis];
                      });
     return middle;
@@ -88,41 +88,17 @@ bool RayTracer::bvhDisabledByEnvironment(void)
     return value != nullptr && *value != '\0' && std::strcmp(value, "0") != 0;
 }
 
-BVHBuildResult RayTracer::buildBVH(const std::vector<PrimitiveData> &primitives)
+BVHBuildResult RayTracer::buildBVHFromItems(std::vector<BVHItem> items, const char *statsLabel)
 {
     BVHBuildResult result;
 
-    if (bvhDisabledByEnvironment())
+    if (bvhDisabledByEnvironment() || items.size() < MINIMUM_BVH_SIZE)
         return result;
 
     const auto buildStart = std::chrono::steady_clock::now();
-    std::vector<BVHEntry> entries;
 
-    entries.reserve(primitives.size());
-
-    for (std::size_t i = 0; i < primitives.size(); ++i)
-    {
-        AABB bounds;
-
-        if (!computePrimitiveBounds(primitives[i], bounds))
-        {
-            result.unbounded.push_back(static_cast<std::uint32_t>(i));
-            continue;
-        }
-
-        entries.push_back(BVHEntry{static_cast<std::uint32_t>(i), bounds, bounds.centroid()});
-    }
-
-    // Tiny scenes are faster with a linear scan, and unbounded primitives are
-    // always tested linearly.
-    if (entries.size() < MINIMUM_BVH_SIZE)
-    {
-        result.unbounded.clear();
-        return result;
-    }
-
-    result.indices.reserve(entries.size());
-    result.nodes.reserve(entries.size() * 2);
+    result.indices.reserve(items.size());
+    result.nodes.reserve(items.size() * 2);
 
     auto buildNode = [&](auto &self, std::size_t start, std::size_t end, int depth) -> std::size_t {
         const std::size_t nodeIndex = result.nodes.size();
@@ -132,7 +108,7 @@ BVHBuildResult RayTracer::buildBVH(const std::vector<PrimitiveData> &primitives)
         AABB bounds;
 
         for (std::size_t i = start; i < end; ++i)
-            bounds.expand(entries[i].bounds);
+            bounds.expand(items[i].bounds);
 
         if (end - start <= LEAF_SIZE)
         {
@@ -144,14 +120,14 @@ BVHBuildResult RayTracer::buildBVH(const std::vector<PrimitiveData> &primitives)
             node.count = end - start;
 
             for (std::size_t i = start; i < end; ++i)
-                result.indices.push_back(entries[i].index);
+                result.indices.push_back(items[i].index);
             return nodeIndex;
         }
 
         AABB centroidBounds;
 
         for (std::size_t i = start; i < end; ++i)
-            centroidBounds.expand(entries[i].centroid);
+            centroidBounds.expand(items[i].centroid);
 
         float bestCost = std::numeric_limits<float>::infinity();
         int bestAxis = -1;
@@ -169,9 +145,9 @@ BVHBuildResult RayTracer::buildBVH(const std::vector<PrimitiveData> &primitives)
 
             for (std::size_t i = start; i < end; ++i)
             {
-                const int index = binIndex(entries[i].centroid[axis], minimum, extent);
+                const int index = binIndex(items[i].centroid[axis], minimum, extent);
 
-                bins[index].bounds.expand(entries[i].bounds);
+                bins[index].bounds.expand(items[i].bounds);
                 bins[index].count++;
             }
 
@@ -210,7 +186,7 @@ BVHBuildResult RayTracer::buildBVH(const std::vector<PrimitiveData> &primitives)
 
         if (bestAxis < 0)
         {
-            middle = medianSplit(entries, start, end);
+            middle = medianSplit(items, start, end);
         }
         else
         {
@@ -218,20 +194,20 @@ BVHBuildResult RayTracer::buildBVH(const std::vector<PrimitiveData> &primitives)
             const float extent = centroidBounds.max[bestAxis] - minimum;
             const std::size_t splitBin = static_cast<std::size_t>(bestBin);
 
-            const auto split = std::partition(entries.begin() + static_cast<std::ptrdiff_t>(start),
-                                              entries.begin() + static_cast<std::ptrdiff_t>(end),
-                                              [bestAxis, minimum, extent, splitBin](const BVHEntry &entry) {
-                                                  return static_cast<std::size_t>(binIndex(entry.centroid[bestAxis],
+            const auto split = std::partition(items.begin() + static_cast<std::ptrdiff_t>(start),
+                                              items.begin() + static_cast<std::ptrdiff_t>(end),
+                                              [bestAxis, minimum, extent, splitBin](const BVHItem &item) {
+                                                  return static_cast<std::size_t>(binIndex(item.centroid[bestAxis],
                                                                                            minimum, extent)) <= splitBin;
                                               });
 
-            middle = static_cast<std::size_t>(split - entries.begin());
+            middle = static_cast<std::size_t>(split - items.begin());
         }
 
         // Degenerate centroid distributions can collapse a SAH split to one
         // side. Fall back to the median so the tree always makes progress.
         if (middle == start || middle == end)
-            middle = medianSplit(entries, start, end);
+            middle = medianSplit(items, start, end);
 
         const std::size_t left = self(self, start, middle, depth + 1);
         const std::size_t right = self(self, middle, end, depth + 1);
@@ -245,16 +221,64 @@ BVHBuildResult RayTracer::buildBVH(const std::vector<PrimitiveData> &primitives)
         return nodeIndex;
     };
 
-    buildNode(buildNode, 0, entries.size(), 0);
+    buildNode(buildNode, 0, items.size(), 0);
 
-    const char *stats = std::getenv("RAYTRACER_BVH_STATS");
-
-    if (stats != nullptr && *stats != '\0' && std::strcmp(stats, "0") != 0)
+    if (statsLabel != nullptr && statsEnabled())
     {
         const double elapsed =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - buildStart).count();
 
-        std::cerr << "BVH: " << entries.size() << " bounded, " << result.unbounded.size() << " unbounded, "
+        std::cerr << "BVH: " << items.size() << " " << statsLabel << ", " << result.nodes.size() << " nodes, "
+                  << elapsed << " ms" << std::endl;
+    }
+
+    return result;
+}
+
+BVHBuildResult RayTracer::buildBVH(const std::vector<PrimitiveData> &primitives)
+{
+    BVHBuildResult result;
+
+    if (bvhDisabledByEnvironment())
+        return result;
+
+    const auto buildStart = std::chrono::steady_clock::now();
+    std::vector<BVHItem> items;
+
+    items.reserve(primitives.size());
+
+    for (std::size_t i = 0; i < primitives.size(); ++i)
+    {
+        AABB bounds;
+
+        if (!computePrimitiveBounds(primitives[i], bounds))
+        {
+            result.unbounded.push_back(static_cast<std::uint32_t>(i));
+            continue;
+        }
+
+        items.push_back(BVHItem{static_cast<std::uint32_t>(i), bounds, bounds.centroid()});
+    }
+
+    // Tiny scenes are faster with a linear scan, and unbounded primitives are
+    // always tested linearly.
+    if (items.size() < MINIMUM_BVH_SIZE)
+    {
+        result.unbounded.clear();
+        return result;
+    }
+
+    BVHBuildResult tree = buildBVHFromItems(std::move(items));
+
+    result.nodes = std::move(tree.nodes);
+    result.indices = std::move(tree.indices);
+
+    if (statsEnabled())
+    {
+        const double elapsed =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - buildStart).count();
+
+        std::cerr << "BVH: " << result.indices.size() << " bounded, " << result.unbounded.size() << " unbounded, "
                   << result.nodes.size() << " nodes, " << elapsed << " ms" << std::endl;
     }
 

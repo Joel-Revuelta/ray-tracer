@@ -16,6 +16,13 @@
 namespace RayTracer
 {
 
+struct BVHItem
+{
+    std::uint32_t index;
+    AABB bounds;
+    Vec3D centroid;
+};
+
 struct BVHBuildResult
 {
     std::vector<BVHNode> nodes;
@@ -30,11 +37,17 @@ struct BVHBuildResult
 bool bvhDisabledByEnvironment(void);
 
 /**
+ * Builds a binned-SAH BVH over already-bounded items. Items are reordered in
+ * place. `statsLabel` enables a stderr summary when non-null.
+ *
+ * Returns an empty result for tiny inputs (fewer than eight items), where a
+ * linear scan is faster.
+ */
+BVHBuildResult buildBVHFromItems(std::vector<BVHItem> items, const char *statsLabel = nullptr);
+
+/**
  * Builds a binned-SAH BVH over the bounded primitives. Planes and primitives
  * without bounds are returned in `unbounded` and must be tested linearly.
- *
- * Returns an empty result for tiny scenes (fewer than eight bounded
- * primitives), where a linear scan is faster.
  */
 BVHBuildResult buildBVH(const std::vector<PrimitiveData> &primitives);
 

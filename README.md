@@ -28,11 +28,12 @@ full-HD and 8K still renders.
   and scene background gradients for reflections.
 - **Materials** — diffuse, emissive, flat-colour, Fresnel glass and GGX-rough
   metallic surfaces.
-- **Scene scale** — a shared binned-SAH BVH accelerates both renderers, and
-  primitives support declarative translate/rotate/scale transforms.
+- **Scene scale** — a shared binned-SAH BVH accelerates both renderers,
+  primitives support declarative transforms, and OBJ meshes use shared triangle
+  BVHs with cheap instancing.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 20 scenes, from material studies to glass showcases and 8K hero renders.
+- **Included scenes** — 21 scenes, from material studies to glass showcases, mesh instancing and 8K hero renders.
 
 ## Requirements
 
@@ -246,6 +247,7 @@ architecture and CUDA build details.
 | `orbits.cfg` | Emissive sun, planets and a starfield. |
 | `showcase.cfg` | All material families and light types together. |
 | `transforms.cfg` | Translated, rotated and non-uniformly scaled primitives. |
+| `meshes.cfg` | Instanced OBJ icospheres and a torus with shared geometry. |
 
 ### HD hero scenes
 

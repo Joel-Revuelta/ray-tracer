@@ -264,6 +264,10 @@ __device__ inline Vec3 rayAt(const Ray &ray, float distance)
     return add(ray.origin, scale(ray.direction, distance));
 }
 
+__device__ bool intersectBounds(const BVHNode &node, const Ray &ray, float maxDistance);
+__device__ void pushNodeChildren(const BVHNode *nodes, const BVHNode &node, const Ray &ray, float maxDistance,
+                                 int *stack, int &stackSize);
+
 __device__ bool intersectSphere(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
                                 int &bestIndex, int index)
 {
@@ -506,6 +510,104 @@ __device__ bool intersectCone(const Primitive &primitive, const Ray &ray, float 
     return true;
 }
 
+__device__ bool intersectTriangle(const Triangle &triangle, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
+                                  int &bestIndex, int index)
+{
+    const Vec3 edge1 = sub(triangle.v1, triangle.v0);
+    const Vec3 edge2 = sub(triangle.v2, triangle.v0);
+    const Vec3 pvec = cross(ray.direction, edge2);
+    const float determinant = dot(edge1, pvec);
+
+    if (!isfinite(determinant) || fabsf(determinant) < 1e-9f)
+        return false;
+
+    const float inverseDeterminant = 1.0f / determinant;
+    const Vec3 tvec = sub(ray.origin, triangle.v0);
+    const float u = dot(tvec, pvec) * inverseDeterminant;
+
+    if (u < 0.0f || u > 1.0f)
+        return false;
+
+    const Vec3 qvec = cross(tvec, edge1);
+    const float v = dot(ray.direction, qvec) * inverseDeterminant;
+
+    if (v < 0.0f || u + v > 1.0f)
+        return false;
+
+    const float distance = dot(edge2, qvec) * inverseDeterminant;
+
+    if (distance <= RAY_EPSILON || distance >= bestDistance)
+        return false;
+
+    Vec3 normal = cross(edge1, edge2);
+
+    if (dot(normal, ray.direction) > 0.0f)
+        normal = negate(normal);
+
+    bestDistance = distance;
+    bestNormal = normalize(normal);
+    bestIndex = index;
+    return true;
+}
+
+__device__ bool intersectMesh(const SceneView &scene, const Primitive &primitive, const Ray &ray, float &bestDistance,
+                              Vec3 &bestNormal, int &bestIndex, int index)
+{
+    if (primitive.meshIndex < 0 || primitive.meshIndex >= scene.meshCount)
+        return false;
+
+    const MeshRange &range = scene.meshRanges[primitive.meshIndex];
+
+    if (range.triangleCount <= 0)
+        return false;
+
+    bool hit = false;
+
+    if (range.nodeCount <= 0 || range.indexCount <= 0)
+    {
+        for (int i = 0; i < range.triangleCount; ++i)
+        {
+            if (intersectTriangle(scene.meshTriangles[range.triangleStart + i], ray, bestDistance, bestNormal,
+                                  bestIndex, index))
+                hit = true;
+        }
+        return hit;
+    }
+
+    int stack[BVH_STACK_SIZE];
+    int stackSize = 0;
+
+    stack[stackSize++] = range.nodeStart;
+
+    while (stackSize > 0)
+    {
+        const int nodeIndex = stack[--stackSize];
+        const BVHNode &node = scene.meshNodes[nodeIndex];
+
+        if (!intersectBounds(node, ray, bestDistance))
+            continue;
+
+        if (node.leaf)
+        {
+            for (int i = 0; i < node.count; ++i)
+            {
+                const int triangleIndex = scene.meshIndices[node.start + i];
+
+                if (triangleIndex < 0 || triangleIndex >= scene.meshTriangleCount)
+                    continue;
+
+                if (intersectTriangle(scene.meshTriangles[triangleIndex], ray, bestDistance, bestNormal, bestIndex,
+                                      index))
+                    hit = true;
+            }
+        }
+        else
+            pushNodeChildren(scene.meshNodes, node, ray, bestDistance, stack, stackSize);
+    }
+
+    return hit;
+}
+
 __device__ inline Vec3 transformInversePoint(const TransformData &transform, const Vec3 &point)
 {
     return makeVec3(transform.inverseLinear[0] * point.x + transform.inverseLinear[1] * point.y +
@@ -536,8 +638,8 @@ __device__ inline Vec3 transformNormal(const TransformData &transform, const Vec
                         transform.inverseLinear[8] * normal.z);
 }
 
-__device__ bool intersectPrimitiveLocal(const Primitive &primitive, const Ray &ray, float &bestDistance,
-                                        Vec3 &bestNormal, int &bestIndex, int index)
+__device__ bool intersectPrimitiveLocal(const SceneView &scene, const Primitive &primitive, const Ray &ray,
+                                        float &bestDistance, Vec3 &bestNormal, int &bestIndex, int index)
 {
     switch (primitive.type)
     {
@@ -549,16 +651,18 @@ __device__ bool intersectPrimitiveLocal(const Primitive &primitive, const Ray &r
         return intersectCylinder(primitive, ray, bestDistance, bestNormal, bestIndex, index);
     case PRIMITIVE_CONE:
         return intersectCone(primitive, ray, bestDistance, bestNormal, bestIndex, index);
+    case PRIMITIVE_MESH:
+        return intersectMesh(scene, primitive, ray, bestDistance, bestNormal, bestIndex, index);
     default:
         return false;
     }
 }
 
-__device__ bool intersectPrimitive(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
-                                   int &bestIndex, int index)
+__device__ bool intersectPrimitive(const SceneView &scene, const Primitive &primitive, const Ray &ray,
+                                   float &bestDistance, Vec3 &bestNormal, int &bestIndex, int index)
 {
     if (!primitive.transformed)
-        return intersectPrimitiveLocal(primitive, ray, bestDistance, bestNormal, bestIndex, index);
+        return intersectPrimitiveLocal(scene, primitive, ray, bestDistance, bestNormal, bestIndex, index);
 
     const Vec3 localDirection = transformInverseVector(primitive.transform, ray.direction);
     const float directionLength = length(localDirection);
@@ -577,7 +681,7 @@ __device__ bool intersectPrimitive(const Primitive &primitive, const Ray &ray, f
     Vec3 localNormal = makeVec3(0.0f, 0.0f, 0.0f);
     int localIndex = index;
 
-    if (!intersectPrimitiveLocal(primitive, local, localDistance, localNormal, localIndex, index))
+    if (!intersectPrimitiveLocal(scene, primitive, local, localDistance, localNormal, localIndex, index))
         return false;
 
     bestDistance = localDistance / directionLength;
@@ -667,14 +771,14 @@ __device__ float boundsEntryDistance(const BVHNode &node, const Ray &ray)
     return nearDistance;
 }
 
-__device__ void pushChildren(const SceneView &scene, const BVHNode &node, const Ray &ray, float maxDistance,
-                             int *stack, int &stackSize)
+__device__ void pushNodeChildren(const BVHNode *nodes, const BVHNode &node, const Ray &ray, float maxDistance,
+                                 int *stack, int &stackSize)
 {
     if (node.left < 0 || node.right < 0)
         return;
 
-    const BVHNode &leftNode = scene.nodes[node.left];
-    const BVHNode &rightNode = scene.nodes[node.right];
+    const BVHNode &leftNode = nodes[node.left];
+    const BVHNode &rightNode = nodes[node.right];
     const float leftDistance = boundsEntryDistance(leftNode, ray);
     const float rightDistance = boundsEntryDistance(rightNode, ray);
     const int nearNode = leftDistance <= rightDistance ? node.left : node.right;
@@ -687,6 +791,12 @@ __device__ void pushChildren(const SceneView &scene, const BVHNode &node, const 
         stack[stackSize++] = farNode;
     if (nearDistance < maxDistance)
         stack[stackSize++] = nearNode;
+}
+
+__device__ void pushChildren(const SceneView &scene, const BVHNode &node, const Ray &ray, float maxDistance,
+                             int *stack, int &stackSize)
+{
+    pushNodeChildren(scene.nodes, node, ray, maxDistance, stack, stackSize);
 }
 
 __device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &distance, Vec3 &normal, int &index)
@@ -711,7 +821,7 @@ __device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &dist
             {
                 const int primitiveIndex = scene.primitiveIndices[node.start + i];
 
-                if (intersectPrimitive(scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
+                if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
                     hit = true;
             }
         }
@@ -735,7 +845,7 @@ __device__ bool intersectScene(const SceneView &scene, const Ray &ray, float &di
     {
         for (int i = 0; i < scene.primitiveCount; ++i)
         {
-            if (intersectPrimitive(scene.primitives[i], ray, distance, normal, index, i))
+            if (intersectPrimitive(scene, scene.primitives[i], ray, distance, normal, index, i))
                 hit = true;
         }
     }
@@ -744,7 +854,7 @@ __device__ bool intersectScene(const SceneView &scene, const Ray &ray, float &di
     {
         const int primitiveIndex = scene.unboundedIndices[i];
 
-        if (intersectPrimitive(scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
+        if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
             hit = true;
     }
 
@@ -778,7 +888,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
                 {
                     const int primitiveIndex = scene.primitiveIndices[node.start + i];
 
-                    if (intersectPrimitive(scene.primitives[primitiveIndex], ray, distance, normal, index,
+                    if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, index,
                                            primitiveIndex))
                         return true;
                 }
@@ -791,7 +901,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
     {
         for (int i = 0; i < scene.primitiveCount; ++i)
         {
-            if (intersectPrimitive(scene.primitives[i], ray, distance, normal, index, i))
+            if (intersectPrimitive(scene, scene.primitives[i], ray, distance, normal, index, i))
                 return true;
         }
     }
@@ -800,7 +910,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
     {
         const int primitiveIndex = scene.unboundedIndices[i];
 
-        if (intersectPrimitive(scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
+        if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
             return true;
     }
 

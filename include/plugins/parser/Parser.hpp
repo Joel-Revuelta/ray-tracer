@@ -17,11 +17,14 @@
 #include "Scene.hpp"
 #include "SceneBuilder.hpp"
 #include <libconfig.h++>
+#include <unordered_map>
 
 using MaterialVec = std::vector<std::shared_ptr<RayTracer::IMaterial>>;
 
 namespace RayTracer
 {
+
+class MeshAsset;
 
 class Parser
 {
@@ -45,6 +48,7 @@ class Parser
     std::shared_ptr<IPrimitive> parseSphere(libconfig::Setting &sphereSetting);
     std::shared_ptr<IPrimitive> parsePlane(libconfig::Setting &planeSetting);
     std::shared_ptr<IPrimitive> parseCone(libconfig::Setting &coneSetting);
+    std::shared_ptr<IPrimitive> parseMesh(libconfig::Setting &meshSetting);
     std::shared_ptr<IPrimitive> parseCylinder(libconfig::Setting &cylinderSetting);
 
     Color3D parseColor(const libconfig::Setting &colorSetting);
@@ -59,9 +63,14 @@ class Parser
     std::shared_ptr<Camera> getParsedCamera(void) const;
 
   private:
+    std::string resolveMeshPath(const std::string &path) const;
+    std::shared_ptr<const MeshAsset> loadMesh(const std::string &path);
+
     Factory _factory;
     std::shared_ptr<Camera> _camera;
     libconfig::Config _config;
+    std::string _sceneDirectory = ".";
+    std::unordered_map<std::string, std::shared_ptr<const MeshAsset>> _meshCache;
     int _sceneNestingDepth = 0;
 };
 

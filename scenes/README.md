@@ -62,6 +62,7 @@ letterboxes it to preserve aspect ratio.
 | `aurora_lens.cfg` | A giant glass lens, rose glass and a floating aurora arc |
 | `roughness_study.cfg` | Metal spheres from perfect mirror to satin roughness |
 | `transforms.cfg` | Translate/rotate/scale transforms on spheres, cylinders, cones and planes |
+| `meshes.cfg` | Instanced OBJ icospheres and a torus with shared geometry |
 
 ## Material showcase renders
 

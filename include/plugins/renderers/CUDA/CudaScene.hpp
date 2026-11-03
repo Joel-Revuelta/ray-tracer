@@ -22,7 +22,8 @@ enum PrimitiveKind
     PRIMITIVE_SPHERE = 1,
     PRIMITIVE_PLANE = 2,
     PRIMITIVE_CYLINDER = 3,
-    PRIMITIVE_CONE = 4
+    PRIMITIVE_CONE = 4,
+    PRIMITIVE_MESH = 5
 };
 
 // Values deliberately match IMaterial::MaterialType.
@@ -55,6 +56,7 @@ struct Primitive
 {
     int type;
     unsigned int materialIndex;
+    int meshIndex;
     Vec3 center;
     Vec3 point;
     Vec3 normal;
@@ -127,6 +129,23 @@ struct BVHNode
     int leaf;
 };
 
+struct Triangle
+{
+    Vec3 v0;
+    Vec3 v1;
+    Vec3 v2;
+};
+
+struct MeshRange
+{
+    int triangleStart;
+    int triangleCount;
+    int nodeStart;
+    int nodeCount;
+    int indexStart;
+    int indexCount;
+};
+
 struct SceneView
 {
     const Primitive *primitives;
@@ -141,6 +160,14 @@ struct SceneView
     int primitiveIndexCount;
     const int *unboundedIndices;
     int unboundedCount;
+    const Triangle *meshTriangles;
+    int meshTriangleCount;
+    const BVHNode *meshNodes;
+    int meshNodeCount;
+    const int *meshIndices;
+    int meshIndexCount;
+    const MeshRange *meshRanges;
+    int meshCount;
     Camera camera;
     Background background;
     PostProcess postProcess;

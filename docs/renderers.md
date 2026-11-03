@@ -106,6 +106,8 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 - Hot vector math is header-inlined, and the renderer uses a binned-SAH BVH for
   bounded primitives; planes and other unbounded primitives are still tested
   linearly. Traversal visits the nearer child first and can skip the far child.
+- Meshes use a second-level local triangle BVH. The scene BVH finds the mesh
+  instance, then `MeshPrimitive` traverses the shared asset's triangle BVH.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
 - Uses the same 15-bounce path tracing, material and light logic as the CUDA
   renderer. Path throughput is attenuated by diffuse/metallic surface colour,
@@ -143,6 +145,10 @@ uses the same `SceneSnapshot` data path.
 - **Acceleration:** builds the same shared binned-SAH BVH as the CPU renderer,
   uploads it to the device, and traverses it near-first; planes and other
   unbounded primitives are tested linearly.
+- **Meshes:** unique assets are uploaded once as global triangle/BVH/index
+  buffers with a `MeshRange` per asset. Instances reference a range and reuse
+  the same geometry. Device traversal is scene BVH → mesh BVH →
+  Möller–Trumbore.
 - **Transforms:** `PrimitiveData::transform` is copied into `Cuda::Primitive`;
   rays are transformed into local space, and normals are transformed back with
   the inverse-transpose.

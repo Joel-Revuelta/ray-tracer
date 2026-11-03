@@ -38,6 +38,7 @@ static_assert(static_cast<int>(PrimitiveType::SPHERE) == Cuda::PRIMITIVE_SPHERE,
 static_assert(static_cast<int>(PrimitiveType::PLANE) == Cuda::PRIMITIVE_PLANE, "primitive enum mismatch");
 static_assert(static_cast<int>(PrimitiveType::CYLINDER) == Cuda::PRIMITIVE_CYLINDER, "primitive enum mismatch");
 static_assert(static_cast<int>(PrimitiveType::CONE) == Cuda::PRIMITIVE_CONE, "primitive enum mismatch");
+static_assert(static_cast<int>(PrimitiveType::MESH) == Cuda::PRIMITIVE_MESH, "primitive enum mismatch");
 static_assert(static_cast<int>(IMaterial::DIFFUSE) == Cuda::MATERIAL_DIFFUSE, "material enum mismatch");
 static_assert(static_cast<int>(IMaterial::FLAT_COLOR) == Cuda::MATERIAL_FLAT_COLOR, "material enum mismatch");
 static_assert(static_cast<int>(IMaterial::EMISSIVE) == Cuda::MATERIAL_EMISSIVE, "material enum mismatch");
@@ -136,6 +137,7 @@ std::vector<Cuda::Primitive> convertPrimitives(const SceneSnapshot &snapshot)
 
         converted.type = static_cast<int>(primitive.type);
         converted.materialIndex = primitive.materialIndex;
+        converted.meshIndex = static_cast<int>(primitive.meshIndex);
         converted.center = toDevice(primitive.center);
         converted.point = toDevice(primitive.point);
         converted.normal = toDevice(primitive.normal);
@@ -201,6 +203,14 @@ struct HostBVH
     std::vector<int> unbounded;
 };
 
+struct HostMeshes
+{
+    std::vector<Cuda::Triangle> triangles;
+    std::vector<Cuda::BVHNode> nodes;
+    std::vector<int> indices;
+    std::vector<Cuda::MeshRange> ranges;
+};
+
 HostBVH buildBVH(const SceneSnapshot &snapshot)
 {
     const BVHBuildResult result = RayTracer::buildBVH(snapshot.primitives);
@@ -242,6 +252,53 @@ int checkedCount(std::size_t count, const char *name)
     return static_cast<int>(count);
 }
 
+HostMeshes convertMeshes(const SceneSnapshot &snapshot)
+{
+    HostMeshes meshes;
+    meshes.ranges.reserve(snapshot.meshes.size());
+
+    for (const std::shared_ptr<const MeshAsset> &asset : snapshot.meshes)
+    {
+        Cuda::MeshRange range{};
+
+        range.triangleStart = checkedCount(meshes.triangles.size(), "mesh triangles");
+        range.nodeStart = checkedCount(meshes.nodes.size(), "mesh BVH nodes");
+        range.indexStart = checkedCount(meshes.indices.size(), "mesh BVH indices");
+
+        if (asset)
+        {
+            range.triangleCount = checkedCount(asset->triangles.size(), "mesh triangles");
+            range.nodeCount = checkedCount(asset->bvh.nodes.size(), "mesh BVH nodes");
+            range.indexCount = checkedCount(asset->bvh.indices.size(), "mesh BVH indices");
+
+            for (const Triangle &triangle : asset->triangles)
+                meshes.triangles.push_back(
+                    Cuda::Triangle{toDevice(triangle.v0), toDevice(triangle.v1), toDevice(triangle.v2)});
+
+            for (const BVHNode &source : asset->bvh.nodes)
+            {
+                Cuda::BVHNode node{};
+
+                node.min = toDevice(source.bounds.min);
+                node.max = toDevice(source.bounds.max);
+                node.left = source.left >= 0 ? source.left + range.nodeStart : -1;
+                node.right = source.right >= 0 ? source.right + range.nodeStart : -1;
+                node.start = static_cast<int>(source.start) + range.indexStart;
+                node.count = static_cast<int>(source.count);
+                node.leaf = source.leaf ? 1 : 0;
+                meshes.nodes.push_back(node);
+            }
+
+            for (const std::uint32_t index : asset->bvh.indices)
+                meshes.indices.push_back(range.triangleStart + static_cast<int>(index));
+        }
+
+        meshes.ranges.push_back(range);
+    }
+
+    return meshes;
+}
+
 std::size_t pixelCount(int width, int height)
 {
     if (width <= 0 || height <= 0)
@@ -255,10 +312,12 @@ class CudaRenderSession
     explicit CudaRenderSession(const SceneSnapshot &snapshot, const PostProcessSettings &postProcess, uint32_t seed)
         : _width(snapshot.camera.imageWidth), _height(snapshot.camera.imageHeight),
           _primitives(convertPrimitives(snapshot)), _materials(convertMaterials(snapshot)),
-          _lights(convertLights(snapshot)), _bvh(buildBVH(snapshot)), _devicePrimitives(_primitives.size()),
-          _deviceMaterials(_materials.size()), _deviceLights(_lights.size()),
-          _deviceNodes(_bvh.nodes.size()), _deviceIndices(_bvh.indices.size()),
-          _deviceUnbounded(_bvh.unbounded.size()), _deviceAccumulation(pixelCount(_width, _height)),
+          _lights(convertLights(snapshot)), _bvh(buildBVH(snapshot)), _meshes(convertMeshes(snapshot)),
+          _devicePrimitives(_primitives.size()), _deviceMaterials(_materials.size()),
+          _deviceLights(_lights.size()), _deviceNodes(_bvh.nodes.size()), _deviceIndices(_bvh.indices.size()),
+          _deviceUnbounded(_bvh.unbounded.size()), _deviceMeshTriangles(_meshes.triangles.size()),
+          _deviceMeshNodes(_meshes.nodes.size()), _deviceMeshIndices(_meshes.indices.size()),
+          _deviceMeshRanges(_meshes.ranges.size()), _deviceAccumulation(pixelCount(_width, _height)),
           _deviceOutput(pixelCount(_width, _height) * 4u)
     {
         _devicePrimitives.upload(_primitives);
@@ -267,6 +326,10 @@ class CudaRenderSession
         _deviceNodes.upload(_bvh.nodes);
         _deviceIndices.upload(_bvh.indices);
         _deviceUnbounded.upload(_bvh.unbounded);
+        _deviceMeshTriangles.upload(_meshes.triangles);
+        _deviceMeshNodes.upload(_meshes.nodes);
+        _deviceMeshIndices.upload(_meshes.indices);
+        _deviceMeshRanges.upload(_meshes.ranges);
 
         _view.primitives = _devicePrimitives.get();
         _view.primitiveCount = checkedCount(_primitives.size(), "primitives");
@@ -280,6 +343,14 @@ class CudaRenderSession
         _view.primitiveIndexCount = checkedCount(_bvh.indices.size(), "BVH primitive indices");
         _view.unboundedIndices = _deviceUnbounded.get();
         _view.unboundedCount = checkedCount(_bvh.unbounded.size(), "unbounded primitives");
+        _view.meshTriangles = _deviceMeshTriangles.get();
+        _view.meshTriangleCount = checkedCount(_meshes.triangles.size(), "mesh triangles");
+        _view.meshNodes = _deviceMeshNodes.get();
+        _view.meshNodeCount = checkedCount(_meshes.nodes.size(), "mesh BVH nodes");
+        _view.meshIndices = _deviceMeshIndices.get();
+        _view.meshIndexCount = checkedCount(_meshes.indices.size(), "mesh BVH indices");
+        _view.meshRanges = _deviceMeshRanges.get();
+        _view.meshCount = checkedCount(_meshes.ranges.size(), "meshes");
         _view.camera = toDevice(snapshot.camera);
         _view.background = toDeviceBackground(snapshot.background);
         _view.postProcess = toDevice(postProcess);
@@ -448,12 +519,17 @@ class CudaRenderSession
     std::vector<Cuda::Material> _materials;
     std::vector<Cuda::Light> _lights;
     HostBVH _bvh;
+    HostMeshes _meshes;
     DeviceBuffer<Cuda::Primitive> _devicePrimitives;
     DeviceBuffer<Cuda::Material> _deviceMaterials;
     DeviceBuffer<Cuda::Light> _deviceLights;
     DeviceBuffer<Cuda::BVHNode> _deviceNodes;
     DeviceBuffer<int> _deviceIndices;
     DeviceBuffer<int> _deviceUnbounded;
+    DeviceBuffer<Cuda::Triangle> _deviceMeshTriangles;
+    DeviceBuffer<Cuda::BVHNode> _deviceMeshNodes;
+    DeviceBuffer<int> _deviceMeshIndices;
+    DeviceBuffer<Cuda::MeshRange> _deviceMeshRanges;
     DeviceBuffer<float4> _deviceAccumulation;
     DeviceBuffer<unsigned char> _deviceOutput;
     std::vector<uint32_t> _hostPixels;
