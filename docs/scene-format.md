@@ -201,8 +201,8 @@ cylinders = (
 - `center` is the centre of the **bottom cap**.
 - `height` extends upward along the default Y axis.
 - `r` and `height` must be positive.
-- Cylinder rotation/axis changes are available through the transformation
-  plugin API, but are not exposed by the current scene parser.
+- Use a `transform` block to tilt or scale a cylinder (see
+  [Transforms](#transforms)).
 
 ### Cones
 
@@ -220,8 +220,44 @@ cones = (
 - `center` is the **apex**.
 - The base is `h` units below the apex.
 - `r` and `h` must be positive.
-- Cone rotation is available through the transformation API, not the current
-  scene parser.
+- Use a `transform` block to tilt or scale a cone (see
+  [Transforms](#transforms)).
+
+### Transforms
+
+Every primitive accepts an optional `transform` group. It is applied to the
+primitive's local coordinates before the world-space bounding box is built:
+
+```libconfig
+spheres = (
+    {
+        material = 0;
+        r = 1.0;
+        position = { x = 0.0; y = 0.0; z = 0.0; };
+        transform = {
+            translate = { x = 2.0; y = 1.0; z = 0.0; };
+            rotate = { x = 0.0; y = 30.0; z = 0.0; };
+            scale = { x = 1.5; y = 0.75; z = 1.0; };
+        };
+    }
+);
+```
+
+- `translate` is a vector in world units, default `{ 0, 0, 0 }`.
+- `rotate` is an XYZ Euler rotation in **degrees**, default `{ 0, 0, 0 }`.
+  Rotations are applied in X, then Y, then Z order.
+- `scale` is either a single number or a vector, default `1.0`. A scalar
+  applies uniformly; a vector enables ellipsoids and stretched cylinders.
+- The composed transform is `world = T * Rz * Ry * Rx * S * local`.
+- Scale components must be non-zero and the resulting matrix must be
+  invertible.
+- Transforms are applied around the world origin, not around the primitive's
+  own centre. To rotate an object in place, define it at the origin and use
+  `translate` to position it.
+- Planes remain unbounded for acceleration purposes even when transformed.
+
+`scenes/transforms.cfg` demonstrates translated, rotated and non-uniformly
+scaled spheres, cylinders, cones and planes.
 
 ### Nested scenes
 
@@ -330,6 +366,8 @@ scene is rejected.
   ray for lighting.
 - Cylinders extend from `center` along +Y by `height`.
 - Cones use `center` as the apex and extend `h` units down to the base.
+- Primitive transforms are applied around the world origin, before the
+  primitive is placed in the scene.
 
 ## Validation summary
 
@@ -346,6 +384,7 @@ The parser rejects:
 - non-positive dielectric IOR,
 - negative background intensity,
 - metallic roughness outside `[0, 1]`,
+- transform scale components equal to zero or non-invertible transforms,
 - non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,
 - a camera position equal to its look-at point,

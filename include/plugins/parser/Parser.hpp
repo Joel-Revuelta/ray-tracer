@@ -50,7 +50,11 @@ class Parser
     Color3D parseColor(const libconfig::Setting &colorSetting);
     Point3D parsePoint(const libconfig::Setting &pointSetting);
     Vec3D parseVector(const libconfig::Setting &vectorSetting);
+    TransformData parseTransform(const libconfig::Setting &transformSetting);
     Background parseBackground(const libconfig::Setting &backgroundSetting);
+
+    std::shared_ptr<IPrimitive> applyTransform(std::shared_ptr<IPrimitive> primitive,
+                                               const libconfig::Setting &primitiveSetting);
 
     std::shared_ptr<Camera> getParsedCamera(void) const;
 

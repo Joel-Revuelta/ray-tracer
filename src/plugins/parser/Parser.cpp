@@ -6,6 +6,8 @@
 */
 
 #include "Parser.hpp"
+#include "InstancePrimitive.hpp"
+#include "Transform.hpp"
 #include <iostream>
 #include <stdexcept>
 
@@ -404,7 +406,7 @@ std::shared_ptr<IPrimitive> Parser::parseSphere(libconfig::Setting &sphereSettin
         _factory.create<IPrimitive>("Sphere", radius, parsePoint(sphereSetting.lookup("position")),
                                     parseMaterialIndex(sphereSetting));
 
-    return sphere;
+    return applyTransform(sphere, sphereSetting);
 }
 
 /**
@@ -424,7 +426,7 @@ std::shared_ptr<IPrimitive> Parser::parsePlane(libconfig::Setting &planeSetting)
         _factory.create<IPrimitive>("Plane", normal, parsePoint(planeSetting.lookup("position")),
                                     parseMaterialIndex(planeSetting));
 
-    return plane;
+    return applyTransform(plane, planeSetting);
 }
 
 /**
@@ -446,7 +448,7 @@ std::shared_ptr<IPrimitive> Parser::parseCylinder(libconfig::Setting &cylinderSe
         _factory.create<IPrimitive>("Cylinder", radius, parsePoint(cylinderSetting.lookup("center")), height,
                                     parseMaterialIndex(cylinderSetting));
 
-    return cylinder;
+    return applyTransform(cylinder, cylinderSetting);
 }
 
 /**
@@ -468,7 +470,7 @@ std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
         _factory.create<IPrimitive>("Cone", radius, parseVector(coneSetting.lookup("center")), height,
                                     parseMaterialIndex(coneSetting));
 
-    return cone;
+    return applyTransform(cone, coneSetting);
 }
 
 /**
@@ -507,6 +509,65 @@ Vec3D Parser::parseVector(const libconfig::Setting &vectorSetting)
     requireFinite(y, "Vector y");
     requireFinite(z, "Vector z");
     return Vec3D(x, y, z);
+}
+
+/**
+ * Parses an optional primitive transform.
+ * Rotation values are in degrees and the scale may be a scalar or a vector.
+ *
+ * @param transformSetting The transform setting to parse.
+ * @return The composed local-to-world transform.
+ */
+TransformData Parser::parseTransform(const libconfig::Setting &transformSetting)
+{
+    Vec3D translation(0.0f);
+    Vec3D rotation(0.0f);
+    Vec3D scale(1.0f);
+
+    if (transformSetting.exists("translate"))
+        translation = parseVector(transformSetting.lookup("translate"));
+
+    if (transformSetting.exists("rotate"))
+        rotation = parseVector(transformSetting.lookup("rotate"));
+
+    if (transformSetting.exists("scale"))
+    {
+        const libconfig::Setting &scaleSetting = transformSetting.lookup("scale");
+
+        if (scaleSetting.isNumber())
+        {
+            const double value = double(scaleSetting);
+
+            requireFinite(value, "Transform scale");
+            scale = Vec3D(static_cast<float>(value));
+        }
+        else
+            scale = parseVector(scaleSetting);
+    }
+
+    if (scale.getX() == 0.0f || scale.getY() == 0.0f || scale.getZ() == 0.0f)
+        throw std::runtime_error("Transform scale components must be non-zero");
+
+    const TransformData transform = makeTransform(translation, rotation, scale);
+
+    if (!isInvertibleTransform(transform))
+        throw std::runtime_error("Transform is not invertible");
+
+    return transform;
+}
+
+std::shared_ptr<IPrimitive> Parser::applyTransform(std::shared_ptr<IPrimitive> primitive,
+                                                   const libconfig::Setting &primitiveSetting)
+{
+    if (!primitive || !primitiveSetting.exists("transform"))
+        return primitive;
+
+    const TransformData transform = parseTransform(primitiveSetting.lookup("transform"));
+
+    if (isIdentityTransform(transform))
+        return primitive;
+
+    return std::make_shared<InstancePrimitive>(primitive, transform);
 }
 
 /**

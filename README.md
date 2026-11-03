@@ -28,9 +28,11 @@ full-HD and 8K still renders.
   and scene background gradients for reflections.
 - **Materials** — diffuse, emissive, flat-colour, Fresnel glass and GGX-rough
   metallic surfaces.
+- **Scene scale** — a shared binned-SAH BVH accelerates both renderers, and
+  primitives support declarative translate/rotate/scale transforms.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 19 scenes, from material studies to glass showcases and 8K hero renders.
+- **Included scenes** — 20 scenes, from material studies to glass showcases and 8K hero renders.
 
 ## Requirements
 
@@ -226,7 +228,8 @@ Representative performance on an RTX 4070 Laptop:
 | Chrome Singularity, 1920×1080, 1000 samples | — | ~3 seconds |
 | All four 8K ultra scenes, 7680×4320, 2048 samples | — | ~36 minutes |
 
-See [docs/renderers.md](docs/renderers.md) for the renderer interface, plugin
+See [docs/performance.md](docs/performance.md) for BVH benchmark methodology and
+numbers. See [docs/renderers.md](docs/renderers.md) for the renderer interface, plugin
 architecture and CUDA build details.
 
 ## Scenes and render scripts
@@ -242,6 +245,7 @@ architecture and CUDA build details.
 | `lighting.cfg` | Coloured point lights and emissive bulbs. |
 | `orbits.cfg` | Emissive sun, planets and a starfield. |
 | `showcase.cfg` | All material families and light types together. |
+| `transforms.cfg` | Translated, rotated and non-uniformly scaled primitives. |
 
 ### HD hero scenes
 

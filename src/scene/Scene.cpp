@@ -6,24 +6,14 @@
 */
 
 #include "Scene.hpp"
+#include "BVHBuilder.hpp"
 #include "HitPayload.hpp"
-#include "PrimitiveBounds.hpp"
-#include <algorithm>
 #include <cstddef>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 using namespace RayTracer;
-
-namespace
-{
-struct BVHEntry
-{
-    std::size_t index;
-    AABB bounds;
-    Vec3D centroid;
-};
-} // namespace
 
 Scene::Scene(void)
 {
@@ -50,96 +40,20 @@ void Scene::buildAcceleration(void)
     _unboundedPrimitives.clear();
     _accelerated = false;
 
-    std::vector<BVHEntry> entries;
-
-    entries.reserve(_primitives.size());
+    std::vector<PrimitiveData> descriptions(_primitives.size());
 
     for (std::size_t i = 0; i < _primitives.size(); ++i)
     {
-        PrimitiveData data;
-
-        if (!_primitives[i]->getData(data))
-        {
-            _unboundedPrimitives.push_back(i);
-            continue;
-        }
-
-        AABB bounds;
-
-        if (!computePrimitiveBounds(data, bounds))
-        {
-            _unboundedPrimitives.push_back(i);
-            continue;
-        }
-
-        entries.push_back(BVHEntry{i, bounds, bounds.centroid()});
+        if (!_primitives[i]->getData(descriptions[i]))
+            descriptions[i].type = PrimitiveType::NONE;
     }
 
-    // Tiny scenes are faster with a linear scan, and unbounded primitives are
-    // always tested linearly.
-    if (entries.size() < 8)
-    {
-        _unboundedPrimitives.clear();
-        return;
-    }
+    BVHBuildResult result = buildBVH(descriptions);
 
-    _bvhIndices.reserve(entries.size());
-    _bvhNodes.reserve(entries.size() * 2);
-
-    auto buildNode = [&](auto &self, std::size_t start, std::size_t end) -> std::size_t {
-        const std::size_t nodeIndex = _bvhNodes.size();
-
-        _bvhNodes.emplace_back();
-
-        AABB bounds;
-
-        for (std::size_t i = start; i < end; ++i)
-            bounds.expand(entries[i].bounds);
-
-        if (end - start <= 4)
-        {
-            BVHNode &node = _bvhNodes[nodeIndex];
-
-            node.bounds = bounds;
-            node.leaf = true;
-            node.start = _bvhIndices.size();
-            node.count = end - start;
-
-            for (std::size_t i = start; i < end; ++i)
-                _bvhIndices.push_back(entries[i].index);
-            return nodeIndex;
-        }
-
-        const Vec3D extent = bounds.extent();
-        int axis = 0;
-
-        if (extent.getY() > extent.getX())
-            axis = 1;
-        if (extent.getZ() > (axis == 0 ? extent.getX() : extent.getY()))
-            axis = 2;
-
-        const std::size_t middle = (start + end) / 2;
-
-        std::sort(entries.begin() + static_cast<std::ptrdiff_t>(start),
-                  entries.begin() + static_cast<std::ptrdiff_t>(end),
-                  [axis](const BVHEntry &left, const BVHEntry &right) {
-                      return left.centroid[axis] < right.centroid[axis];
-                  });
-
-        const std::size_t left = self(self, start, middle);
-        const std::size_t right = self(self, middle, end);
-
-        BVHNode &node = _bvhNodes[nodeIndex];
-
-        node.bounds = bounds;
-        node.left = static_cast<int>(left);
-        node.right = static_cast<int>(right);
-        node.leaf = false;
-        return nodeIndex;
-    };
-
-    buildNode(buildNode, 0, entries.size());
-    _accelerated = true;
+    _bvhNodes = std::move(result.nodes);
+    _bvhIndices = std::move(result.indices);
+    _unboundedPrimitives = std::move(result.unbounded);
+    _accelerated = !_bvhNodes.empty();
 }
 
 void Scene::clearAcceleration(void)
@@ -160,10 +74,10 @@ bool Scene::hitBVH(int nodeIndex, const Ray &ray, HitPayload &payload) const
     if (!node.bounds.intersect(ray, payload.getHitDistance()))
         return false;
 
-    bool hit = false;
-
     if (node.leaf)
     {
+        bool hit = false;
+
         for (std::size_t i = 0; i < node.count; ++i)
         {
             const std::size_t primitiveIndex = _bvhIndices[node.start + i];
@@ -174,9 +88,22 @@ bool Scene::hitBVH(int nodeIndex, const Ray &ray, HitPayload &payload) const
         return hit;
     }
 
-    if (hitBVH(node.left, ray, payload))
+    const BVHNode &leftNode = _bvhNodes[static_cast<std::size_t>(node.left)];
+    const BVHNode &rightNode = _bvhNodes[static_cast<std::size_t>(node.right)];
+
+    // Visit the nearer child first so the far child can often be skipped.
+    const float leftDistance = leftNode.bounds.entryDistance(ray);
+    const float rightDistance = rightNode.bounds.entryDistance(ray);
+    const int firstChild = leftDistance <= rightDistance ? node.left : node.right;
+    const int secondChild = leftDistance <= rightDistance ? node.right : node.left;
+    const float firstDistance = leftDistance <= rightDistance ? leftDistance : rightDistance;
+    const float secondDistance = leftDistance <= rightDistance ? rightDistance : leftDistance;
+
+    bool hit = false;
+
+    if (firstDistance < payload.getHitDistance() && hitBVH(firstChild, ray, payload))
         hit = true;
-    if (hitBVH(node.right, ray, payload))
+    if (secondDistance < payload.getHitDistance() && hitBVH(secondChild, ray, payload))
         hit = true;
     return hit;
 }

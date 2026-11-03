@@ -62,6 +62,58 @@ struct AABB
         return max - min;
     }
 
+    float surfaceArea(void) const
+    {
+        if (!valid())
+            return 0.0f;
+
+        const Vec3D size = extent();
+
+        return 2.0f * (size.getX() * size.getY() + size.getY() * size.getZ() + size.getZ() * size.getX());
+    }
+
+    /**
+     * Returns the distance at which the ray enters the box, or infinity when it
+     * misses. Used to visit the nearest BVH child first.
+     */
+    float entryDistance(const Ray &ray) const
+    {
+        if (!valid())
+            return std::numeric_limits<float>::infinity();
+
+        const Vec3D origin = ray.getOrigin();
+        const Vec3D direction = ray.getDirection();
+        float nearDistance = 0.0f;
+        float farDistance = std::numeric_limits<float>::infinity();
+
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            const float axisOrigin = origin[axis];
+            const float axisDirection = direction[axis];
+
+            if (std::fabs(axisDirection) < Ray::DIRECTION_EPSILON)
+            {
+                if (axisOrigin < min[axis] || axisOrigin > max[axis])
+                    return std::numeric_limits<float>::infinity();
+                continue;
+            }
+
+            float first = (min[axis] - axisOrigin) / axisDirection;
+            float second = (max[axis] - axisOrigin) / axisDirection;
+
+            if (first > second)
+                std::swap(first, second);
+
+            nearDistance = std::max(nearDistance, first);
+            farDistance = std::min(farDistance, second);
+
+            if (nearDistance > farDistance)
+                return std::numeric_limits<float>::infinity();
+        }
+
+        return nearDistance;
+    }
+
     bool intersect(const Ray &ray, float maxDistance) const
     {
         const Vec3D origin = ray.getOrigin();

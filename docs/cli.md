@@ -182,6 +182,16 @@ RENDERER=cuda FRAMES=4096 OUT_DIR=/tmp/cuda-8k ./scenes/render_8k.sh solar_eclip
 | `OUT_DIR` | `screenshots/8k` |
 | `CONVERT` | `1`; set to `0` to skip PNG/preview conversion |
 
+## Renderer environment variables
+
+| Variable | Effect |
+| --- | --- |
+| `RAYTRACER_DISABLE_BVH` | Set to a non-zero value to force the linear primitive scan. Useful for benchmarks and parity tests. |
+| `RAYTRACER_BVH_STATS` | Set to a non-zero value to print bounded/unbounded counts, node count and build time to stderr. |
+| `RAYTRACER_PLUGIN_DIR` | Override the plugin directory (also used by the install bundle). |
+
+See [performance.md](performance.md) for benchmark methodology and numbers.
+
 ## Common errors
 
 | Message | Resolution |

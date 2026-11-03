@@ -11,7 +11,8 @@
 #include "plugins/renderers/PPM.hpp"
 #include "plugins/renderers/SceneSnapshot.hpp"
 #include "render/PostProcess.hpp"
-#include "scene/PrimitiveBounds.hpp"
+#include "scene/BVHBuilder.hpp"
+#include "scene/Transform.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cuda_runtime.h>
@@ -142,6 +143,8 @@ std::vector<Cuda::Primitive> convertPrimitives(const SceneSnapshot &snapshot)
         converted.radius = primitive.radius;
         converted.height = primitive.height;
         converted.coneBaseAbove = primitive.coneBaseAbove ? 1 : 0;
+        converted.transformed = isIdentityTransform(primitive.transform) ? 0 : 1;
+        converted.transform = primitive.transform;
         primitives.push_back(converted);
     }
     return primitives;
@@ -200,94 +203,35 @@ struct HostBVH
 
 HostBVH buildBVH(const SceneSnapshot &snapshot)
 {
-    struct Entry
-    {
-        int index;
-        AABB bounds;
-        Vec3D centroid;
-    };
-
+    const BVHBuildResult result = RayTracer::buildBVH(snapshot.primitives);
     HostBVH bvh;
-    std::vector<Entry> entries;
 
-    entries.reserve(snapshot.primitives.size());
+    bvh.nodes.reserve(result.nodes.size());
 
-    for (std::size_t i = 0; i < snapshot.primitives.size(); ++i)
+    for (const BVHNode &source : result.nodes)
     {
-        AABB bounds;
-
-        if (!computePrimitiveBounds(snapshot.primitives[i], bounds))
-        {
-            bvh.unbounded.push_back(static_cast<int>(i));
-            continue;
-        }
-
-        entries.push_back(Entry{static_cast<int>(i), bounds, bounds.centroid()});
-    }
-
-    if (entries.size() < 8)
-    {
-        bvh.unbounded.clear();
-        return bvh;
-    }
-
-    bvh.indices.reserve(entries.size());
-    bvh.nodes.reserve(entries.size() * 2);
-
-    auto buildNode = [&](auto &self, std::size_t start, std::size_t end) -> int {
-        const int nodeIndex = static_cast<int>(bvh.nodes.size());
-
-        bvh.nodes.emplace_back();
-
-        AABB bounds;
-
-        for (std::size_t i = start; i < end; ++i)
-            bounds.expand(entries[i].bounds);
-
         Cuda::BVHNode node{};
-        node.min = toDevice(bounds.min);
-        node.max = toDevice(bounds.max);
-        node.left = -1;
-        node.right = -1;
-        node.start = 0;
-        node.count = 0;
-        node.leaf = 0;
 
-        if (end - start <= 4)
-        {
-            node.leaf = 1;
-            node.start = static_cast<int>(bvh.indices.size());
-            node.count = static_cast<int>(end - start);
+        node.min = toDevice(source.bounds.min);
+        node.max = toDevice(source.bounds.max);
+        node.left = source.left;
+        node.right = source.right;
+        node.start = static_cast<int>(source.start);
+        node.count = static_cast<int>(source.count);
+        node.leaf = source.leaf ? 1 : 0;
+        bvh.nodes.push_back(node);
+    }
 
-            for (std::size_t i = start; i < end; ++i)
-                bvh.indices.push_back(entries[i].index);
-            bvh.nodes[static_cast<std::size_t>(nodeIndex)] = node;
-            return nodeIndex;
-        }
+    bvh.indices.reserve(result.indices.size());
 
-        const Vec3D extent = bounds.extent();
-        int axis = 0;
+    for (const std::uint32_t index : result.indices)
+        bvh.indices.push_back(static_cast<int>(index));
 
-        if (extent.getY() > extent.getX())
-            axis = 1;
-        if (extent.getZ() > (axis == 0 ? extent.getX() : extent.getY()))
-            axis = 2;
+    bvh.unbounded.reserve(result.unbounded.size());
 
-        const std::size_t middle = (start + end) / 2;
+    for (const std::uint32_t index : result.unbounded)
+        bvh.unbounded.push_back(static_cast<int>(index));
 
-        std::sort(entries.begin() + static_cast<std::ptrdiff_t>(start),
-                  entries.begin() + static_cast<std::ptrdiff_t>(end),
-                  [axis](const Entry &left, const Entry &right) {
-                      return left.centroid[axis] < right.centroid[axis];
-                  });
-
-        node.left = self(self, start, middle);
-        node.right = self(self, middle, end);
-        bvh.nodes[static_cast<std::size_t>(nodeIndex)] = node;
-        return nodeIndex;
-    };
-
-    buildNode(buildNode, 0, entries.size());
     return bvh;
 }
 

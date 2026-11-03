@@ -21,6 +21,9 @@ constexpr float DIRECTION_EPSILON = 1e-12f;
 constexpr float AXIS_EPSILON = 1e-6f;
 constexpr float CONE_EPSILON = 1e-6f;
 constexpr int MAX_BOUNCES = 15;
+// The shared builder caps SAH depth and falls back to median splits, so the
+// traversal stack only needs to cover a balanced tree plus the SAH prefix.
+constexpr int BVH_STACK_SIZE = 128;
 
 __device__ inline Vec3 makeVec3(float x, float y, float z)
 {
@@ -503,8 +506,38 @@ __device__ bool intersectCone(const Primitive &primitive, const Ray &ray, float 
     return true;
 }
 
-__device__ bool intersectPrimitive(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
-                                   int &bestIndex, int index)
+__device__ inline Vec3 transformInversePoint(const TransformData &transform, const Vec3 &point)
+{
+    return makeVec3(transform.inverseLinear[0] * point.x + transform.inverseLinear[1] * point.y +
+                        transform.inverseLinear[2] * point.z + transform.inverseTranslation[0],
+                    transform.inverseLinear[3] * point.x + transform.inverseLinear[4] * point.y +
+                        transform.inverseLinear[5] * point.z + transform.inverseTranslation[1],
+                    transform.inverseLinear[6] * point.x + transform.inverseLinear[7] * point.y +
+                        transform.inverseLinear[8] * point.z + transform.inverseTranslation[2]);
+}
+
+__device__ inline Vec3 transformInverseVector(const TransformData &transform, const Vec3 &vector)
+{
+    return makeVec3(transform.inverseLinear[0] * vector.x + transform.inverseLinear[1] * vector.y +
+                        transform.inverseLinear[2] * vector.z,
+                    transform.inverseLinear[3] * vector.x + transform.inverseLinear[4] * vector.y +
+                        transform.inverseLinear[5] * vector.z,
+                    transform.inverseLinear[6] * vector.x + transform.inverseLinear[7] * vector.y +
+                        transform.inverseLinear[8] * vector.z);
+}
+
+__device__ inline Vec3 transformNormal(const TransformData &transform, const Vec3 &normal)
+{
+    return makeVec3(transform.inverseLinear[0] * normal.x + transform.inverseLinear[3] * normal.y +
+                        transform.inverseLinear[6] * normal.z,
+                    transform.inverseLinear[1] * normal.x + transform.inverseLinear[4] * normal.y +
+                        transform.inverseLinear[7] * normal.z,
+                    transform.inverseLinear[2] * normal.x + transform.inverseLinear[5] * normal.y +
+                        transform.inverseLinear[8] * normal.z);
+}
+
+__device__ bool intersectPrimitiveLocal(const Primitive &primitive, const Ray &ray, float &bestDistance,
+                                        Vec3 &bestNormal, int &bestIndex, int index)
 {
     switch (primitive.type)
     {
@@ -519,6 +552,43 @@ __device__ bool intersectPrimitive(const Primitive &primitive, const Ray &ray, f
     default:
         return false;
     }
+}
+
+__device__ bool intersectPrimitive(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
+                                   int &bestIndex, int index)
+{
+    if (!primitive.transformed)
+        return intersectPrimitiveLocal(primitive, ray, bestDistance, bestNormal, bestIndex, index);
+
+    const Vec3 localDirection = transformInverseVector(primitive.transform, ray.direction);
+    const float directionLength = length(localDirection);
+
+    if (!isfinite(directionLength) || directionLength <= 0.0f)
+        return false;
+
+    Ray local;
+
+    local.origin = transformInversePoint(primitive.transform, ray.origin);
+    local.direction = scale(localDirection, 1.0f / directionLength);
+
+    // Distances scale linearly with the ray direction, so the current best
+    // distance must be converted into the normalized local space.
+    float localDistance = bestDistance * directionLength;
+    Vec3 localNormal = makeVec3(0.0f, 0.0f, 0.0f);
+    int localIndex = index;
+
+    if (!intersectPrimitiveLocal(primitive, local, localDistance, localNormal, localIndex, index))
+        return false;
+
+    bestDistance = localDistance / directionLength;
+    bestNormal = transformNormal(primitive.transform, localNormal);
+
+    if (dot(ray.direction, bestNormal) > 0.0f)
+        bestNormal = negate(bestNormal);
+
+    bestNormal = normalize(bestNormal);
+    bestIndex = index;
+    return true;
 }
 
 __device__ bool intersectBounds(const BVHNode &node, const Ray &ray, float maxDistance)
@@ -559,9 +629,69 @@ __device__ bool intersectBounds(const BVHNode &node, const Ray &ray, float maxDi
     return true;
 }
 
+__device__ float boundsEntryDistance(const BVHNode &node, const Ray &ray)
+{
+    const float origin[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
+    const float direction[3] = {ray.direction.x, ray.direction.y, ray.direction.z};
+    const float minimum[3] = {node.min.x, node.min.y, node.min.z};
+    const float maximum[3] = {node.max.x, node.max.y, node.max.z};
+    float nearDistance = 0.0f;
+    float farDistance = INFINITY;
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        if (fabsf(direction[axis]) < DIRECTION_EPSILON)
+        {
+            if (origin[axis] < minimum[axis] || origin[axis] > maximum[axis])
+                return INFINITY;
+            continue;
+        }
+
+        float first = (minimum[axis] - origin[axis]) / direction[axis];
+        float second = (maximum[axis] - origin[axis]) / direction[axis];
+
+        if (first > second)
+        {
+            const float swap = first;
+            first = second;
+            second = swap;
+        }
+
+        nearDistance = fmaxf(nearDistance, first);
+        farDistance = fminf(farDistance, second);
+
+        if (nearDistance > farDistance)
+            return INFINITY;
+    }
+
+    return nearDistance;
+}
+
+__device__ void pushChildren(const SceneView &scene, const BVHNode &node, const Ray &ray, float maxDistance,
+                             int *stack, int &stackSize)
+{
+    if (node.left < 0 || node.right < 0)
+        return;
+
+    const BVHNode &leftNode = scene.nodes[node.left];
+    const BVHNode &rightNode = scene.nodes[node.right];
+    const float leftDistance = boundsEntryDistance(leftNode, ray);
+    const float rightDistance = boundsEntryDistance(rightNode, ray);
+    const int nearNode = leftDistance <= rightDistance ? node.left : node.right;
+    const int farNode = leftDistance <= rightDistance ? node.right : node.left;
+    const float nearDistance = leftDistance <= rightDistance ? leftDistance : rightDistance;
+    const float farDistance = leftDistance <= rightDistance ? rightDistance : leftDistance;
+
+    // Push the far child first so the near child is popped (and tested) first.
+    if (farDistance < maxDistance)
+        stack[stackSize++] = farNode;
+    if (nearDistance < maxDistance)
+        stack[stackSize++] = nearNode;
+}
+
 __device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &distance, Vec3 &normal, int &index)
 {
-    int stack[64];
+    int stack[BVH_STACK_SIZE];
     int stackSize = 0;
     bool hit = false;
 
@@ -586,12 +716,7 @@ __device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &dist
             }
         }
         else
-        {
-            if (node.left >= 0)
-                stack[stackSize++] = node.left;
-            if (node.right >= 0)
-                stack[stackSize++] = node.right;
-        }
+            pushChildren(scene, node, ray, distance, stack, stackSize);
     }
 
     return hit;
@@ -634,7 +759,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
 
     if (scene.nodeCount > 0)
     {
-        int stack[64];
+        int stack[BVH_STACK_SIZE];
         int stackSize = 0;
 
         stack[stackSize++] = 0;
@@ -659,12 +784,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
                 }
             }
             else
-            {
-                if (node.left >= 0)
-                    stack[stackSize++] = node.left;
-                if (node.right >= 0)
-                    stack[stackSize++] = node.right;
-            }
+                pushChildren(scene, node, ray, distance, stack, stackSize);
         }
     }
     else

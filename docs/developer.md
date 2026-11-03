@@ -150,6 +150,33 @@ cause a non-zero exit before an image is written.
 
 See [scene-format.md](scene-format.md) for the complete format.
 
+### Acceleration and transforms
+
+`src/scene/BVHBuilder.cpp` implements the single acceleration builder used by
+both renderers. It performs a binned-SAH split over `PrimitiveData`, falls back
+to a median split for degenerate distributions, and returns a flat node array
+plus primitive indices. Planes and primitives without bounds are returned in a
+separate `unbounded` list and tested linearly.
+
+- Scenes with fewer than eight bounded primitives stay linear.
+- CPU traversal visits the nearer child first and skips the far child when its
+  entry distance is beyond the current hit.
+- The CUDA renderer adapts the same build result to `Cuda::BVHNode` and uses a
+  near-first stack during traversal.
+- `RAYTRACER_DISABLE_BVH=1` forces the linear path for benchmarks and parity
+  tests. `RAYTRACER_BVH_STATS=1` prints the bounded/unbounded counts, node count
+  and build time to stderr.
+
+Primitive transforms are stored in the device-friendly `TransformData`
+(`include/scene/TransformData.hpp`). `InstancePrimitive`
+(`include/scene/InstancePrimitive.hpp`) wraps a primitive, transforms incoming
+rays into local space, delegates to the plugin, and converts the hit position
+and normal back to world space. `IPrimitive::getData()` composes the instance
+transform with the child's description, so the CPU BVH, the CUDA snapshot and
+both renderers see the same world-space primitive. The legacy
+`Rotation`/`Translation` plugins remain available but the parser uses the
+data-driven transform path.
+
 ### Renderer interface
 
 Renderers implement `RayTracer::IRenderer` from
@@ -161,7 +188,11 @@ struct RenderOptions
     int width;
     int height;
     int frames;
+    int threads;   // CPU only, 0 = automatic
+    int device;    // CUDA only
+    uint32_t seed;
     std::string outputPath;
+    PostProcessSettings postProcess;
 };
 
 struct RenderContext
@@ -241,6 +272,9 @@ one-sample batches; keep that behavior if you modify it.
    - `getMaterialIndex()` / `setMaterialIndex()`
    - `doTransformation()` (or intentionally ignore it)
    - `clone()` so nested-scene merging can copy the primitive safely
+   - implement `hit()` in local space; the parser wraps primitives with a
+     `transform` block in `InstancePrimitive`, which handles world-space rays,
+     hit positions and normals
 3. Add an `ExternMyPrimitive.cpp` with the exported `create` function.
 4. Add the plugin target in `CMakeLists.txt` and link `raytracer_core`.
 5. Add the type and library to `Factory` in `src/factory/Factory.cpp`.
@@ -326,6 +360,19 @@ CUDA smoke test:
 ./raytracer --path scenes/showcase.cfg --cli --renderer cuda \
   --width 320 --height 180 --frames 8 --output /tmp/cuda.ppm
 ```
+
+BVH and transform checks:
+
+```bash
+bash tests/bvh_parity.sh ./raytracer . build
+./raytracer --path scenes/transforms.cfg --cli --renderer cpu \
+  --width 320 --height 180 --frames 8 --output /tmp/transforms.ppm
+RAYTRACER_BVH_STATS=1 ./raytracer --path scenes/transforms.cfg --cli \
+  --renderer cpu --width 64 --height 36 --frames 1 --output /tmp/stats.ppm
+```
+
+See [performance.md](performance.md) for the benchmark script and reference
+numbers.
 
 CUDA memory checking:
 

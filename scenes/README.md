@@ -61,6 +61,7 @@ letterboxes it to preserve aspect ratio.
 | `prism_pavilion.cfg` | A glass colonnade with glowing cores, a chrome orb and a neon ring |
 | `aurora_lens.cfg` | A giant glass lens, rose glass and a floating aurora arc |
 | `roughness_study.cfg` | Metal spheres from perfect mirror to satin roughness |
+| `transforms.cfg` | Translate/rotate/scale transforms on spheres, cylinders, cones and planes |
 
 ## Material showcase renders
 

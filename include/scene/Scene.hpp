@@ -15,6 +15,7 @@
 #include "Background.hpp"
 #include "BVH.hpp"
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -60,8 +61,8 @@ class Scene : public IPrimitive
     Primitives _primitives;
     Background _background;
     std::vector<BVHNode> _bvhNodes;
-    std::vector<std::size_t> _bvhIndices;
-    std::vector<std::size_t> _unboundedPrimitives;
+    std::vector<std::uint32_t> _bvhIndices;
+    std::vector<std::uint32_t> _unboundedPrimitives;
     bool _accelerated = false;
     uint _materialIndex = std::numeric_limits<uint>::max();
 };

@@ -103,8 +103,9 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 
 - Multithreaded: the image is split into horizontal bands and rendered by a
   persistent worker pool, one worker per band.
-- Hot vector math is header-inlined, and the renderer uses a CPU BVH for bounded
-  primitives; planes and other unbounded primitives are still tested linearly.
+- Hot vector math is header-inlined, and the renderer uses a binned-SAH BVH for
+  bounded primitives; planes and other unbounded primitives are still tested
+  linearly. Traversal visits the nearer child first and can skip the far child.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
 - Uses the same 15-bounce path tracing, material and light logic as the CUDA
   renderer. Path throughput is attenuated by diffuse/metallic surface colour,
@@ -139,8 +140,12 @@ uses the same `SceneSnapshot` data path.
   `-DRAYTRACER_ENABLE_CUDA=OFF`.
 - **Target:** `raytracer_renderer_cuda`, written to
   `plugins/raytracer_renderer_cuda.so`.
-- **Acceleration:** uploads a device BVH for bounded primitives; planes and other
+- **Acceleration:** builds the same shared binned-SAH BVH as the CPU renderer,
+  uploads it to the device, and traverses it near-first; planes and other
   unbounded primitives are tested linearly.
+- **Transforms:** `PrimitiveData::transform` is copied into `Cuda::Primitive`;
+  rays are transformed into local space, and normals are transformed back with
+  the inverse-transpose.
 - **Architecture:** compiled for `89` by default (RTX 4070 Laptop / Ada). Set
   `-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 - **Runtime:** the plugin links `CUDA::cudart_static`, so it does not require a

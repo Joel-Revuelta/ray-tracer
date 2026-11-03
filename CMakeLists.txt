@@ -346,6 +346,23 @@ add_test(
 )
 add_test(NAME list_guis COMMAND $<TARGET_FILE:raytracer> --list-guis)
 add_test(
+    NAME bvh_matches_linear
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bvh_parity.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME transform_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/transforms.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/transform_smoke.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_transform
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_transform.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_transform.ppm
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -357,8 +374,10 @@ add_test(
 )
 set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_process_smoke
     roughness_smoke seed_deterministic_cpu_render threads_smoke list_guis
+    bvh_matches_linear transform_smoke
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
-set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed PROPERTIES
+set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
+    parser_rejects_invalid_transform PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )

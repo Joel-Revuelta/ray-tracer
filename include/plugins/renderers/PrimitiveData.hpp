@@ -8,6 +8,7 @@
 #ifndef PRIMITIVE_DATA_HPP_
 #define PRIMITIVE_DATA_HPP_
 
+#include "TransformData.hpp"
 #include "Vec3D.hpp"
 #include <cstdint>
 
@@ -41,6 +42,7 @@ struct PrimitiveData
     float radius = 0.0f;
     float height = 0.0f;
     bool coneBaseAbove = false;
+    TransformData transform;
 };
 
 } // namespace RayTracer

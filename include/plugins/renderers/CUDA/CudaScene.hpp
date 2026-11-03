@@ -8,6 +8,8 @@
 #ifndef CUDA_SCENE_HPP_
 #define CUDA_SCENE_HPP_
 
+#include "TransformData.hpp"
+
 namespace RayTracer
 {
 namespace Cuda
@@ -60,6 +62,8 @@ struct Primitive
     float radius;
     float height;
     int coneBaseAbove;
+    int transformed;
+    TransformData transform;
 };
 
 struct Material

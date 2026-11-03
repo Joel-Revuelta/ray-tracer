@@ -1,0 +1,99 @@
+/*
+** EPITECH PROJECT, 2024
+** raytracer
+** File description:
+** InstancePrimitive
+*/
+
+#include "InstancePrimitive.hpp"
+#include <cmath>
+#include <utility>
+
+using namespace RayTracer;
+
+InstancePrimitive::InstancePrimitive(std::shared_ptr<IPrimitive> child, const TransformData &transform)
+    : _child(std::move(child)), _transform(transform)
+{
+}
+
+void InstancePrimitive::doTransformation(const ITransformation &t)
+{
+    // The legacy transformation plugins mutate primitive geometry directly.
+    // Keep that behaviour for the wrapped child; the instance transform is
+    // applied on top of it.
+    if (_child)
+        _child->doTransformation(t);
+}
+
+bool InstancePrimitive::hit(const Ray &ray, HitPayload &payload, size_t i) const
+{
+    if (!_child)
+        return false;
+
+    const Vec3D localDirection = transformInverseVector(_transform, ray.getDirection());
+    const float directionLength = localDirection.length();
+
+    if (!std::isfinite(directionLength) || directionLength <= 0.0f)
+        return false;
+
+    const Ray localRay(transformInversePoint(_transform, ray.getOrigin()), localDirection / directionLength);
+    HitPayload localPayload = payload;
+
+    // Distances scale linearly with the ray direction, so convert the current
+    // best distance into the normalized local space before testing.
+    localPayload.setHitDistance(payload.getHitDistance() * directionLength);
+
+    if (!_child->hit(localRay, localPayload, i))
+        return false;
+
+    const float worldDistance = localPayload.getHitDistance() / directionLength;
+
+    if (!std::isfinite(worldDistance) || worldDistance >= payload.getHitDistance())
+        return false;
+
+    Vec3D normal = transformNormal(_transform, localPayload.getHitNormal());
+
+    if (vec3DDot(normal, ray.getDirection()) > 0.0f)
+        normal = -normal;
+
+    payload.setHitDistance(worldDistance);
+    payload.setHitPosition(ray.at(worldDistance));
+    payload.setHitNormal(vec3DNormalize(normal));
+    payload.setHitIndex(static_cast<int>(i));
+    return true;
+}
+
+std::shared_ptr<IPrimitive> InstancePrimitive::clone(void) const
+{
+    std::shared_ptr<IPrimitive> child = _child ? _child->clone() : nullptr;
+
+    if (!child)
+        child = _child;
+
+    return std::make_shared<InstancePrimitive>(child, _transform);
+}
+
+bool InstancePrimitive::getData(PrimitiveData &data) const
+{
+    if (!_child || !_child->getData(data))
+        return false;
+
+    data.transform = composeTransforms(_transform, data.transform);
+    return true;
+}
+
+uint InstancePrimitive::getMaterialIndex(void) const
+{
+    return _child ? _child->getMaterialIndex() : 0;
+}
+
+void InstancePrimitive::setMaterialIndex(const uint &index)
+{
+    if (_child)
+        _child->setMaterialIndex(index);
+}
+
+const TransformData &InstancePrimitive::getTransform(void) const
+{
+    return _transform;
+}
