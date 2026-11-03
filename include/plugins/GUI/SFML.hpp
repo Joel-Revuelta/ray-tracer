@@ -32,6 +32,7 @@ class SFML : public IGUI
     void setPixels(const Pixels &pixels) override;
     void setPixel(const std::size_t &x, const std::size_t &y, const Color4D &color) override;
     void display() override;
+    void setTitle(const std::string &title) override;
     bool isOpen() override;
     char getEvent() override;
     void loop() override;

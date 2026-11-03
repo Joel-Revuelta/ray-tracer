@@ -137,12 +137,16 @@ Or use the raw GLFW/OpenGL window:
 
 GUI controls: `WASD` moves relative to the current view, `Q/E` moves up/down,
 arrow keys or `IJKL` look around, `+`/`-` zooms, `R` restores the starting pose,
-`X`/`C` toggle camera locks, and `Esc` quits.
+`X`/`C` toggle camera locks, and `Esc` quits. `Space` pauses/resumes rendering,
+`P` saves the current frame as `raytracer-<timestamp>.ppm`, and `[`/`]`
+decrease/increase exposure live. The window title shows progress, elapsed time,
+exposure, and pause state.
 
 List the renderer plugins:
 
 ```bash
 ./raytracer --list-renderers
+./raytracer --list-guis
 ```
 
 Example output:
@@ -151,6 +155,10 @@ Example output:
 Available renderers:
   cpu  - Multithreaded CPU renderer (default) [available]
   cuda - CUDA GPU renderer [available]
+
+Available GUI backends:
+  sfml - SFML 3 window
+  opengl - GLFW/OpenGL 3.3 window
 ```
 
 ## CLI
@@ -158,8 +166,9 @@ Available renderers:
 ```text
 Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
        [--renderer cpu|cuda] [--width W] [--height H] [--frames N]
-       [--exposure E] [--tonemap none|reinhard|aces]
-       [--output out.ppm] [--list-renderers]
+       [--threads N] [--seed N] [--device N] [--exposure E]
+       [--tonemap none|reinhard|aces] [--output out.ppm]
+       [--list-renderers] [--list-guis]
 ```
 
 | Option | Description | Default |
@@ -173,9 +182,14 @@ Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
 | `--width <N>` | Render width and window width. Must be positive. | `960` |
 | `--height <N>` | Render height and window height. Must be positive. | `540` |
 | `--frames <N>` | Samples per pixel. Higher is cleaner and slower. | `10` |
+| `--threads <N>` | CPU worker threads; `0` means automatic. | `0` |
+| `--seed <N>` | Sampling seed offset for reproducible renders. | `0` |
+| `--device <N>` | CUDA device index. | `0` |
 | `--exposure <E>` | Linear exposure before tonemapping. | `1.0` |
 | `--tonemap <mode>` | `none`, `reinhard`, or `aces`. | `none` |
 | `--output <file>` | Output PPM path. | stdout in CLI mode |
+| `--list-renderers` | List renderer plugins and exit. | |
+| `--list-guis` | List GUI backends and exit. | |
 | `--help`, `-h` | Print usage and exit. | |
 
 Important details:

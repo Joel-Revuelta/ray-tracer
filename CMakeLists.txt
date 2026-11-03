@@ -333,8 +333,35 @@ add_test(
             --cli --renderer cpu --width 16 --height 9 --frames 1
             --output ${CMAKE_BINARY_DIR}/invalid_roughness.ppm
 )
+add_test(
+    NAME seed_deterministic_cpu_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_render.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR} 12345
+)
+add_test(
+    NAME threads_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2
+            --threads 2 --seed 7 --output ${CMAKE_BINARY_DIR}/threads_smoke.ppm
+)
+add_test(NAME list_guis COMMAND $<TARGET_FILE:raytracer> --list-guis)
+add_test(
+    NAME cli_rejects_invalid_threads
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
+            --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
+)
+add_test(
+    NAME cli_rejects_invalid_seed
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
+            --cli --renderer cpu --seed -1 --width 16 --height 9 --frames 1
+)
 set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_process_smoke
-    roughness_smoke PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
+    roughness_smoke seed_deterministic_cpu_render threads_smoke list_guis
+    PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
+set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed PROPERTIES
+    WILL_FAIL TRUE
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
+)
 set_tests_properties(parser_rejects_invalid_roughness PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..

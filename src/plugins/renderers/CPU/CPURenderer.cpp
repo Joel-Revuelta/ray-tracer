@@ -7,6 +7,7 @@
 
 #include "plugins/renderers/CPU/CPURenderer.hpp"
 #include "plugins/renderers/CPU/Renderer.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 using namespace RayTracer;
@@ -42,7 +43,8 @@ void CPURenderer::run(const RenderContext &context)
     }
 
     Renderer renderer(context.options.frames, context.scene, context.camera, context.gui, context.options.outputPath,
-                      context.options.postProcess);
+                      context.options.postProcess, static_cast<std::size_t>(std::max(context.options.threads, 0)),
+                      context.options.seed);
     renderer.run();
 }
 

@@ -35,6 +35,7 @@ class OpenGLGUI : public IGUI
     void setPixels(const std::vector<std::vector<Color4D>> &pixels) override;
     void setPixel(const std::size_t &x, const std::size_t &y, const Color4D &color) override;
     void display(void) override;
+    void setTitle(const std::string &title) override;
     bool isOpen(void) override;
     char getEvent(void) override;
     void loop(void) override;

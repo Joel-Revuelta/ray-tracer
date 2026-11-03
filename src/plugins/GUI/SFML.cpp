@@ -221,6 +221,11 @@ char SFML::getEvent()
     return sfKeyToAscii(keyPressed->code);
 }
 
+void SFML::setTitle(const std::string &title)
+{
+    _window.setTitle(title);
+}
+
 bool SFML::isOpen()
 {
     return _window.isOpen() && !_close;
@@ -259,7 +264,8 @@ char SFML::sfKeyToAscii(sf::Keyboard::Key key)
         {sf::Keyboard::Key::Right, 'l'},  {sf::Keyboard::Key::Up, 'i'},
         {sf::Keyboard::Key::Down, 'k'},   {sf::Keyboard::Key::Equal, '+'},
         {sf::Keyboard::Key::Add, '+'},    {sf::Keyboard::Key::Hyphen, '-'},
-        {sf::Keyboard::Key::Subtract, '-'}};
+        {sf::Keyboard::Key::Subtract, '-'}, {sf::Keyboard::Key::LBracket, '['},
+        {sf::Keyboard::Key::RBracket, ']'}};
 
     auto it = keyMap.find(key);
     if (it != keyMap.end())

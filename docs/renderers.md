@@ -209,6 +209,11 @@ The OpenGL backend requires GLFW 3.3+, GLEW and an X11/GLX display. It is
 disabled automatically when those dependencies are unavailable; `--gui opengl`
 then reports the missing plugin.
 
+Both GUIs support live statistics in the window title, `Space` pause/resume,
+`P` screenshot saving, and `[`/`]` exposure changes. CPU screenshots are
+re-tonemapped from the accumulated HDR buffer; CUDA uses a device post-process
+pass over its accumulation buffer.
+
 ## Output pipeline
 
 Both renderers share the same output pipeline:

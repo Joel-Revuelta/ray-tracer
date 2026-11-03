@@ -20,7 +20,9 @@
 #include "plugins/renderers/CameraController.hpp"
 #include "render/PostProcess.hpp"
 #include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -38,7 +40,7 @@ class Renderer
     Renderer(void);
     Renderer(int frameIterations, std::shared_ptr<Scene> scene, std::shared_ptr<Camera> camera,
              std::shared_ptr<IGUI> gui, const std::string &outFile,
-             const PostProcessSettings &postProcess = {});
+             const PostProcessSettings &postProcess = {}, std::size_t threads = 0, uint32_t seed = 0);
     ~Renderer(void);
 
     void run(void);
@@ -81,6 +83,10 @@ class Renderer
     std::shared_ptr<IGUI> _gui;
     CameraController _cameraController;
     PostProcessSettings _postProcess;
+    std::size_t _threadCount = 0;
+    uint32_t _seed = 0;
+    bool _paused = false;
+    std::chrono::steady_clock::time_point _renderStart = std::chrono::steady_clock::now();
 
     std::atomic<bool> _reset{false};
     std::atomic<bool> _stop{false};
@@ -102,6 +108,9 @@ class Renderer
     HitPayload shotRay(const Ray &ray);
     HitPayload missHit(void);
     void manageEvent(char evt);
+    void refreshImage(void);
+    void saveScreenshot(void);
+    void updateTitle(void);
 };
 
 } // namespace RayTracer

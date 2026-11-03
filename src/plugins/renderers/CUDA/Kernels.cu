@@ -749,7 +749,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
 {
     unsigned int state =
         pcgHash(static_cast<unsigned int>(x) + 0x9e3779b9u * static_cast<unsigned int>(y) +
-                static_cast<unsigned int>(sample + 1));
+                static_cast<unsigned int>(sample + 1) + scene.seed);
     const Vec3 pixelPosition =
         add(add(scene.camera.initialPixelPos, scale(scene.camera.pixelWidthDistance, static_cast<float>(x))),
             scale(scene.camera.pixelHeightDistance, static_cast<float>(y)));
@@ -901,6 +901,21 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
     return accumulated;
 }
 
+__device__ inline uchar4 postProcessPixel(const SceneView &scene, const float4 &sum, int renderedSamples)
+{
+    const float inverseSamples = 1.0f / static_cast<float>(renderedSamples);
+    const float red = postProcessChannel(sum.x * inverseSamples, scene.postProcess);
+    const float green = postProcessChannel(sum.y * inverseSamples, scene.postProcess);
+    const float blue = postProcessChannel(sum.z * inverseSamples, scene.postProcess);
+    uchar4 pixel;
+
+    pixel.x = static_cast<unsigned char>(red * 255.0f + 0.5f);
+    pixel.y = static_cast<unsigned char>(green * 255.0f + 0.5f);
+    pixel.z = static_cast<unsigned char>(blue * 255.0f + 0.5f);
+    pixel.w = 255;
+    return pixel;
+}
+
 __global__ void renderKernel(SceneView scene, int sampleStart, int sampleCount, float4 *accumulation, uchar4 *output)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -923,20 +938,21 @@ __global__ void renderKernel(SceneView scene, int sampleStart, int sampleCount, 
     }
 
     accumulation[index] = sum;
+    output[index] = postProcessPixel(scene, sum, sampleStart + sampleCount);
+}
 
-    const int renderedSamples = sampleStart + sampleCount;
-    const float inverseSamples = 1.0f / static_cast<float>(renderedSamples);
-    uchar4 pixel;
+__global__ void postProcessKernel(SceneView scene, const float4 *accumulation, int renderedSamples, uchar4 *output)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    const float red = postProcessChannel(sum.x * inverseSamples, scene.postProcess);
-    const float green = postProcessChannel(sum.y * inverseSamples, scene.postProcess);
-    const float blue = postProcessChannel(sum.z * inverseSamples, scene.postProcess);
+    if (x >= scene.camera.width || y >= scene.camera.height)
+        return;
 
-    pixel.x = static_cast<unsigned char>(red * 255.0f + 0.5f);
-    pixel.y = static_cast<unsigned char>(green * 255.0f + 0.5f);
-    pixel.z = static_cast<unsigned char>(blue * 255.0f + 0.5f);
-    pixel.w = 255;
-    output[index] = pixel;
+    const std::size_t index = static_cast<std::size_t>(x) +
+                              static_cast<std::size_t>(y) * static_cast<std::size_t>(scene.camera.width);
+
+    output[index] = postProcessPixel(scene, accumulation[index], renderedSamples);
 }
 } // namespace
 
@@ -952,6 +968,20 @@ void launchRender(const SceneView &scene, int sampleStart, int sampleCount, floa
 
     renderKernel<<<grid, block, 0, stream>>>(scene, sampleStart, sampleCount, accumulation,
                                              reinterpret_cast<uchar4 *>(output));
+}
+
+void launchPostProcess(const SceneView &scene, const float4 *accumulation, int renderedSamples, unsigned char *output,
+                       cudaStream_t stream)
+{
+    if (renderedSamples <= 0)
+        return;
+
+    const dim3 block(16, 16);
+    const dim3 grid(static_cast<unsigned int>((scene.camera.width + 15) / 16),
+                    static_cast<unsigned int>((scene.camera.height + 15) / 16));
+
+    postProcessKernel<<<grid, block, 0, stream>>>(scene, accumulation, renderedSamples,
+                                                  reinterpret_cast<uchar4 *>(output));
 }
 
 } // namespace Cuda

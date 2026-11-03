@@ -26,9 +26,14 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--width` | positive integer | Render width, window width and PPM width. | `960` |
 | `--height` | positive integer | Render height, window height and PPM height. | `540` |
 | `--frames` | positive integer | Samples per pixel. | `10` |
+| `--threads` | non-negative integer | CPU worker threads; `0` means automatic. | `0` |
+| `--seed` | non-negative integer | Sampling seed offset. | `0` |
+| `--device` | non-negative integer | CUDA device index. | `0` |
 | `--exposure` | non-negative float | Linear exposure multiplier before tonemapping. | `1.0` |
 | `--tonemap` | `none`, `reinhard`, or `aces` | Output tonemapping curve. | `none` |
 | `--output` | path | PPM output file. | stdout in CLI mode |
+| `--list-renderers` | — | Print renderer availability and exit `0`. | |
+| `--list-guis` | — | Print GUI backends and exit `0`. | |
 | `--help`, `-h` | — | Print usage and exit `0`. | |
 
 ### Samples, not animation frames
@@ -93,12 +98,19 @@ GUI plugin was not built, the program reports the missing plugin and exits.
 | `R` | Restore the initial camera position, look target and field of view. |
 | `X` | Lock/unlock the look-at point. |
 | `C` | Lock/unlock the camera position. |
+| `Space` | Pause/resume sample rendering. |
+| `P` | Save the current frame as `raytracer-<timestamp>.ppm`. |
+| `[` / `]` | Decrease/increase exposure live. |
 | `Esc` | Close the window. |
 
 Movement is camera-relative: `W`/`S` follow the horizontal view direction and
 `A`/`D` follow the camera's right vector. `Q`/`E` remain world-space vertical
 movement. `X` keeps the look-at point fixed while the camera moves; `C` keeps the
 camera position fixed while the look target moves.
+
+The window title shows resolution, completed/total samples, elapsed time,
+exposure, and pause state. Interactive screenshots are written to the current
+working directory.
 
 The SFML backend stretches the rendered image to the new window size. The
 OpenGL backend preserves the image aspect ratio with black letterbox bars.

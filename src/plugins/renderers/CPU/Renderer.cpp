@@ -16,7 +16,9 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <iomanip>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -182,9 +184,10 @@ Renderer::Renderer(void)
 }
 
 Renderer::Renderer(int raysPerPixel, std::shared_ptr<Scene> scene, std::shared_ptr<Camera> camera,
-                   std::shared_ptr<IGUI> gui, const std::string &outFile, const PostProcessSettings &postProcess)
+                   std::shared_ptr<IGUI> gui, const std::string &outFile, const PostProcessSettings &postProcess,
+                   std::size_t threads, uint32_t seed)
     : _frameIterations(raysPerPixel), _frameIterationsScale(1.0 / _frameIterations), _scene(scene), _camera(camera),
-      _gui(gui), _postProcess(postProcess)
+      _gui(gui), _postProcess(postProcess), _threadCount(threads), _seed(seed)
 {
     if (raysPerPixel <= 0)
         throw std::invalid_argument("Frame iterations must be positive");
@@ -275,6 +278,9 @@ void Renderer::render(void)
     if (_rayDirections.size() == 0)
         initialize();
 
+    _renderStart = std::chrono::steady_clock::now();
+    updateTitle();
+
     while (_frameIteration <= _frameIterations)
     {
         // Process GUI input only on the render thread, while no worker thread
@@ -293,18 +299,27 @@ void Renderer::render(void)
                 setFrameIteration(1);
                 _reset = false;
             }
+
+            if (_paused)
+            {
+                _gui->display();
+                std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                continue;
+            }
         }
 
         std::clog << "\rRendering image. Percentage done: " << (float)(_frameIteration - 1) / _frameIterations * 100
                   << "% ";
         renderFrame();
         _frameIteration++;
+        updateTitle();
         if (_stop)
             break;
     }
     if (_outStream)
         writePPM(*_outStream, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
 
+    updateTitle();
     std::clog << "\rDone.                                             ";
     _rayDirections.clear();
 }
@@ -317,6 +332,10 @@ void Renderer::renderFrame(void)
     const int width = getCamera()->getImageWidth();
     const int height = getCamera()->getImageHeight();
     std::size_t numThreads = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+
+    if (_threadCount > 0)
+        numThreads = std::min(numThreads, _threadCount);
+
     numThreads = std::min<std::size_t>(numThreads, static_cast<std::size_t>(std::max(height, 1)));
 
     // Clear/re-initialize the image data if it's the first frame.
@@ -336,7 +355,7 @@ void Renderer::renderFrame(void)
                     // Give every pixel its own seed so threads never share RNG state.
                     const uint32_t seed = Utils::PCGHash(static_cast<uint32_t>(x) +
                                                          0x9e3779b9u * static_cast<uint32_t>(y) +
-                                                         static_cast<uint32_t>(_frameIteration));
+                                                         static_cast<uint32_t>(_frameIteration) + _seed);
                     const std::size_t pixelIndex =
                         static_cast<std::size_t>(x) + static_cast<std::size_t>(y) * static_cast<std::size_t>(width);
                     Color4D pixelColor = getPixelColor(seed, x, y);
@@ -428,12 +447,95 @@ void Renderer::renderFrame(void)
     }
 }
 
+void Renderer::refreshImage(void)
+{
+    const int completedSamples = _frameIteration - 1;
+
+    if (completedSamples <= 0)
+        return;
+
+    for (std::size_t i = 0; i < _imageData.size(); ++i)
+    {
+        Color4D color = _imageAccumulationData[i];
+
+        color /= static_cast<float>(completedSamples);
+        _imageData[i] = Utils::convertToRGBA(color, _postProcess);
+    }
+
+    if (_gui)
+    {
+        _gui->setImage(getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
+        _gui->display();
+    }
+}
+
+void Renderer::saveScreenshot(void)
+{
+    if (_imageData.empty())
+        return;
+
+    const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::system_clock::now().time_since_epoch())
+                           .count();
+    const std::string path = "raytracer-" + std::to_string(stamp) + ".ppm";
+
+    writePPMFile(path, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
+    std::clog << "\rSaved screenshot: " << path << std::endl;
+}
+
+void Renderer::updateTitle(void)
+{
+    if (!_gui)
+        return;
+
+    const int completedSamples = std::clamp(_frameIteration - 1, 0, _frameIterations);
+    const double elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - _renderStart).count();
+    std::ostringstream title;
+
+    title << "RayTracer | " << getCamera()->getImageWidth() << "x" << getCamera()->getImageHeight() << " | "
+          << completedSamples << "/" << _frameIterations << " spp | " << std::fixed << std::setprecision(1) << elapsed
+          << "s | exposure " << std::setprecision(2) << _postProcess.exposure;
+
+    if (_paused)
+        title << " | paused";
+
+    _gui->setTitle(title.str());
+}
+
 void Renderer::manageEvent(char evt)
 {
+    if (!evt)
+        return;
+
+    if (evt == ' ')
+    {
+        _paused = !_paused;
+        updateTitle();
+        return;
+    }
+
+    if (evt == 'p' || evt == 'P')
+    {
+        saveScreenshot();
+        return;
+    }
+
+    if (evt == '[' || evt == ']')
+    {
+        const float factor = evt == ']' ? 1.1f : 1.0f / 1.1f;
+
+        _postProcess.exposure = std::clamp(_postProcess.exposure * factor, 0.05f, 20.0f);
+        refreshImage();
+        updateTitle();
+        return;
+    }
+
     if (_cameraController.handleEvent(evt, *getCamera()))
     {
         setFrameIteration(0);
         _reset = true;
+        updateTitle();
     }
 }
 

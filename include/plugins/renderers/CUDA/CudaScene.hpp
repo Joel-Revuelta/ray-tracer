@@ -140,6 +140,7 @@ struct SceneView
     Camera camera;
     Background background;
     PostProcess postProcess;
+    unsigned int seed;
 };
 
 } // namespace Cuda

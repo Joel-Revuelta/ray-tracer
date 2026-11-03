@@ -17,9 +17,11 @@
 #include <cuda_runtime.h>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -306,7 +308,7 @@ std::size_t pixelCount(int width, int height)
 class CudaRenderSession
 {
   public:
-    explicit CudaRenderSession(const SceneSnapshot &snapshot, const PostProcessSettings &postProcess)
+    explicit CudaRenderSession(const SceneSnapshot &snapshot, const PostProcessSettings &postProcess, uint32_t seed)
         : _width(snapshot.camera.imageWidth), _height(snapshot.camera.imageHeight),
           _primitives(convertPrimitives(snapshot)), _materials(convertMaterials(snapshot)),
           _lights(convertLights(snapshot)), _bvh(buildBVH(snapshot)), _devicePrimitives(_primitives.size()),
@@ -337,6 +339,7 @@ class CudaRenderSession
         _view.camera = toDevice(snapshot.camera);
         _view.background = toDeviceBackground(snapshot.background);
         _view.postProcess = toDevice(postProcess);
+        _view.seed = seed;
 
         checkCuda(cudaStreamCreateWithFlags(&_stream, cudaStreamNonBlocking), "cudaStreamCreate");
         try
@@ -394,6 +397,23 @@ class CudaRenderSession
                                   static_cast<std::size_t>(_width) * static_cast<std::size_t>(_height) * sizeof(float4),
                                   _stream),
                   "cudaMemsetAsync");
+    }
+
+    void setPostProcess(const PostProcessSettings &postProcess)
+    {
+        finishBatch();
+        _view.postProcess = toDevice(postProcess);
+    }
+
+    void refreshOutput(int renderedSamples)
+    {
+        if (renderedSamples <= 0)
+            return;
+
+        finishBatch();
+        Cuda::launchPostProcess(_view, _deviceAccumulation.get(), renderedSamples, _deviceOutput.get(), _stream);
+        checkCuda(cudaGetLastError(), "post-process kernel launch");
+        checkCuda(cudaStreamSynchronize(_stream), "post-process synchronize");
     }
 
     void launchBatch(int sampleStart, int sampleCount)
@@ -507,6 +527,17 @@ void writeOutput(const RenderContext &context, int width, int height, const std:
     else if (!context.gui)
         writePPM(std::cout, width, height, pixels);
 }
+
+void saveScreenshot(const std::vector<uint32_t> &pixels, int width, int height)
+{
+    const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::system_clock::now().time_since_epoch())
+                           .count();
+    const std::string path = "raytracer-" + std::to_string(stamp) + ".ppm";
+
+    writePPMFile(path, width, height, pixels);
+    std::clog << "\rSaved screenshot: " << path << std::endl;
+}
 } // namespace
 
 std::string CUDARenderer::getName(void) const
@@ -535,8 +566,17 @@ bool CUDARenderer::isAvailable(std::string &reason) const
         return false;
     }
 
+    int currentDevice = 0;
+    const cudaError_t currentDeviceStatus = cudaGetDevice(&currentDevice);
+
+    if (currentDeviceStatus != cudaSuccess)
+    {
+        reason = cudaGetErrorString(currentDeviceStatus);
+        return false;
+    }
+
     cudaDeviceProp properties{};
-    const cudaError_t propertiesStatus = cudaGetDeviceProperties(&properties, 0);
+    const cudaError_t propertiesStatus = cudaGetDeviceProperties(&properties, currentDevice);
 
     if (propertiesStatus != cudaSuccess)
     {
@@ -572,6 +612,19 @@ void CUDARenderer::run(const RenderContext &context)
                                    context.camera->getLookFrom(), context.camera->getVerticalFovDegree());
     }
 
+    int deviceCount = 0;
+
+    checkCuda(cudaGetDeviceCount(&deviceCount), "cudaGetDeviceCount");
+    if (context.options.device < 0 || context.options.device >= deviceCount)
+        throw std::invalid_argument("CUDA device index is out of range");
+    checkCuda(cudaSetDevice(context.options.device), "cudaSetDevice");
+
+    cudaDeviceProp selectedDevice{};
+
+    checkCuda(cudaGetDeviceProperties(&selectedDevice, context.options.device), "cudaGetDeviceProperties");
+    if (selectedDevice.major * 10 + selectedDevice.minor < RAYTRACER_CUDA_MIN_CC)
+        throw std::runtime_error("Selected CUDA device is below the renderer compute capability minimum");
+
     std::string unavailableReason;
 
     if (!isAvailable(unavailableReason))
@@ -579,14 +632,34 @@ void CUDARenderer::run(const RenderContext &context)
 
     CameraController controller;
     controller.captureInitial(*context.camera);
+    PostProcessSettings postProcess = context.options.postProcess;
     std::unique_ptr<CudaRenderSession> session;
+    const auto renderStart = std::chrono::steady_clock::now();
+
+    auto updateTitle = [&](int completedSamples, int totalSamples, bool paused) {
+        if (!context.gui)
+            return;
+
+        const double elapsed =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - renderStart).count();
+        std::ostringstream title;
+
+        title << "RayTracer CUDA | " << context.options.width << "x" << context.options.height << " | "
+              << completedSamples << "/" << totalSamples << " spp | " << std::fixed << std::setprecision(1) << elapsed
+              << "s | exposure " << std::setprecision(2) << postProcess.exposure;
+
+        if (paused)
+            title << " | paused";
+
+        context.gui->setTitle(title.str());
+    };
 
     auto renderAll = [&](bool guiMode) {
         const SceneSnapshot snapshot = buildSceneSnapshot(*context.scene, *context.camera);
 
         if (!session || snapshot.camera.imageWidth != session->width() ||
             snapshot.camera.imageHeight != session->height())
-            session = std::make_unique<CudaRenderSession>(snapshot, context.options.postProcess);
+            session = std::make_unique<CudaRenderSession>(snapshot, postProcess, context.options.seed);
         else
             session->updateCamera(snapshot.camera);
 
@@ -617,6 +690,40 @@ void CUDARenderer::run(const RenderContext &context)
         // image after every sample would dominate the render time.
         const int displayInterval = std::max(1, totalSamples / 100);
         int start = 0;
+        bool paused = false;
+        bool postProcessDirty = false;
+        bool screenshotRequested = false;
+
+        auto handleEvent = [&](char event, bool &cameraChanged) {
+            if (!event)
+                return;
+
+            if (event == ' ')
+            {
+                paused = !paused;
+                updateTitle(start, totalSamples, paused);
+                return;
+            }
+            if (event == 'p' || event == 'P')
+            {
+                screenshotRequested = true;
+                return;
+            }
+            if (event == '[' || event == ']')
+            {
+                const float factor = event == ']' ? 1.1f : 1.0f / 1.1f;
+
+                postProcess.exposure =
+                    std::clamp(postProcess.exposure * factor, 0.05f, 20.0f);
+                postProcessDirty = true;
+                updateTitle(start, totalSamples, paused);
+                return;
+            }
+            if (controller.handleEvent(event, *context.camera))
+                cameraChanged = true;
+        };
+
+        updateTitle(start, totalSamples, paused);
 
         while (start < totalSamples)
         {
@@ -625,10 +732,7 @@ void CUDARenderer::run(const RenderContext &context)
 
             // Drain the event queue before every batch.
             while ((event = context.gui->getEvent()) != 0)
-            {
-                if (controller.handleEvent(event, *context.camera))
-                    cameraChanged = true;
-            }
+                handleEvent(event, cameraChanged);
 
             if (!context.gui->isOpen())
                 return;
@@ -638,6 +742,40 @@ void CUDARenderer::run(const RenderContext &context)
                 const SceneSnapshot updated = buildSceneSnapshot(*context.scene, *context.camera);
                 session->updateCamera(updated.camera);
                 start = 0;
+                updateTitle(start, totalSamples, paused);
+                continue;
+            }
+
+            if (postProcessDirty)
+            {
+                session->setPostProcess(postProcess);
+
+                if (start > 0)
+                {
+                    session->refreshOutput(start);
+                    const std::vector<uint32_t> &pixels = session->copyImage();
+
+                    context.gui->setImage(session->width(), session->height(), pixels);
+                    context.gui->display();
+                }
+                postProcessDirty = false;
+            }
+
+            if (screenshotRequested)
+            {
+                if (start > 0)
+                {
+                    const std::vector<uint32_t> &pixels = session->copyImage();
+
+                    saveScreenshot(pixels, session->width(), session->height());
+                }
+                screenshotRequested = false;
+            }
+
+            if (paused)
+            {
+                context.gui->display();
+                std::this_thread::sleep_for(std::chrono::milliseconds(8));
                 continue;
             }
 
@@ -655,7 +793,10 @@ void CUDARenderer::run(const RenderContext &context)
 
                 while ((pendingEvent = context.gui->getEvent()) != 0)
                 {
-                    if (controller.handleEvent(pendingEvent, *context.camera))
+                    bool pendingCameraChange = false;
+
+                    handleEvent(pendingEvent, pendingCameraChange);
+                    if (pendingCameraChange)
                         restart = true;
                 }
 
@@ -675,18 +816,41 @@ void CUDARenderer::run(const RenderContext &context)
                 const SceneSnapshot updated = buildSceneSnapshot(*context.scene, *context.camera);
                 session->updateCamera(updated.camera);
                 start = 0;
+                updateTitle(start, totalSamples, paused);
                 continue;
             }
 
             start += count;
 
-            if (start == 1 || start % displayInterval == 0 || start >= totalSamples)
+            bool refreshed = false;
+
+            if (postProcessDirty)
+            {
+                session->setPostProcess(postProcess);
+                session->refreshOutput(start);
+                postProcessDirty = false;
+                refreshed = true;
+            }
+
+            const bool displayFrame = refreshed || start == 1 || start % displayInterval == 0 || start >= totalSamples;
+
+            if (displayFrame || screenshotRequested)
             {
                 const std::vector<uint32_t> &pixels = session->copyImage();
 
-                context.gui->setImage(session->width(), session->height(), pixels);
-                context.gui->display();
+                if (displayFrame)
+                {
+                    context.gui->setImage(session->width(), session->height(), pixels);
+                    context.gui->display();
+                }
+                if (screenshotRequested)
+                {
+                    saveScreenshot(pixels, session->width(), session->height());
+                    screenshotRequested = false;
+                }
             }
+
+            updateTitle(start, totalSamples, paused);
         }
 
         if (!context.options.outputPath.empty())
@@ -716,16 +880,46 @@ void CUDARenderer::run(const RenderContext &context)
     while (context.gui->isOpen())
     {
         bool cameraChanged = false;
+        bool exposureChanged = false;
+        bool screenshotRequested = false;
         char event;
 
         while ((event = context.gui->getEvent()) != 0)
         {
-            if (controller.handleEvent(event, *context.camera))
+            if (event == 'p' || event == 'P')
+                screenshotRequested = true;
+            else if (event == '[' || event == ']')
+            {
+                const float factor = event == ']' ? 1.1f : 1.0f / 1.1f;
+
+                postProcess.exposure =
+                    std::clamp(postProcess.exposure * factor, 0.05f, 20.0f);
+                exposureChanged = true;
+            }
+            else if (controller.handleEvent(event, *context.camera))
                 cameraChanged = true;
         }
 
         if (!context.gui->isOpen())
             break;
+
+        if (exposureChanged && session)
+        {
+            session->setPostProcess(postProcess);
+            session->refreshOutput(context.options.frames);
+            const std::vector<uint32_t> &pixels = session->copyImage();
+
+            context.gui->setImage(session->width(), session->height(), pixels);
+            context.gui->display();
+            updateTitle(context.options.frames, context.options.frames, false);
+        }
+
+        if (screenshotRequested && session)
+        {
+            const std::vector<uint32_t> &pixels = session->copyImage();
+
+            saveScreenshot(pixels, session->width(), session->height());
+        }
 
         if (cameraChanged)
         {
@@ -734,7 +928,7 @@ void CUDARenderer::run(const RenderContext &context)
             if (context.gui->isOpen())
                 std::clog << "Done.                                             " << std::endl;
         }
-        else
+        else if (!exposureChanged)
         {
             context.gui->display();
             std::this_thread::sleep_for(std::chrono::milliseconds(8));

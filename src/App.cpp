@@ -24,8 +24,9 @@ namespace
 {
 const char *const USAGE =
     "Usage: ./raytracer --path <scene.cfg> --cli|--sfml|--gui sfml|opengl "
-    "[--renderer cpu|cuda] [--width W] [--height H] [--frames N] "
-    "[--exposure E] [--tonemap none|reinhard|aces] [--output out.ppm] [--list-renderers]";
+    "[--renderer cpu|cuda] [--width W] [--height H] [--frames N] [--threads N] [--seed N] "
+    "[--device N] [--exposure E] [--tonemap none|reinhard|aces] [--output out.ppm] "
+    "[--list-renderers] [--list-guis]";
 
 std::string normalizeGuiName(std::string name)
 {
@@ -58,6 +59,29 @@ int parsePositiveInt(const char *value, const char *name)
     }
 
     return static_cast<int>(parsed);
+}
+
+int parseNonNegativeInt(const char *value, const char *name)
+{
+    errno = 0;
+    char *end = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+
+    if (errno != 0 || end == value || *end != '\0' || parsed < 0 || parsed > std::numeric_limits<int>::max())
+    {
+        std::cerr << "Invalid " << name << " value: " << value << std::endl;
+        printUsage(std::cerr);
+        std::exit(EXIT_FAILURE);
+    }
+
+    return static_cast<int>(parsed);
+}
+
+void listGuis(void)
+{
+    std::cout << "Available GUI backends:" << std::endl;
+    std::cout << "  sfml - SFML 3 window" << std::endl;
+    std::cout << "  opengl - GLFW/OpenGL 3.3 window" << std::endl;
 }
 
 float parseNonNegativeFloat(const char *value, const char *name)
@@ -159,6 +183,10 @@ App::App(int ac, char **av)
                                       {"gui", required_argument, NULL, 11},
                                       {"exposure", required_argument, NULL, 12},
                                       {"tonemap", required_argument, NULL, 13},
+                                      {"threads", required_argument, NULL, 14},
+                                      {"seed", required_argument, NULL, 15},
+                                      {"list-guis", 0, NULL, 16},
+                                      {"device", required_argument, NULL, 17},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -214,6 +242,18 @@ App::App(int ac, char **av)
                 std::cerr << "Available modes: none, reinhard, aces" << std::endl;
                 std::exit(EXIT_FAILURE);
             }
+            break;
+        case 14:
+            _threads = parseNonNegativeInt(optarg, "threads");
+            break;
+        case 15:
+            _seed = static_cast<uint32_t>(parseNonNegativeInt(optarg, "seed"));
+            break;
+        case 16:
+            listGuis();
+            std::exit(EXIT_SUCCESS);
+        case 17:
+            _device = parseNonNegativeInt(optarg, "device");
             break;
         case '?':
         default:
@@ -305,6 +345,9 @@ void App::run(void)
         context.options.width = _width;
         context.options.height = _height;
         context.options.frames = _frames;
+        context.options.threads = _threads;
+        context.options.device = _device;
+        context.options.seed = _seed;
         context.options.outputPath = _output;
         context.options.postProcess = _postProcess;
 

@@ -27,6 +27,7 @@ class IGUI
     virtual void setPixels(const std::vector<std::vector<Color4D>> &pixels) = 0;
     virtual void setPixel(const std::size_t &x, const std::size_t &y, const Color4D &color) = 0;
     virtual void display() = 0;
+    virtual void setTitle(const std::string &title) = 0;
     virtual bool isOpen() = 0;
     virtual char getEvent() = 0;
     virtual void loop() = 0;

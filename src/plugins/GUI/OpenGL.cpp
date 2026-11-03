@@ -190,6 +190,10 @@ char keyToChar(int key)
     case GLFW_KEY_MINUS:
     case GLFW_KEY_KP_SUBTRACT:
         return '-';
+    case GLFW_KEY_LEFT_BRACKET:
+        return '[';
+    case GLFW_KEY_RIGHT_BRACKET:
+        return ']';
     default:
         return '\0';
     }
@@ -623,6 +627,12 @@ void OpenGLGUI::setPixel(const std::size_t &x, const std::size_t &y, const Color
 void OpenGLGUI::display(void)
 {
     _impl->display();
+}
+
+void OpenGLGUI::setTitle(const std::string &title)
+{
+    if (_impl->window != nullptr)
+        glfwSetWindowTitle(_impl->window, title.c_str());
 }
 
 bool OpenGLGUI::isOpen(void)

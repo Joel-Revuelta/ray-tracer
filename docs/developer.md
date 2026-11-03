@@ -219,8 +219,15 @@ The shared `CameraController` implements:
 - `C`: lock the camera position,
 - `Esc`: close the window.
 
-The CUDA renderer polls window events while each GPU kernel is in flight and
-uses one-sample batches; keep that behavior if you modify it.
+Renderer-level actions:
+
+- `Space`: pause/resume sampling,
+- `P`: write the current frame as a timestamped PPM,
+- `[` / `]`: adjust exposure and re-tonemap the current accumulation.
+
+`IGUI::setTitle()` lets renderers display progress and exposure. The CUDA
+renderer polls window events while each GPU kernel is in flight and uses
+one-sample batches; keep that behavior if you modify it.
 
 ## Adding components
 

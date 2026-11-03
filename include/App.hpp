@@ -11,6 +11,7 @@
 #include "Factory.hpp"
 #include "Parser.hpp"
 #include "render/PostProcess.hpp"
+#include <cstdint>
 #include <getopt.h>
 #include <memory>
 #include <string>
@@ -43,6 +44,9 @@ class App
     int _width;
     int _height;
     int _frames;
+    int _threads = 0;
+    int _device = 0;
+    uint32_t _seed = 0;
 };
 
 } // namespace RayTracer
