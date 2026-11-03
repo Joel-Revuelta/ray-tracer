@@ -37,14 +37,15 @@ full-HD and 8K still renders.
   renderers, with the same attenuation controls as point lights.
 - **Textures** — PPM albedo maps with UVs on meshes and analytic primitives,
   bilinear filtering and repeat wrapping on CPU and CUDA.
-- **OBJ materials** — `usemtl` face groups mapped to scene materials, with a
-  per-mesh fallback for unmapped groups.
+- **OBJ materials** — `usemtl` face groups mapped to scene materials, automatic
+  `mtllib`/MTL import with `Kd`/`Ka`/`Ks`/`Ns` and `map_Kd`, plus a per-mesh
+  fallback for unmapped groups.
 - **Environment maps** — equirectangular PPM skies for backgrounds, reflections
   and path-traced image-based lighting, with the gradient background as a
   fallback.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 26 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ materials, environment lighting and 8K hero renders.
+- **Included scenes** — 27 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ/MTL materials, environment lighting and 8K hero renders.
 
 ## Requirements
 
@@ -269,6 +270,7 @@ architecture and CUDA build details.
 | `textures.cfg` | Checker PPM textures on a plane, primitives and a mesh. |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback. |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL. |
+| `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face. |
 
 ### HD hero scenes
 

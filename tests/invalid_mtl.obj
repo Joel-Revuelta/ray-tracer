@@ -1,0 +1,7 @@
+mtllib invalid_mtl.mtl
+o invalid_mtl
+v 0.0 0.0 0.0
+v 1.0 0.0 0.0
+v 0.0 1.0 0.0
+usemtl bad
+f 1 2 3

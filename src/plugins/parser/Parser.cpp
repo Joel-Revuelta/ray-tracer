@@ -10,9 +10,12 @@
 #include "MeshLoader.hpp"
 #include "render/Texture.hpp"
 #include "Transform.hpp"
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 
 using namespace RayTracer;
 
@@ -50,6 +53,18 @@ void requireRange(double value, double minimum, double maximum, const std::strin
     if (value < minimum || value > maximum)
         throw std::runtime_error(name + " must be between " + std::to_string(minimum) + " and " +
                                  std::to_string(maximum));
+}
+
+float luminance(const Color3D &color)
+{
+    return 0.2126f * color.getX() + 0.7152f * color.getY() + 0.0722f * color.getZ();
+}
+
+float roughnessFromShininess(float shininess)
+{
+    const float roughness = std::sqrt(2.0f / (std::max(shininess, 0.0f) + 2.0f));
+
+    return std::clamp(roughness, 0.02f, 1.0f);
 }
 
 uint parseMaterialIndex(const libconfig::Setting &setting)
@@ -125,6 +140,7 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
     SceneBuilder sceneBuilder;
     _camera.reset();
     _materialCount = 0;
+    _mtlMaterialIndices.clear();
 
     try
     {
@@ -459,7 +475,7 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
 
     for (int i = 0; primitiveSetting.exists("meshes")
         && i < primitiveSetting.lookup("meshes").getLength(); i++) {
-        sceneBuilder.addPrimitive(parseMesh(primitiveSetting.lookup("meshes")[i]));
+        sceneBuilder.addPrimitive(parseMesh(sceneBuilder, primitiveSetting.lookup("meshes")[i]));
     }
 
     if (primitiveSetting.exists("scene")) {
@@ -481,6 +497,9 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
 
     NestingGuard nestingGuard(_sceneNestingDepth);
     MaterialCountGuard materialCountGuard(_materialCount);
+    const std::unordered_map<std::string, uint> parentMtlIndices = _mtlMaterialIndices;
+
+    _mtlMaterialIndices.clear();
     SceneBuilder sceneBuilder;
 
     // Materials must be registered before primitives, because a nested scene
@@ -497,7 +516,10 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
     if (sceneSetting.exists("scene"))
         sceneBuilder.addScene(parseScene(sceneSetting.lookup("scene")));
 
-    return sceneBuilder.build();
+    std::shared_ptr<Scene> scene = sceneBuilder.build();
+
+    _mtlMaterialIndices = parentMtlIndices;
+    return scene;
 }
 
 /**
@@ -627,11 +649,12 @@ std::shared_ptr<const MeshAsset> Parser::loadMesh(const std::string &path)
  * @param meshSetting The mesh entry to parse.
  * @return The mesh primitive, optionally wrapped in a transform.
  */
-std::shared_ptr<IPrimitive> Parser::parseMesh(libconfig::Setting &meshSetting)
+std::shared_ptr<IPrimitive> Parser::parseMesh(SceneBuilder &sceneBuilder, libconfig::Setting &meshSetting)
 {
     const std::string path = resolveAssetPath(meshSetting.lookup("path"));
     const std::shared_ptr<const MeshAsset> asset = loadMesh(path);
-    std::vector<std::pair<std::string, uint>> materialGroups;
+    const uint fallbackMaterial = parseMaterialIndex(meshSetting);
+    std::unordered_map<std::string, uint> groupMap;
 
     if (meshSetting.exists("materialGroups"))
     {
@@ -646,12 +669,65 @@ std::shared_ptr<IPrimitive> Parser::parseMesh(libconfig::Setting &meshSetting)
             if (materialIndex < 0 || static_cast<uint>(materialIndex) >= _materialCount)
                 throw std::runtime_error("Material group '" + name + "' references an invalid material index");
 
-            materialGroups.emplace_back(name, static_cast<uint>(materialIndex));
+            groupMap[name] = static_cast<uint>(materialIndex);
         }
     }
 
+    std::unordered_map<std::string, uint> autoGroups;
+
+    for (const std::string &libraryPath : asset->materialLibraries)
+    {
+        auto cached = _mtlCache.find(libraryPath);
+
+        if (cached == _mtlCache.end())
+        {
+            std::vector<MtlMaterial> materials = loadMtl(libraryPath);
+
+            cached = _mtlCache.emplace(libraryPath, std::move(materials)).first;
+        }
+
+        for (const MtlMaterial &mtl : cached->second)
+        {
+            const std::string key = libraryPath + '\n' + mtl.name;
+            const auto existing = _mtlMaterialIndices.find(key);
+            uint materialIndex = 0;
+
+            if (existing != _mtlMaterialIndices.end())
+                materialIndex = existing->second;
+            else
+            {
+                const float ambient = std::clamp(luminance(mtl.ambient), 0.0f, 1.0f);
+                const float specular = std::clamp(luminance(mtl.specular), 0.0f, 1.0f);
+
+                std::shared_ptr<IMaterial> material = _factory.create<IMaterial>(
+                    "PhongMaterial", ambient, 1.0f, specular, mtl.diffuse,
+                    roughnessFromShininess(mtl.shininess));
+
+                if (!mtl.diffuseMap.empty())
+                    material->setTexture(loadTexture(mtl.diffuseMap));
+
+                sceneBuilder.addMaterial(material);
+                materialIndex = _materialCount++;
+                _mtlMaterialIndices.emplace(key, materialIndex);
+            }
+
+            autoGroups[mtl.name] = materialIndex;
+        }
+    }
+
+    for (const auto &entry : autoGroups)
+    {
+        if (groupMap.find(entry.first) == groupMap.end())
+            groupMap.emplace(entry.first, entry.second);
+    }
+
+    std::vector<std::pair<std::string, uint>> materialGroups(groupMap.begin(), groupMap.end());
+
+    std::sort(materialGroups.begin(), materialGroups.end(),
+              [](const auto &left, const auto &right) { return left.first < right.first; });
+
     std::shared_ptr<IPrimitive> mesh =
-        _factory.create<IPrimitive>("Mesh", asset, parseMaterialIndex(meshSetting), materialGroups);
+        _factory.create<IPrimitive>("Mesh", asset, fallbackMaterial, materialGroups);
 
     return applyTransform(mesh, meshSetting);
 }

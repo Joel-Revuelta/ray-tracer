@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -172,6 +173,26 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
                 fail(path, lineNumber, "invalid vertex");
 
             vertices.emplace_back(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+            continue;
+        }
+
+        if (tag == "mtllib")
+        {
+            std::string libraryPath;
+
+            std::getline(stream >> std::ws, libraryPath);
+
+            while (!libraryPath.empty() && std::isspace(static_cast<unsigned char>(libraryPath.back())))
+                libraryPath.pop_back();
+
+            if (libraryPath.empty())
+                fail(path, lineNumber, "empty mtllib name");
+
+            const std::filesystem::path objectPath(path);
+            const std::filesystem::path resolved =
+                (objectPath.parent_path() / std::filesystem::path(libraryPath)).lexically_normal();
+
+            asset->materialLibraries.push_back(resolved.string());
             continue;
         }
 

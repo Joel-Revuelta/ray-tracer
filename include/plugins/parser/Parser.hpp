@@ -15,6 +15,7 @@
 #include "Light.hpp"
 #include "Primitive.hpp"
 #include "Scene.hpp"
+#include "MtlLoader.hpp"
 #include "SceneBuilder.hpp"
 #include <libconfig.h++>
 #include <unordered_map>
@@ -50,7 +51,7 @@ class Parser
     std::shared_ptr<IPrimitive> parseSphere(libconfig::Setting &sphereSetting);
     std::shared_ptr<IPrimitive> parsePlane(libconfig::Setting &planeSetting);
     std::shared_ptr<IPrimitive> parseCone(libconfig::Setting &coneSetting);
-    std::shared_ptr<IPrimitive> parseMesh(libconfig::Setting &meshSetting);
+    std::shared_ptr<IPrimitive> parseMesh(SceneBuilder &sceneBuilder, libconfig::Setting &meshSetting);
     std::shared_ptr<IPrimitive> parseCylinder(libconfig::Setting &cylinderSetting);
 
     Color3D parseColor(const libconfig::Setting &colorSetting);
@@ -75,6 +76,8 @@ class Parser
     std::string _sceneDirectory = ".";
     std::unordered_map<std::string, std::shared_ptr<const MeshAsset>> _meshCache;
     std::unordered_map<std::string, std::shared_ptr<const Texture>> _textureCache;
+    std::unordered_map<std::string, std::vector<MtlMaterial>> _mtlCache;
+    std::unordered_map<std::string, uint> _mtlMaterialIndices;
     uint _materialCount = 0;
     int _sceneNestingDepth = 0;
 };

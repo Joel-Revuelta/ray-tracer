@@ -117,7 +117,8 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 - Equirectangular environment backgrounds are sampled on miss with a clamped
   V coordinate and provide reflections plus path-traced indirect lighting.
 - OBJ `usemtl` groups resolve to per-triangle material overrides. Unmapped
-  groups use the mesh's fallback material.
+  groups use the mesh's fallback material. `mtllib` materials are imported as
+  Phong-style materials with optional `map_Kd` textures.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
 - Uses the same 15-bounce path tracing, material and light logic as the CUDA
   renderer. Path throughput is attenuated by diffuse/metallic surface colour,
@@ -179,7 +180,8 @@ uses the same `SceneSnapshot` data path.
   device samples bilinearly with repeat wrapping.
 - **OBJ materials:** per-primitive group maps are uploaded as a flat `int`
   array with ranges. Triangle hits report a group and `intersectMesh` resolves
-  it to a material override.
+  it to a material override. Imported MTL materials use the same data path as
+  scene-authored materials.
 - **Environment maps:** the background texture shares the material texture
   upload path. `skyColor` samples it with clamped-V equirectangular mapping and
   falls back to the gradient when no environment is configured.

@@ -45,6 +45,7 @@ struct MeshAsset
 {
     std::vector<Triangle> triangles;
     std::vector<std::string> materialNames;
+    std::vector<std::string> materialLibraries;
     AABB bounds;
     BVHBuildResult bvh;
 };

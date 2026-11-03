@@ -339,16 +339,19 @@ primitives:
 - `material` is required and is the fallback for faces without a mapped group.
 - `materialGroups` optionally maps OBJ `usemtl` names to zero-based material
   indices. Indices must exist in the current scene.
-- Groups that are not listed, and faces before the first `usemtl`, use the
-  mesh's `material` fallback.
+- If the OBJ references `mtllib` files, their materials are loaded
+  automatically and matched to `usemtl` names. Explicit `materialGroups`
+  entries override the automatic match.
+- Groups that are not listed or not present in an MTL, and faces before the
+  first `usemtl`, use the mesh's `material` fallback.
 - `transform` is optional and follows the same rules as
   [Transforms](#transforms).
 - Repeating the same resolved path shares one immutable mesh asset. Each entry
   still gets its own material fallback, group map and transform.
 - The loader supports `v` positions, `vt` texture coordinates, `vn` vertex
-  normals, `f` faces and `usemtl` groups. Polygons are fan triangulated and
-  negative indices are supported. `mtllib`, MTL contents, objects and comments
-  are ignored.
+  normals, `f` faces, `usemtl` groups and `mtllib` references. Polygons are fan
+  triangulated and negative indices are supported. Objects and comments are
+  ignored.
 - Face tokens may use `v`, `v/vt`, `v//vn` or `v/vt/vn`. A face without normals
   falls back to the geometric face normal.
 - When `vn` data is present, normals are interpolated across the triangle for
@@ -361,8 +364,39 @@ primitives:
   the internal triangle limit.
 
 The sample assets live in `scenes/models/`; `scenes/meshes.cfg` demonstrates
-shared geometry and per-instance transforms, and `scenes/obj_materials.cfg`
-demonstrates per-face `usemtl` material groups with a fallback.
+shared geometry and per-instance transforms, `scenes/obj_materials.cfg`
+demonstrates explicit per-face material groups, and `scenes/mtl_materials.cfg`
+demonstrates automatic MTL import.
+
+### MTL materials
+
+An OBJ can reference one or more material libraries:
+
+```text
+mtllib materials.mtl
+```
+
+MTL paths resolve relative to the OBJ file. The parser supports:
+
+```text
+newmtl painted
+Ka 0.20 0.20 0.20
+Kd 0.85 0.12 0.12
+Ks 0.35 0.35 0.35
+Ns 64
+map_Kd ../textures/checker.ppm
+```
+
+- `Kd` is the diffuse colour.
+- `Ka` and `Ks` contribute ambient and specular reflection coefficients.
+- `Ns` is converted to a roughness value.
+- `map_Kd` is an albedo texture resolved relative to the MTL file.
+- `Ke`, `d`, `Tr` and unsupported maps are accepted but not fully applied yet.
+- `map_Kd` options such as `-s`/`-o` are not supported.
+
+MTL materials are appended to the scene automatically. `usemtl` names match
+MTL material names; explicit `materialGroups` entries still take precedence.
+Unmatched groups use the mesh's `material` fallback.
 
 ### Transforms
 
@@ -557,8 +591,9 @@ The parser rejects:
 - negative background intensity,
 - metallic roughness outside `[0, 1]`,
 - transform scale components equal to zero or non-invertible transforms,
-- unreadable or malformed OBJ files, out-of-range mesh position/normal/texture
-  indices, empty `usemtl` names, zero-length normals, or empty meshes,
+- unreadable or malformed OBJ/MTL files, out-of-range mesh position/normal/
+  texture indices, empty `usemtl`/`mtllib` names, zero-length normals, or empty
+  meshes,
 - material-group indices outside the current scene's material list,
 - unreadable or malformed PPM textures,
 - non-finite point, vector, or colour components,

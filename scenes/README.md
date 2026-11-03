@@ -69,6 +69,7 @@ letterboxes it to preserve aspect ratio.
 | `textures.cfg` | Checker PPM textures on a plane, primitives and a mesh |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL |
+| `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face |
 
 ## Material showcase renders
 

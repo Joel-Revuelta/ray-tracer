@@ -278,6 +278,29 @@ the override or the primitive fallback.
 `SceneBuilder::addScene` shifts both primitive material indices and mesh group
 maps when nested scenes are merged, so nested group indices remain valid.
 
+### MTL import
+
+`MeshLoader` records `mtllib` paths in `MeshAsset::materialLibraries`, resolved
+relative to the OBJ. `loadMtl()` parses `newmtl`, `Ka`, `Kd`, `Ks`, `Ke`, `Ns`,
+`d`/`Tr` and `map_Kd`; `map_Kd` resolves relative to the MTL file.
+
+The parser caches parsed MTL files and, per scene, appends unseen MTL materials
+as `PhongMaterial` instances. Mapping is approximate:
+
+- `Kd` becomes the diffuse colour.
+- `Ka` luminance becomes the ambient reflection coefficient.
+- `Ks` luminance becomes the specular reflection coefficient.
+- `Ns` becomes roughness via `sqrt(2 / (Ns + 2))`.
+- `map_Kd` is attached through `AMaterial::setTexture`.
+
+An automatic `usemtl → material index` map is built from MTL names. Explicit
+`materialGroups` entries are applied first and always win. Unmatched groups use
+the mesh fallback. The per-scene MTL index map is saved and restored around
+nested scene parsing, matching the existing material-count guard.
+
+Emission (`Ke`) and opacity (`d`/`Tr`) are parsed but not yet applied to
+rendering.
+
 ### Renderer interface
 
 Renderers implement `RayTracer::IRenderer` from

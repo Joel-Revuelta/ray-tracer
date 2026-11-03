@@ -219,6 +219,10 @@ file(GLOB_RECURSE SOURCES_DIFFUSE CONFIGURE_DEPENDS "src/plugins/materials/Diffu
 add_library(raytracer_material_diffuse SHARED ${SOURCES_DIFFUSE})
 target_link_libraries(raytracer_material_diffuse PRIVATE raytracer_core)
 
+file(GLOB_RECURSE SOURCES_PHONG CONFIGURE_DEPENDS "src/plugins/materials/PhongMaterial.cpp")
+add_library(raytracer_material_phong SHARED ${SOURCES_PHONG})
+target_link_libraries(raytracer_material_phong PRIVATE raytracer_core)
+
 # Transformations compile the concrete primitives they manipulate, since
 # primitives are plugins themselves.
 file(GLOB_RECURSE SOURCES_TRANSLATION CONFIGURE_DEPENDS "src/plugins/transformations/Translation.cpp")
@@ -268,6 +272,7 @@ add_custom_target(lights DEPENDS
 )
 
 add_custom_target(materials DEPENDS
+    raytracer_material_phong
     raytracer_material_custom
     raytracer_material_emissive
     raytracer_material_flat
@@ -301,6 +306,7 @@ set_target_properties(
     raytracer_cylinder
     raytracer_cone
     raytracer_mesh
+    raytracer_material_phong
     raytracer_material_custom
     raytracer_material_emissive
     raytracer_material_flat
@@ -512,6 +518,23 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_environment.ppm
 )
 add_test(
+    NAME mtl_materials_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/mtl_materials.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/mtl_materials_smoke.ppm
+)
+add_test(
+    NAME deterministic_mtl_materials_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_mtl_materials.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_invalid_mtl
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_mtl.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_mtl.ppm
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -530,12 +553,14 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     texture_smoke deterministic_texture_render
     obj_materials_smoke deterministic_obj_materials_render
     environment_smoke deterministic_environment_render
+    mtl_materials_smoke deterministic_mtl_materials_render
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_transform parser_rejects_invalid_obj
     parser_rejects_invalid_lens parser_rejects_invalid_focus
     parser_rejects_invalid_area_light parser_rejects_invalid_texture
-    parser_rejects_invalid_material_group parser_rejects_invalid_environment PROPERTIES
+    parser_rejects_invalid_material_group parser_rejects_invalid_environment
+    parser_rejects_invalid_mtl PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )
@@ -560,6 +585,7 @@ set(RAYTRACER_PLUGIN_TARGETS
     raytracer_cylinder
     raytracer_cone
     raytracer_mesh
+    raytracer_material_phong
     raytracer_material_custom
     raytracer_material_emissive
     raytracer_material_flat
