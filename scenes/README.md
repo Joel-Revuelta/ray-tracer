@@ -54,6 +54,18 @@ Resizing the window stretches the rendered image to the new size.
 | `infinity_mirror.cfg` | A mirrored corridor filled with repeating neon gates and endless reflections |
 | `crystal_superbloom.cfg` | A vast field of giant crystal spires, floating orbs and a distant moon |
 | `solar_eclipse.cfg` | A giant amber sun eclipsed by a dark sphere above a mirror sea |
+| `glass_menagerie.cfg` | Dielectric spheres and a glass column with chrome, gold and emissive orbs |
+| `prism_pavilion.cfg` | A glass colonnade with glowing cores, a chrome orb and a neon ring |
+| `aurora_lens.cfg` | A giant glass lens, rose glass and a floating aurora arc |
+
+## Glass showcase renders
+
+The three glass scenes were rendered at `1280×720` with 256 CUDA samples:
+
+[![Glass showcase contact sheet](../screenshots/new-scenes/contact-640.png)](../screenshots/new-scenes/contact.png)
+
+Full-size previews and a contact sheet are in
+[`screenshots/new-scenes/`](../screenshots/new-scenes/).
 
 ## Full HD renders
 

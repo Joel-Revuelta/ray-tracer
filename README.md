@@ -25,7 +25,7 @@ full-HD and 8K still renders.
   resolution/samples.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 15 scenes, from material studies to 8K hero renders.
+- **Included scenes** — 18 scenes, from material studies to glass showcases and 8K hero renders.
 
 ## Requirements
 
