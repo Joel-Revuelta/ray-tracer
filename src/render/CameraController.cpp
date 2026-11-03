@@ -23,6 +23,11 @@ constexpr float FOV_STEP_DEGREES = 2.0f;
 constexpr float MIN_FOV_DEGREES = 10.0f;
 constexpr float MAX_FOV_DEGREES = 170.0f;
 constexpr float MAX_PITCH_DEGREES = 89.0f;
+constexpr float LENS_STEP = 0.01f;
+constexpr float MAX_LENS_RADIUS = 1.0f;
+constexpr float FOCUS_STEP = 1.1f;
+constexpr float MIN_FOCUS_DISTANCE = 0.1f;
+constexpr float MAX_FOCUS_DISTANCE = 10000.0f;
 const Vec3D WORLD_UP(0.0f, 1.0f, 0.0f);
 
 Vec3D rotateAroundAxis(const Vec3D &vector, const Vec3D &axis, float radians)
@@ -44,6 +49,8 @@ void CameraController::captureInitial(const Camera &camera)
     _initialLookFrom = camera.getLookFrom();
     _initialLookAt = camera.getLookAt();
     _initialFov = camera.getVerticalFovDegree();
+    _initialLensRadius = camera.getLensRadius();
+    _initialFocusDistance = camera.getFocusDistance();
     _hasInitialState = true;
 }
 
@@ -66,6 +73,10 @@ bool CameraController::isCameraEvent(char event) const
     case '=':
     case '-':
     case '_':
+    case ',':
+    case '.':
+    case ';':
+    case '\'':
         return true;
     default:
         return false;
@@ -91,12 +102,28 @@ bool CameraController::handleEvent(char event, Camera &camera)
         return false;
     }
     if (event == 'r')
-        return updateCamera(camera, _initialLookFrom, _initialLookAt, _initialFov);
+    {
+        const bool changed = updateCamera(camera, _initialLookFrom, _initialLookAt, _initialFov);
+
+        if (changed)
+        {
+            camera.setLensRadius(_initialLensRadius);
+
+            if (_initialFocusDistance > 0.0f)
+                camera.setFocusDistance(_initialFocusDistance);
+        }
+        return changed;
+    }
 
     if (event == '+' || event == '=')
         return applyFov(camera, -FOV_STEP_DEGREES);
     if (event == '-' || event == '_')
         return applyFov(camera, FOV_STEP_DEGREES);
+
+    if (event == ',' || event == '.')
+        return applyLens(event, camera);
+    if (event == ';' || event == '\'')
+        return applyFocus(event, camera);
 
     if (event == 'i' || event == 'k' || event == 'j' || event == 'l')
         return applyLook(event, camera);
@@ -215,6 +242,32 @@ bool CameraController::applyFov(Camera &camera, float deltaDegrees)
         return false;
 
     return updateCamera(camera, camera.getLookFrom(), camera.getLookAt(), next);
+}
+
+bool CameraController::applyLens(char event, Camera &camera)
+{
+    const float delta = event == '.' ? LENS_STEP : -LENS_STEP;
+    const float current = camera.getLensRadius();
+    const float next = std::clamp(current + delta, 0.0f, MAX_LENS_RADIUS);
+
+    if (std::fabs(next - current) < 0.0001f)
+        return false;
+
+    camera.setLensRadius(next);
+    return true;
+}
+
+bool CameraController::applyFocus(char event, Camera &camera)
+{
+    const float factor = event == '\'' ? FOCUS_STEP : 1.0f / FOCUS_STEP;
+    const float current = camera.getFocusDistance();
+    const float next = std::clamp(current * factor, MIN_FOCUS_DISTANCE, MAX_FOCUS_DISTANCE);
+
+    if (std::fabs(next - current) < 0.0001f)
+        return false;
+
+    camera.setFocusDistance(next);
+    return true;
 }
 
 bool CameraController::updateCamera(Camera &camera, const Vec3D &lookFrom, const Vec3D &lookAt, float fov)

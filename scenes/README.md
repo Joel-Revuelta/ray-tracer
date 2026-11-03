@@ -37,7 +37,8 @@ Useful options:
 While the window is open: `WASD` moves relative to the current view, `Q/E` moves
 up/down, arrow keys or `IJKL` look around, `+/-` zooms, `R` restores the starting
 pose, `X` locks the look-at point, `C` locks the camera position, and `Esc` quits.
-`Space` pauses/resumes, `P` saves a screenshot, and `[`/`]` changes exposure.
+`Space` pauses/resumes, `P` saves a screenshot, `[`/`]` changes exposure,
+`,`/`.` changes the lens radius, and `;`/`'` pulls/pushes focus.
 Resizing the SFML window stretches the rendered image; the OpenGL backend
 letterboxes it to preserve aspect ratio.
 
@@ -63,6 +64,7 @@ letterboxes it to preserve aspect ratio.
 | `roughness_study.cfg` | Metal spheres from perfect mirror to satin roughness |
 | `transforms.cfg` | Translate/rotate/scale transforms on spheres, cylinders, cones and planes |
 | `meshes.cfg` | Instanced OBJ icospheres and a torus with shared geometry |
+| `depth_of_field.cfg` | Five spheres at increasing depths with a focused middle plane |
 
 ## Material showcase renders
 

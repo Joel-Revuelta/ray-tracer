@@ -392,6 +392,36 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_obj.ppm
 )
 add_test(
+    NAME dof_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/depth_of_field.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/dof_smoke.ppm
+)
+add_test(
+    NAME deterministic_dof_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_dof.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME dof_cli_override
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/depth_of_field.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2
+            --lens-radius 0.2 --focus-distance 9.0
+            --output ${CMAKE_BINARY_DIR}/dof_cli_override.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_lens
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_lens.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_lens.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_focus
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_focus.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_focus.ppm
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -404,9 +434,11 @@ add_test(
 set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_process_smoke
     roughness_smoke seed_deterministic_cpu_render threads_smoke list_guis
     bvh_matches_linear transform_smoke mesh_smoke mesh_bvh_matches_linear
+    dof_smoke deterministic_dof_render dof_cli_override
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
-    parser_rejects_invalid_transform parser_rejects_invalid_obj PROPERTIES
+    parser_rejects_invalid_transform parser_rejects_invalid_obj
+    parser_rejects_invalid_lens parser_rejects_invalid_focus PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )

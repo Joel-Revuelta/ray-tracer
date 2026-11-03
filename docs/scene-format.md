@@ -59,9 +59,29 @@ camera:
 - `rotation` is the point the camera looks at (not Euler angles).
 - `fieldOfView` is the vertical field of view in degrees. It must be strictly
   greater than `0` and strictly less than `180`.
+- `lensRadius` is optional and sets the camera's lens disk radius in world
+  units. `0` (the default) is a pinhole camera.
+- `focusDistance` is optional and sets the distance from the eye to the focus
+  plane. It defaults to the look-at distance and must be positive.
 - `position` and `rotation` must differ. A coincident camera is rejected.
 - The render resolution is set by the CLI (`--width`/`--height`), not by the
   scene file.
+
+With a non-zero `lensRadius`, each camera ray starts at a random point on the
+lens disk and is aimed at the focus plane. Geometry at `focusDistance` stays
+sharp; nearer and farther geometry blurs. This is a Monte Carlo effect, so use
+more samples for clean out-of-focus highlights.
+
+```libconfig
+camera:
+{
+    position = { x = 0.0; y = 1.8; z = -14.0; };
+    rotation = { x = 0.0; y = 0.2; z = 0.0; };
+    fieldOfView = 48.0;
+    lensRadius = 0.35;
+    focusDistance = 12.0;
+};
+```
 
 ## Background
 
@@ -434,6 +454,7 @@ The parser rejects:
 - unreadable or malformed OBJ files, out-of-range mesh face indices, or empty meshes,
 - non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,
+- a negative camera lens radius or a non-positive focus distance,
 - a camera position equal to its look-at point,
 - negative material indices, or indices outside the material list.
 

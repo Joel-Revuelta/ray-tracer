@@ -115,7 +115,9 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
   use GGX/Smith roughness sampling with Schlick Fresnel, and direct lighting
   includes Blinn-Phong specular highlights.
 - Supports `--gui sfml` and `--gui opengl`, plus the shared `CameraController`
-  controls.
+  controls, including live lens-radius and focus-distance adjustment.
+- Camera rays support a world-space lens disk and focus plane for depth of
+  field; a zero lens radius keeps the pinhole path.
 - In GUI mode, window events are polled while workers trace a frame. A camera
   event aborts the current frame and restarts with the new pose, so heavy CPU
   frames do not freeze the window.
@@ -152,6 +154,9 @@ uses the same `SceneSnapshot` data path.
 - **Transforms:** `PrimitiveData::transform` is copied into `Cuda::Primitive`;
   rays are transformed into local space, and normals are transformed back with
   the inverse-transpose.
+- **Depth of field:** `CameraData` carries the lens radius, focus distance and
+  camera basis. The kernel consumes lens samples in the same order as the CPU
+  and skips them entirely when the lens radius is zero.
 - **Architecture:** compiled for `89` by default (RTX 4070 Laptop / Ada). Set
   `-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 - **Runtime:** the plugin links `CUDA::cudart_static`, so it does not require a

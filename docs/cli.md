@@ -29,6 +29,8 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--threads` | non-negative integer | CPU worker threads; `0` means automatic. | `0` |
 | `--seed` | non-negative integer | Sampling seed offset. | `0` |
 | `--device` | non-negative integer | CUDA device index. | `0` |
+| `--lens-radius` | non-negative float | Camera lens disk radius; `0` is a pinhole. | scene value |
+| `--focus-distance` | positive float | Distance from the eye to the focus plane. | scene value |
 | `--exposure` | non-negative float | Linear exposure multiplier before tonemapping. | `1.0` |
 | `--tonemap` | `none`, `reinhard`, or `aces` | Output tonemapping curve. | `none` |
 | `--output` | path | PPM output file. | stdout in CLI mode |
@@ -101,6 +103,8 @@ GUI plugin was not built, the program reports the missing plugin and exits.
 | `Space` | Pause/resume sample rendering. |
 | `P` | Save the current frame as `raytracer-<timestamp>.ppm`. |
 | `[` / `]` | Decrease/increase exposure live. |
+| `,` / `.` | Decrease/increase the lens radius. |
+| `;` / `'` | Pull/push the focus distance. |
 | `Esc` | Close the window. |
 
 Movement is camera-relative: `W`/`S` follow the horizontal view direction and
@@ -109,8 +113,9 @@ movement. `X` keeps the look-at point fixed while the camera moves; `C` keeps th
 camera position fixed while the look target moves.
 
 The window title shows resolution, completed/total samples, elapsed time,
-exposure, and pause state. Interactive screenshots are written to the current
-working directory.
+exposure, pause state, and the lens/focus values when the lens is non-zero.
+Interactive screenshots are written to the current working directory.
+`R` restores the initial pose, field of view, lens radius and focus distance.
 
 The SFML backend stretches the rendered image to the new window size. The
 OpenGL backend preserves the image aspect ratio with black letterbox bars.

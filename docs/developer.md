@@ -261,7 +261,9 @@ The shared `CameraController` implements:
 - `Q`/`E`: world-space up/down,
 - arrow keys or `I`/`J`/`K`/`L`: look up/left/down/right,
 - `+`/`-`: field-of-view zoom,
-- `R`: restore the initial position, target and FOV,
+- `,`/`.`: decrease/increase the lens radius,
+- `;`/`'`: pull/push the focus distance,
+- `R`: restore the initial position, target, FOV, lens radius and focus distance,
 - `X`: lock the look-at point,
 - `C`: lock the camera position,
 - `Esc`: close the window.
@@ -272,9 +274,30 @@ Renderer-level actions:
 - `P`: write the current frame as a timestamped PPM,
 - `[` / `]`: adjust exposure and re-tonemap the current accumulation.
 
-`IGUI::setTitle()` lets renderers display progress and exposure. The CUDA
-renderer polls window events while each GPU kernel is in flight and uses
-one-sample batches; keep that behavior if you modify it.
+`IGUI::setTitle()` lets renderers display progress, exposure, and lens/focus
+values. The CUDA renderer polls window events while each GPU kernel is in flight
+and uses one-sample batches; keep that behavior if you modify it.
+
+### Camera and depth of field
+
+`Camera` stores `lensRadius` and `focusDistance` alongside the usual pose and
+field of view. `initialize()` keeps an explicitly configured focus distance
+across resolution changes and camera moves; it only falls back to the look-at
+distance when the focus distance is still zero.
+
+Both renderers generate camera rays in the same order:
+
+1. pixel-centre direction plus pixel jitter,
+2. if `lensRadius > 0`, two lens samples,
+3. a point on the lens disk in the camera's right/up basis,
+4. a direction aimed at the focus plane.
+
+A zero lens radius skips step 2 entirely, so pinhole scenes remain
+byte-identical to earlier versions. CPU and CUDA share the same PCG sequence
+and polar disk mapping; keep that order if you change either path.
+
+`CameraData`/`Cuda::Camera` carry `viewRight`, `viewUp`, `lensRadius`,
+`focusDistance` and `focalDistance` to the device.
 
 ## Adding components
 
@@ -393,6 +416,17 @@ Mesh checks:
 ./raytracer --path scenes/meshes.cfg --cli --renderer cpu \
   --width 320 --height 180 --frames 8 --output /tmp/meshes.ppm
 bash tests/mesh_parity.sh ./raytracer . build
+```
+
+Depth-of-field check:
+
+```bash
+./raytracer --path scenes/depth_of_field.cfg --cli --renderer cpu \
+  --width 320 --height 180 --frames 32 --output /tmp/dof.ppm
+./raytracer --path scenes/depth_of_field.cfg --cli --renderer cpu \
+  --width 320 --height 180 --frames 32 --lens-radius 0 \
+  --focus-distance 12 --output /tmp/pinhole.ppm
+bash tests/deterministic_dof.sh ./raytracer . build
 ```
 
 See [performance.md](performance.md) for the benchmark scripts and reference

@@ -110,8 +110,13 @@ Cuda::Camera toDevice(const CameraData &camera)
     result.initialPixelPos = toDevice(camera.initialPixelPos);
     result.pixelWidthDistance = toDevice(camera.pixelWidthDistance);
     result.pixelHeightDistance = toDevice(camera.pixelHeightDistance);
+    result.viewRight = toDevice(camera.viewRight);
+    result.viewUp = toDevice(camera.viewUp);
     result.width = camera.imageWidth;
     result.height = camera.imageHeight;
+    result.lensRadius = camera.lensRadius;
+    result.focusDistance = camera.focusDistance;
+    result.focalDistance = camera.focalDistance;
     return result;
 }
 
@@ -667,6 +672,10 @@ void CUDARenderer::run(const RenderContext &context)
         title << "RayTracer CUDA | " << context.options.width << "x" << context.options.height << " | "
               << completedSamples << "/" << totalSamples << " spp | " << std::fixed << std::setprecision(1) << elapsed
               << "s | exposure " << std::setprecision(2) << postProcess.exposure;
+
+        if (context.camera->getLensRadius() > 0.0f)
+            title << " | lens " << context.camera->getLensRadius() << " | focus "
+                  << context.camera->getFocusDistance();
 
         if (paused)
             title << " | paused";

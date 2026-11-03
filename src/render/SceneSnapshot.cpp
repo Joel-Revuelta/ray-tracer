@@ -21,9 +21,14 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
     snapshot.camera.initialPixelPos = camera.getInitialPixelPos();
     snapshot.camera.pixelWidthDistance = camera.getPixelWidthDistance();
     snapshot.camera.pixelHeightDistance = camera.getPixelHeightDistance();
+    snapshot.camera.viewRight = camera.getCamViewRight();
+    snapshot.camera.viewUp = camera.getCamViewUp();
     snapshot.camera.imageWidth = camera.getImageWidth();
     snapshot.camera.imageHeight = camera.getImageHeight();
     snapshot.camera.verticalFovDegree = camera.getVerticalFovDegree();
+    snapshot.camera.lensRadius = camera.getLensRadius();
+    snapshot.camera.focusDistance = camera.getFocusDistance();
+    snapshot.camera.focalDistance = static_cast<float>(camera.getFocalDistance());
     snapshot.background = scene.getBackground();
 
     for (const auto &material : scene.getMaterials())

@@ -41,9 +41,14 @@ struct CameraData
     Vec3D initialPixelPos;
     Vec3D pixelWidthDistance;
     Vec3D pixelHeightDistance;
+    Vec3D viewRight;
+    Vec3D viewUp;
     int imageWidth = 0;
     int imageHeight = 0;
     float verticalFovDegree = 0.0f;
+    float lensRadius = 0.0f;
+    float focusDistance = 0.0f;
+    float focalDistance = 0.0f;
 };
 
 /**

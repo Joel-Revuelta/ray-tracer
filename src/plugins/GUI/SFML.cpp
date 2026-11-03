@@ -265,7 +265,9 @@ char SFML::sfKeyToAscii(sf::Keyboard::Key key)
         {sf::Keyboard::Key::Down, 'k'},   {sf::Keyboard::Key::Equal, '+'},
         {sf::Keyboard::Key::Add, '+'},    {sf::Keyboard::Key::Hyphen, '-'},
         {sf::Keyboard::Key::Subtract, '-'}, {sf::Keyboard::Key::LBracket, '['},
-        {sf::Keyboard::Key::RBracket, ']'}};
+        {sf::Keyboard::Key::RBracket, ']'}, {sf::Keyboard::Key::Comma, ','},
+        {sf::Keyboard::Key::Period, '.'}, {sf::Keyboard::Key::Semicolon, ';'},
+        {sf::Keyboard::Key::Apostrophe, '\''}};
 
     auto it = keyMap.find(key);
     if (it != keyMap.end())

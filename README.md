@@ -31,9 +31,11 @@ full-HD and 8K still renders.
 - **Scene scale** — a shared binned-SAH BVH accelerates both renderers,
   primitives support declarative transforms, and OBJ meshes use shared triangle
   BVHs with cheap instancing.
+- **Depth of field** — world-space lens radius and focus distance, with live
+  keyboard focus controls in both interactive backends.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 21 scenes, from material studies to glass showcases, mesh instancing and 8K hero renders.
+- **Included scenes** — 22 scenes, from material studies to glass showcases, mesh instancing, depth of field and 8K hero renders.
 
 ## Requirements
 
@@ -142,8 +144,10 @@ GUI controls: `WASD` moves relative to the current view, `Q/E` moves up/down,
 arrow keys or `IJKL` look around, `+`/`-` zooms, `R` restores the starting pose,
 `X`/`C` toggle camera locks, and `Esc` quits. `Space` pauses/resumes rendering,
 `P` saves the current frame as `raytracer-<timestamp>.ppm`, and `[`/`]`
-decrease/increase exposure live. The window title shows progress, elapsed time,
-exposure, and pause state.
+decrease/increase exposure live. `,`/`.` change the lens radius and `;`/`'`
+pull/push the focus distance. `R` also restores the initial lens and focus.
+The window title shows progress, elapsed time, exposure, lens/focus, and pause
+state.
 
 List the renderer plugins:
 
@@ -169,7 +173,8 @@ Available GUI backends:
 ```text
 Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
        [--renderer cpu|cuda] [--width W] [--height H] [--frames N]
-       [--threads N] [--seed N] [--device N] [--exposure E]
+       [--threads N] [--seed N] [--device N]
+       [--lens-radius R] [--focus-distance D] [--exposure E]
        [--tonemap none|reinhard|aces] [--output out.ppm]
        [--list-renderers] [--list-guis]
 ```
@@ -188,6 +193,8 @@ Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
 | `--threads <N>` | CPU worker threads; `0` means automatic. | `0` |
 | `--seed <N>` | Sampling seed offset for reproducible renders. | `0` |
 | `--device <N>` | CUDA device index. | `0` |
+| `--lens-radius <R>` | Camera lens disk radius; `0` is a pinhole. | scene value |
+| `--focus-distance <D>` | Distance from the eye to the focus plane. | scene value |
 | `--exposure <E>` | Linear exposure before tonemapping. | `1.0` |
 | `--tonemap <mode>` | `none`, `reinhard`, or `aces`. | `none` |
 | `--output <file>` | Output PPM path. | stdout in CLI mode |
@@ -248,6 +255,7 @@ architecture and CUDA build details.
 | `showcase.cfg` | All material families and light types together. |
 | `transforms.cfg` | Translated, rotated and non-uniformly scaled primitives. |
 | `meshes.cfg` | Instanced OBJ icospheres and a torus with shared geometry. |
+| `depth_of_field.cfg` | Spheres at several depths with a focused middle plane. |
 
 ### HD hero scenes
 

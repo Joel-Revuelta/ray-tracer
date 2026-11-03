@@ -47,6 +47,8 @@ class App
     int _threads = 0;
     int _device = 0;
     uint32_t _seed = 0;
+    float _lensRadius = -1.0f;
+    float _focusDistance = -1.0f;
 };
 
 } // namespace RayTracer

@@ -42,6 +42,8 @@ class Camera
     void setCamViewUp(const Vec3D camViewUp);                     // Could be removed. Only used in initialize.
     void setCamViewRight(const Vec3D camViewRight);               // Could be removed. Only used in initialize.
     void setCamViewForward(const Vec3D camViewForward);           // Could be removed. Only used in initialize.
+    void setLensRadius(const float lensRadius);
+    void setFocusDistance(const float focusDistance);
 
     int getImageWidth(void) const;
     int getImageHeight(void) const;
@@ -59,6 +61,8 @@ class Camera
     Vec3D getCamViewUp(void) const;           // Could be removed. Only used in initialize.
     Vec3D getCamViewRight(void) const;        // Could be removed. Only used in initialize.
     Vec3D getCamViewForward(void) const;      // Could be removed. Only used in initialize.
+    float getLensRadius(void) const;
+    float getFocusDistance(void) const;
 
     Ray randomPixelRayCompute(uint32_t &seed, const float &x, const float &y) const;
 
@@ -107,6 +111,11 @@ class Camera
     Vec3D _initialPixelPos;
     Vec3D _pixelWidthDistance;
     Vec3D _pixelHeightDistance;
+
+    // Depth of field. A zero lens radius keeps the camera pinhole. A zero
+    // focus distance is resolved to the look-at distance during initialize().
+    float _lensRadius = 0.0f;
+    float _focusDistance = 0.0f;
 
     // The dimensions of the viewport are computed based on the aspect ratio of the camera. It has to follow that aspect
     // ratio because if not, the image will be distorted. ex: streched or compressed.

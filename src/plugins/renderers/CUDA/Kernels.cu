@@ -20,6 +20,7 @@ constexpr float RAY_EPSILON = 0.0001f;
 constexpr float DIRECTION_EPSILON = 1e-12f;
 constexpr float AXIS_EPSILON = 1e-6f;
 constexpr float CONE_EPSILON = 1e-6f;
+constexpr float PI_F = 3.14159265358979323846f;
 constexpr int MAX_BOUNCES = 15;
 // The shared builder caps SAH depth and falls back to median splits, so the
 // traversal stack only needs to cover a balanced tree plus the SAH prefix.
@@ -210,7 +211,7 @@ __device__ inline Vec3 sampleGGXHalfVector(const Vec3 &normal, float roughness, 
     const float alpha = fmaxf(roughness * roughness, 1e-4f);
     const float u1 = randomFloat(state);
     const float u2 = randomFloat(state);
-    const float phi = 2.0f * 3.14159265358979323846f * u1;
+    const float phi = 2.0f * PI_F * u1;
     const float cosTheta = sqrtf((1.0f - u2) / (1.0f + (alpha * alpha - 1.0f) * u2));
     const float sinTheta = sqrtf(fmaxf(0.0f, 1.0f - cosTheta * cosTheta));
     const Vec3 tangent = normalize(cross(fabsf(normal.x) < 0.999f ? makeVec3(1.0f, 0.0f, 0.0f)
@@ -993,7 +994,28 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
     direction = add(direction, add(scale(scene.camera.pixelWidthDistance, jitterX),
                                    scale(scene.camera.pixelHeightDistance, jitterY)));
 
-    Ray ray{scene.camera.lookFrom, direction};
+    Vec3 origin = scene.camera.lookFrom;
+
+    // Match the CPU branch exactly: a zero lens radius must not consume random
+    // values, so pinhole renders remain identical.
+    if (scene.camera.lensRadius > 0.0f && scene.camera.focalDistance > 0.0f)
+    {
+        const float lensU = randomFloat(state);
+        const float lensV = randomFloat(state);
+        const float lensDistance = sqrtf(lensU);
+        const float lensAngle = 2.0f * PI_F * lensV;
+
+        origin = add(origin, add(scale(scene.camera.viewRight,
+                                       lensDistance * cosf(lensAngle) * scene.camera.lensRadius),
+                                 scale(scene.camera.viewUp,
+                                       lensDistance * sinf(lensAngle) * scene.camera.lensRadius)));
+
+        const float focusRatio = scene.camera.focusDistance / scene.camera.focalDistance;
+
+        direction = sub(add(scene.camera.lookFrom, scale(direction, focusRatio)), origin);
+    }
+
+    Ray ray{origin, direction};
     Vec3 accumulated = makeVec3(0.0f, 0.0f, 0.0f);
     Vec3 throughput = makeVec3(1.0f, 1.0f, 1.0f);
     bool insideDielectric = false;

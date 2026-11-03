@@ -168,6 +168,22 @@ std::shared_ptr<Camera> Parser::parseCamera(const libconfig::Setting &cameraSett
                                                               parsePoint(cameraSetting.lookup("position")),
                                                               double(cameraSetting.lookup("fieldOfView")));
 
+    if (cameraSetting.exists("lensRadius"))
+    {
+        const double lensRadius = cameraSetting.lookup("lensRadius");
+
+        requireNonNegative(lensRadius, "Camera lens radius");
+        camera->setLensRadius(static_cast<float>(lensRadius));
+    }
+
+    if (cameraSetting.exists("focusDistance"))
+    {
+        const double focusDistance = cameraSetting.lookup("focusDistance");
+
+        requirePositive(focusDistance, "Camera focus distance");
+        camera->setFocusDistance(static_cast<float>(focusDistance));
+    }
+
     return camera;
 }
 

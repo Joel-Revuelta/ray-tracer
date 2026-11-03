@@ -25,8 +25,8 @@ namespace
 const char *const USAGE =
     "Usage: ./raytracer --path <scene.cfg> --cli|--sfml|--gui sfml|opengl "
     "[--renderer cpu|cuda] [--width W] [--height H] [--frames N] [--threads N] [--seed N] "
-    "[--device N] [--exposure E] [--tonemap none|reinhard|aces] [--output out.ppm] "
-    "[--list-renderers] [--list-guis]";
+    "[--device N] [--lens-radius R] [--focus-distance D] [--exposure E] "
+    "[--tonemap none|reinhard|aces] [--output out.ppm] [--list-renderers] [--list-guis]";
 
 std::string normalizeGuiName(std::string name)
 {
@@ -91,6 +91,20 @@ float parseNonNegativeFloat(const char *value, const char *name)
     const float parsed = std::strtof(value, &end);
 
     if (errno != 0 || end == value || *end != '\0' || !std::isfinite(parsed) || parsed < 0.0f)
+    {
+        std::cerr << "Invalid " << name << " value: " << value << std::endl;
+        printUsage(std::cerr);
+        std::exit(EXIT_FAILURE);
+    }
+
+    return parsed;
+}
+
+float parsePositiveFloat(const char *value, const char *name)
+{
+    const float parsed = parseNonNegativeFloat(value, name);
+
+    if (parsed <= 0.0f)
     {
         std::cerr << "Invalid " << name << " value: " << value << std::endl;
         printUsage(std::cerr);
@@ -187,6 +201,8 @@ App::App(int ac, char **av)
                                       {"seed", required_argument, NULL, 15},
                                       {"list-guis", 0, NULL, 16},
                                       {"device", required_argument, NULL, 17},
+                                      {"lens-radius", required_argument, NULL, 18},
+                                      {"focus-distance", required_argument, NULL, 19},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -255,6 +271,12 @@ App::App(int ac, char **av)
         case 17:
             _device = parseNonNegativeInt(optarg, "device");
             break;
+        case 18:
+            _lensRadius = parseNonNegativeFloat(optarg, "lens radius");
+            break;
+        case 19:
+            _focusDistance = parsePositiveFloat(optarg, "focus distance");
+            break;
         case '?':
         default:
             std::cerr << "Unknown or incomplete option." << std::endl;
@@ -310,6 +332,11 @@ void App::run(void)
         // requested render size before creating the renderer.
         camera->initialize(_width, _height, camera->getLookAt(), camera->getLookFrom(),
                            camera->getVerticalFovDegree());
+
+        if (_lensRadius >= 0.0f)
+            camera->setLensRadius(_lensRadius);
+        if (_focusDistance > 0.0f)
+            camera->setFocusDistance(_focusDistance);
 
         const RendererEntry *rendererEntry = findRenderer(_rendererName);
         if (!rendererEntry)

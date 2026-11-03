@@ -40,6 +40,8 @@ class CameraController
     bool applyMovement(char event, Camera &camera);
     bool applyLook(char event, Camera &camera);
     bool applyFov(Camera &camera, float deltaDegrees);
+    bool applyLens(char event, Camera &camera);
+    bool applyFocus(char event, Camera &camera);
     bool updateCamera(Camera &camera, const Vec3D &lookFrom, const Vec3D &lookAt, float fov);
 
     bool _lockLookAt = false;
@@ -47,6 +49,8 @@ class CameraController
     Vec3D _initialLookFrom;
     Vec3D _initialLookAt;
     float _initialFov = 90.0f;
+    float _initialLensRadius = 0.0f;
+    float _initialFocusDistance = 0.0f;
     bool _hasInitialState = false;
 };
 

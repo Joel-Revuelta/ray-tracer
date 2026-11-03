@@ -98,8 +98,13 @@ struct Camera
     Vec3 initialPixelPos;
     Vec3 pixelWidthDistance;
     Vec3 pixelHeightDistance;
+    Vec3 viewRight;
+    Vec3 viewUp;
     int width;
     int height;
+    float lensRadius;
+    float focusDistance;
+    float focalDistance;
 };
 
 struct PostProcess

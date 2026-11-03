@@ -63,6 +63,13 @@ void Camera::initialize(int imageWidth, int imageHeight, Point3D lookAt, Point3D
     setLookFrom(lookFrom);
     setLookAt(lookAt);
     setFocalDistance((lookFrom - lookAt).length());
+
+    // Keep an explicitly configured focus distance across re-initialisation
+    // (resolution changes, interactive camera moves). A zero value means the
+    // look-at distance is used.
+    if (_focusDistance <= 0.0f)
+        _focusDistance = static_cast<float>(getFocalDistance());
+
     setAspectRatio(aspectRatioCompute());
 
     // Set default orientation, looking horizontally. If the camera looks
@@ -259,6 +266,22 @@ void Camera::setCamViewForward(const Vec3D camViewForward)
     _camViewForward = camViewForward;
 }
 
+void Camera::setLensRadius(const float lensRadius)
+{
+    if (!std::isfinite(lensRadius) || lensRadius < 0.0f)
+        throw std::invalid_argument("Camera lens radius must be non-negative");
+
+    _lensRadius = lensRadius;
+}
+
+void Camera::setFocusDistance(const float focusDistance)
+{
+    if (!std::isfinite(focusDistance) || focusDistance <= 0.0f)
+        throw std::invalid_argument("Camera focus distance must be greater than zero");
+
+    _focusDistance = focusDistance;
+}
+
 int Camera::getImageWidth(void) const
 {
     return _imageWidth;
@@ -337,4 +360,14 @@ Vec3D Camera::getCamViewRight(void) const
 Vec3D Camera::getCamViewForward(void) const
 {
     return _camViewForward;
+}
+
+float Camera::getLensRadius(void) const
+{
+    return _lensRadius;
+}
+
+float Camera::getFocusDistance(void) const
+{
+    return _focusDistance;
 }

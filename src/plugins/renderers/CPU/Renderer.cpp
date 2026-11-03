@@ -497,6 +497,9 @@ void Renderer::updateTitle(void)
           << completedSamples << "/" << _frameIterations << " spp | " << std::fixed << std::setprecision(1) << elapsed
           << "s | exposure " << std::setprecision(2) << _postProcess.exposure;
 
+    if (getCamera()->getLensRadius() > 0.0f)
+        title << " | lens " << getCamera()->getLensRadius() << " | focus " << getCamera()->getFocusDistance();
+
     if (_paused)
         title << " | paused";
 
@@ -649,13 +652,34 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
 
     // Set the origin and direction of the ray. The jitter is expressed in
     // pixel units so anti-aliasing is independent of scene scale and distance.
-    ray.setOrigin(camera.getLookFrom());
     Vec3D direction = _rayDirections[pixelIndex];
     const float pixelRandomPosX = Utils::numericGeneratePseudoRandom<float>(sampler, -0.5f, 0.5f);
     const float pixelRandomPosY = Utils::numericGeneratePseudoRandom<float>(sampler, -0.5f, 0.5f);
 
     direction += pixelRandomPosX * camera.getPixelWidthDistance() +
                  pixelRandomPosY * camera.getPixelHeightDistance();
+
+    Vec3D origin = camera.getLookFrom();
+    const float lensRadius = camera.getLensRadius();
+
+    // A zero lens radius keeps the pinhole camera and must not consume random
+    // values, so existing scenes stay byte-identical.
+    if (lensRadius > 0.0f && camera.getFocalDistance() > 0.0)
+    {
+        const float lensU = Utils::numericGeneratePseudoRandom<float>(sampler, 0.0f, 1.0f);
+        const float lensV = Utils::numericGeneratePseudoRandom<float>(sampler, 0.0f, 1.0f);
+        const float lensDistance = std::sqrt(lensU);
+        const float lensAngle = 2.0f * PI_F * lensV;
+
+        origin += camera.getCamViewRight() * (lensDistance * std::cos(lensAngle) * lensRadius) +
+                  camera.getCamViewUp() * (lensDistance * std::sin(lensAngle) * lensRadius);
+
+        const float focusRatio = camera.getFocusDistance() / static_cast<float>(camera.getFocalDistance());
+
+        direction = (camera.getLookFrom() + direction * focusRatio) - origin;
+    }
+
+    ray.setOrigin(origin);
     ray.setDirection(direction);
 
     // Shoot the ray, bounce it around the scene, and accumulate the color of the pixel

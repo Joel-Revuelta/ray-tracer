@@ -194,6 +194,14 @@ char keyToChar(int key)
         return '[';
     case GLFW_KEY_RIGHT_BRACKET:
         return ']';
+    case GLFW_KEY_COMMA:
+        return ',';
+    case GLFW_KEY_PERIOD:
+        return '.';
+    case GLFW_KEY_SEMICOLON:
+        return ';';
+    case GLFW_KEY_APOSTROPHE:
+        return '\'';
     default:
         return '\0';
     }
