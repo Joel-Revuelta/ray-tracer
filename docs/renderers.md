@@ -136,9 +136,11 @@ uses the same `SceneSnapshot` data path.
 - **Availability:** `isAvailable()` returns false with the driver error when
   `cudaGetDeviceCount()` fails or reports no devices.
 - **GUI:** the CUDA plugin supports `--sfml` and the shared `CameraController`
-  controls. Rendering is split into small sample batches; the window is updated
-  and events are pumped between batches, so the window stays responsive and
-  camera movement restarts the render promptly.
+  controls (`WASD` movement, `Q`/`E` vertical, arrows or `I`/`J`/`K`/`L` look,
+  `+`/`-` zoom, `R` reset, `X`/`C` locks). Rendering uses one-sample batches,
+  but the host polls window events continuously while each GPU kernel is in
+  flight. Camera movement is recorded during the kernel and the render restarts
+  as soon as that sample completes, so heavy scenes do not freeze the window.
 - **Output:** uses the shared PPM helper and supports stdout, files, and
   unwritable-output errors like the CPU renderer. PPM output is binary `P6`,
   which keeps 8K images around 100 MB instead of several hundred MB of ASCII.
@@ -186,7 +188,7 @@ Tested with CUDA 13.4, GCC 15.2, NVIDIA driver 595.99.02 and an RTX 4070 Laptop
 | `cannot open shared object file: ./plugins/...` | Run `./raytracer` from the repository root and rebuild the plugins. |
 | `Renderer 'cuda' is unavailable` | CUDA was not built, the driver is missing, or no device was found. Check `--list-renderers`. |
 | CUDA kernel image error | The plugin is compiled for `sm_89`; change `CUDA_ARCHITECTURES` in `CMakeLists.txt` and rebuild. |
-| SFML window appears unresponsive | The CUDA renderer pumps events between sample batches. Use `--cli` for 8K; if the problem persists, check the display/SFML installation. |
+| SFML window appears unresponsive | The CUDA renderer polls events while the GPU kernel is running. Use `--cli` for 8K; if the problem persists, check the display/SFML installation. |
 | PPM will not open | Output is binary `P6`; use Pillow or ImageMagick. |
 | 8K render is slow | Infinity Mirror is reflection-heavy; lower `FRAMES` or render a simpler scene for quick tests. |
 

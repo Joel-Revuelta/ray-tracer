@@ -217,9 +217,12 @@ char SFML::sfKeyToAscii(sf::Keyboard::Key key)
         return static_cast<char>('0' + (static_cast<int>(key) - static_cast<int>(sf::Keyboard::Key::Num0)));
 
     const std::unordered_map<sf::Keyboard::Key, char> keyMap = {
-        {sf::Keyboard::Key::Space, ' '}, {sf::Keyboard::Key::Enter, '\n'}, {sf::Keyboard::Key::Escape, 27},
-        {sf::Keyboard::Key::Left, 'a'},  {sf::Keyboard::Key::Right, 'd'}, {sf::Keyboard::Key::Up, 'w'},
-        {sf::Keyboard::Key::Down, 's'}};
+        {sf::Keyboard::Key::Space, ' '},  {sf::Keyboard::Key::Enter, '\n'},
+        {sf::Keyboard::Key::Escape, 27},  {sf::Keyboard::Key::Left, 'j'},
+        {sf::Keyboard::Key::Right, 'l'},  {sf::Keyboard::Key::Up, 'i'},
+        {sf::Keyboard::Key::Down, 'k'},   {sf::Keyboard::Key::Equal, '+'},
+        {sf::Keyboard::Key::Add, '+'},    {sf::Keyboard::Key::Hyphen, '-'},
+        {sf::Keyboard::Key::Subtract, '-'}};
 
     auto it = keyMap.find(key);
     if (it != keyMap.end())

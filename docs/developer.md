@@ -186,16 +186,21 @@ the flat scene data model.
 ### GUI
 
 `IGUI` is implemented by the SFML plugin. Renderers receive an optional
-`shared_ptr<IGUI>` in `RenderContext`. The shared `CameraController` implements:
+`shared_ptr<IGUI>` in `RenderContext`. Renderers call
+`CameraController::captureInitial()` once before interactive rendering so `R`
+can restore the starting pose. The shared `CameraController` implements:
 
-- `WASD` / `QE`: move the camera,
-- `R`: restart/reset the view,
+- `W`/`S`, `A`/`D`: camera-relative forward/back and strafe,
+- `Q`/`E`: world-space up/down,
+- arrow keys or `I`/`J`/`K`/`L`: look up/left/down/right,
+- `+`/`-`: field-of-view zoom,
+- `R`: restore the initial position, target and FOV,
 - `X`: lock the look-at point,
 - `C`: lock the camera position,
 - `Esc`: close the window.
 
-The CUDA renderer renders in small sample batches and pumps events between
-batches; keep that behavior if you modify it.
+The CUDA renderer polls window events while each GPU kernel is in flight and
+uses one-sample batches; keep that behavior if you modify it.
 
 ## Adding components
 

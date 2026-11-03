@@ -564,7 +564,8 @@ __global__ void renderKernel(SceneView scene, int sampleStart, int sampleCount, 
 }
 } // namespace
 
-void launchRender(const SceneView &scene, int sampleStart, int sampleCount, float4 *accumulation, unsigned char *output)
+void launchRender(const SceneView &scene, int sampleStart, int sampleCount, float4 *accumulation, unsigned char *output,
+                  cudaStream_t stream)
 {
     if (sampleCount <= 0)
         return;
@@ -573,7 +574,8 @@ void launchRender(const SceneView &scene, int sampleStart, int sampleCount, floa
     const dim3 grid(static_cast<unsigned int>((scene.camera.width + 15) / 16),
                     static_cast<unsigned int>((scene.camera.height + 15) / 16));
 
-    renderKernel<<<grid, block>>>(scene, sampleStart, sampleCount, accumulation, reinterpret_cast<uchar4 *>(output));
+    renderKernel<<<grid, block, 0, stream>>>(scene, sampleStart, sampleCount, accumulation,
+                                             reinterpret_cast<uchar4 *>(output));
 }
 
 } // namespace Cuda

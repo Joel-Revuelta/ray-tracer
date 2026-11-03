@@ -63,15 +63,28 @@ not built or no CUDA device is available, use `cpu` or rebuild with CUDA enabled
 
 | Key | Action |
 | --- | --- |
-| `W` / `A` / `S` / `D` | Move the camera horizontally. |
-| `Q` / `E` | Move the camera vertically. |
-| `R` | Restart the current view. |
+| `W` / `S` | Move forward/backward relative to the current view. |
+| `A` / `D` | Strafe left/right. |
+| `Q` / `E` | Move up/down in world space. |
+| `I` / Up | Look up. |
+| `K` / Down | Look down. |
+| `J` / Left | Look left. |
+| `L` / Right | Look right. |
+| `+` / `=` | Zoom in (decrease field of view). |
+| `-` | Zoom out (increase field of view). |
+| `R` | Restore the initial camera position, look target and field of view. |
 | `X` | Lock/unlock the look-at point. |
 | `C` | Lock/unlock the camera position. |
 | `Esc` | Close the window. |
 
+Movement is camera-relative: `W`/`S` follow the horizontal view direction and
+`A`/`D` follow the camera's right vector. `Q`/`E` remain world-space vertical
+movement. `X` keeps the look-at point fixed while the camera moves; `C` keeps the
+camera position fixed while the look target moves.
+
 Resizing the window stretches the rendered image to the new window size. The
-CUDA renderer updates progressively and processes input between sample batches.
+CUDA renderer updates progressively and processes input continuously while a
+sample is rendering.
 
 For 8K or very large renders, use `--cli`; opening a 7680×4320 SFML window is not
 practical on most displays.

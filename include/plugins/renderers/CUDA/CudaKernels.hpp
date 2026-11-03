@@ -16,7 +16,8 @@ namespace RayTracer
 namespace Cuda
 {
 
-void launchRender(const SceneView &scene, int sampleStart, int sampleCount, float4 *accumulation, unsigned char *output);
+void launchRender(const SceneView &scene, int sampleStart, int sampleCount, float4 *accumulation, unsigned char *output,
+                  cudaStream_t stream);
 
 } // namespace Cuda
 } // namespace RayTracer

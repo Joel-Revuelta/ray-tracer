@@ -33,8 +33,9 @@ Useful options:
 - `--list-renderers` — list the available renderer plugins and their status.
 - `--help` — print usage and exit.
 
-While the window is open: `WASD`/`QE` move the camera, `R` resets it,
-`X` locks the look-at point, `C` locks the camera position, `Esc` quits.
+While the window is open: `WASD` moves relative to the current view, `Q/E` moves
+up/down, arrow keys or `IJKL` look around, `+/-` zooms, `R` restores the starting
+pose, `X` locks the look-at point, `C` locks the camera position, and `Esc` quits.
 Resizing the window stretches the rendered image to the new size.
 
 | Scene | What it shows |

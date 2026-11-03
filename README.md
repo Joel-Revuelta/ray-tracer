@@ -19,8 +19,8 @@ full-HD and 8K still renders.
   loaded from `plugins/` at runtime.
 - **Strict scene parser** — validates dimensions, normals, lights, camera
   settings and material indices before rendering.
-- **Interactive SFML 3 window** — WASD/QE camera controls, camera locks,
-  resize stretching and responsive CUDA preview.
+- **Interactive SFML 3 window** — camera-relative movement, look controls,
+  FOV zoom, reset, camera locks and resize stretching.
 - **Headless CLI** — binary PPM output, stdout support and configurable
   resolution/samples.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
@@ -95,6 +95,10 @@ Open the interactive SFML window:
 ./raytracer --path scenes/showcase.cfg --sfml --renderer cuda
 ```
 
+GUI controls: `WASD` moves relative to the current view, `Q/E` moves up/down,
+arrow keys or `IJKL` look around, `+`/`-` zooms, `R` restores the starting pose,
+`X`/`C` toggle camera locks, and `Esc` quits.
+
 List the renderer plugins:
 
 ```bash
@@ -153,8 +157,8 @@ it to the GPU, and implements the same intersections, materials, lights, shadow
 rays and bounce rules. It uses a seeded PCG sampler and static `cudart`.
 
 CUDA rendering is progressive in the SFML window: samples are rendered in small
-batches, the image is displayed, and events are pumped between batches, so camera
-movement restarts the render promptly instead of freezing the window.
+batches while window events are pumped continuously, so camera movement is
+detected during a heavy kernel instead of freezing the window.
 
 Representative performance on an RTX 4070 Laptop:
 

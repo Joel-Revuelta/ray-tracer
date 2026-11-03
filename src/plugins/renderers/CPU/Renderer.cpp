@@ -78,6 +78,9 @@ void Renderer::initialize(void)
 
 void Renderer::run(void)
 {
+    if (getCamera())
+        _cameraController.captureInitial(*getCamera());
+
     render();
     std::clog << std::endl;
 

@@ -206,10 +206,39 @@ class CudaRenderSession
         _view.lightCount = checkedCount(_lights.size(), "lights");
         _view.camera = toDevice(snapshot.camera);
 
-        checkCuda(cudaMemset(_deviceAccumulation.get(), 0,
-                             static_cast<std::size_t>(_width) * static_cast<std::size_t>(_height) * sizeof(float4)),
-                  "cudaMemset");
+        checkCuda(cudaStreamCreateWithFlags(&_stream, cudaStreamNonBlocking), "cudaStreamCreate");
+        try
+        {
+            checkCuda(cudaEventCreateWithFlags(&_event, cudaEventDisableTiming), "cudaEventCreate");
+            checkCuda(cudaMemsetAsync(_deviceAccumulation.get(), 0,
+                                      static_cast<std::size_t>(_width) * static_cast<std::size_t>(_height) *
+                                          sizeof(float4),
+                                      _stream),
+                      "cudaMemsetAsync");
+        }
+        catch (...)
+        {
+            if (_event != nullptr)
+                cudaEventDestroy(_event);
+            cudaStreamDestroy(_stream);
+            _event = nullptr;
+            _stream = nullptr;
+            throw;
+        }
     }
+
+    ~CudaRenderSession(void)
+    {
+        if (_batchInFlight && _event != nullptr)
+            cudaEventSynchronize(_event);
+        if (_event != nullptr)
+            cudaEventDestroy(_event);
+        if (_stream != nullptr)
+            cudaStreamDestroy(_stream);
+    }
+
+    CudaRenderSession(const CudaRenderSession &) = delete;
+    CudaRenderSession &operator=(const CudaRenderSession &) = delete;
 
     int width(void) const
     {
@@ -221,18 +250,69 @@ class CudaRenderSession
         return _height;
     }
 
-    void renderBatch(int sampleStart, int sampleCount)
+    void updateCamera(const CameraData &camera)
+    {
+        finishBatch();
+        _view.camera = toDevice(camera);
+        checkCuda(cudaMemsetAsync(_deviceAccumulation.get(), 0,
+                                  static_cast<std::size_t>(_width) * static_cast<std::size_t>(_height) * sizeof(float4),
+                                  _stream),
+                  "cudaMemsetAsync");
+    }
+
+    void launchBatch(int sampleStart, int sampleCount)
     {
         if (sampleCount <= 0)
             return;
+        if (_batchInFlight)
+            throw std::runtime_error("CUDA renderer attempted to launch a batch while another is running");
 
-        Cuda::launchRender(_view, sampleStart, sampleCount, _deviceAccumulation.get(), _deviceOutput.get());
+        Cuda::launchRender(_view, sampleStart, sampleCount, _deviceAccumulation.get(), _deviceOutput.get(), _stream);
         checkCuda(cudaGetLastError(), "kernel launch");
-        checkCuda(cudaDeviceSynchronize(), "synchronize");
+
+        const cudaError_t recordStatus = cudaEventRecord(_event, _stream);
+
+        if (recordStatus != cudaSuccess)
+        {
+            cudaStreamSynchronize(_stream);
+            checkCuda(recordStatus, "cudaEventRecord");
+        }
+        _batchInFlight = true;
+    }
+
+    bool isBatchComplete(void)
+    {
+        if (!_batchInFlight)
+            return true;
+
+        const cudaError_t status = cudaEventQuery(_event);
+
+        if (status == cudaErrorNotReady)
+            return false;
+        checkCuda(status, "cudaEventQuery");
+        return true;
+    }
+
+    void finishBatch(void)
+    {
+        if (!_batchInFlight)
+            return;
+
+        checkCuda(cudaEventSynchronize(_event), "cudaEventSynchronize");
+        _batchInFlight = false;
+        checkCuda(cudaGetLastError(), "kernel execution");
+    }
+
+    void renderBatch(int sampleStart, int sampleCount)
+    {
+        launchBatch(sampleStart, sampleCount);
+        finishBatch();
     }
 
     std::vector<uint32_t> copyImage(void)
     {
+        finishBatch();
+
         std::vector<uint32_t> pixels(pixelCount(_width, _height));
 
         checkCuda(cudaMemcpy(pixels.data(), _deviceOutput.get(), pixels.size() * sizeof(uint32_t),
@@ -253,6 +333,9 @@ class CudaRenderSession
     DeviceBuffer<float4> _deviceAccumulation;
     DeviceBuffer<unsigned char> _deviceOutput;
     Cuda::SceneView _view;
+    cudaStream_t _stream = nullptr;
+    cudaEvent_t _event = nullptr;
+    bool _batchInFlight = false;
 };
 
 void writeOutput(const RenderContext &context, int width, int height, const std::vector<uint32_t> &pixels)
@@ -312,10 +395,17 @@ void CUDARenderer::run(const RenderContext &context)
         throw std::runtime_error("CUDA renderer unavailable: " + unavailableReason);
 
     CameraController controller;
+    controller.captureInitial(*context.camera);
     std::unique_ptr<CudaRenderSession> session;
 
     auto renderAll = [&](bool guiMode) {
-        session = std::make_unique<CudaRenderSession>(buildSceneSnapshot(*context.scene, *context.camera));
+        const SceneSnapshot snapshot = buildSceneSnapshot(*context.scene, *context.camera);
+
+        if (!session || snapshot.camera.imageWidth != session->width() ||
+            snapshot.camera.imageHeight != session->height())
+            session = std::make_unique<CudaRenderSession>(snapshot);
+        else
+            session->updateCamera(snapshot.camera);
 
         const int totalSamples = context.options.frames;
 
@@ -339,7 +429,7 @@ void CUDARenderer::run(const RenderContext &context)
             return;
         }
 
-        constexpr int batchSize = 4;
+        constexpr int batchSize = 1;
         int start = 0;
 
         while (start < totalSamples)
@@ -347,8 +437,7 @@ void CUDARenderer::run(const RenderContext &context)
             bool cameraChanged = false;
             char event;
 
-            // Drain the event queue before every batch. This keeps the window
-            // responsive while the GPU is rendering.
+            // Drain the event queue before every batch.
             while ((event = context.gui->getEvent()) != 0)
             {
                 if (controller.handleEvent(event, *context.camera))
@@ -360,15 +449,49 @@ void CUDARenderer::run(const RenderContext &context)
 
             if (cameraChanged)
             {
-                std::clog << "\rCamera moved; restarting CUDA render." << std::endl;
-                session = std::make_unique<CudaRenderSession>(buildSceneSnapshot(*context.scene, *context.camera));
+                const SceneSnapshot updated = buildSceneSnapshot(*context.scene, *context.camera);
+                session->updateCamera(updated.camera);
                 start = 0;
                 continue;
             }
 
             const int count = std::min(batchSize, totalSamples - start);
+            session->launchBatch(start, count);
 
-            session->renderBatch(start, count);
+            bool restart = false;
+
+            // Keep pumping events while the GPU is working. Heavy scenes can
+            // make a sample take a long time; polling here prevents the window
+            // manager from marking the app as unresponsive.
+            while (!session->isBatchComplete())
+            {
+                char pendingEvent;
+
+                while ((pendingEvent = context.gui->getEvent()) != 0)
+                {
+                    if (controller.handleEvent(pendingEvent, *context.camera))
+                        restart = true;
+                }
+
+                if (!context.gui->isOpen())
+                {
+                    session->finishBatch();
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+
+            session->finishBatch();
+
+            if (restart)
+            {
+                std::clog << "\rCamera moved; restarting CUDA render." << std::endl;
+                const SceneSnapshot updated = buildSceneSnapshot(*context.scene, *context.camera);
+                session->updateCamera(updated.camera);
+                start = 0;
+                continue;
+            }
+
             start += count;
 
             std::vector<uint32_t> pixels = session->copyImage();
