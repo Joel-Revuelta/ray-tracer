@@ -26,15 +26,15 @@ class Rotation : public ITransformation
     Rotation(Vec3D rotation);
     ~Rotation();
 
-    void doTransformation(ITransformable &obj) override;
-    void doTransformationPrimitive(ITransformable &obj) override;
-    void doTransformationScene(ITransformable &obj) override;
-    void doTransformationLight(ITransformable &obj) override;
+    void doTransformation(ITransformable &obj) const override;
+    void doTransformationPrimitive(ITransformable &obj) const override;
+    void doTransformationScene(ITransformable &obj) const override;
+    void doTransformationLight(ITransformable &obj) const override;
 
-    void doRotationSphere(Sphere &sphere);
-    void doRotationCylinder(Cylinder &cylinder);
-    void doRotationCone(Cone &cone);
-    void doRotationPlane(Plane &plane);
+    void doRotationSphere(Sphere &sphere) const;
+    void doRotationCylinder(Cylinder &cylinder) const;
+    void doRotationCone(Cone &cone) const;
+    void doRotationPlane(Plane &plane) const;
 
   protected:
   private:

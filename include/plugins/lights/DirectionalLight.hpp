@@ -22,8 +22,11 @@ class DirectionalLight : public ILight
     ~DirectionalLight(void);
 
     void doTransformation(const ITransformation &t) override;
+    std::shared_ptr<ILight> clone(void) const override;
     Color3D calculateLighting(const HitPayload &payload) const override;
     bool isPointInShadow(const HitPayload &payload, const Scene &scene) const override;
+    Color3D getRadiance(const HitPayload &payload) const override;
+    Vec3D getLightDirection(const HitPayload &payload) const override;
     bool getData(LightData &data) const override;
 
     Color3D getColor(void) const;

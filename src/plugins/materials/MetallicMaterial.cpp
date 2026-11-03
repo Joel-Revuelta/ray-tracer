@@ -20,7 +20,12 @@ MetallicMaterial::~MetallicMaterial(void)
 {
 }
 
-extern "C" std::shared_ptr<IMaterial> create(const Color3D &color)
+std::shared_ptr<IMaterial> MetallicMaterial::clone(void) const
+{
+    return std::make_shared<MetallicMaterial>(*this);
+}
+
+extern "C" std::shared_ptr<IMaterial> create(Color3D color)
 {
     return std::make_shared<MetallicMaterial>(color);
 }

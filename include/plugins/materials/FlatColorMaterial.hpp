@@ -17,6 +17,7 @@ class FlatColorMaterial : public AMaterial
   public:
     FlatColorMaterial(const Color3D &color);
     ~FlatColorMaterial(void);
+    std::shared_ptr<IMaterial> clone(void) const override;
 };
 } // namespace RayTracer
 

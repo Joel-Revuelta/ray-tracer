@@ -7,6 +7,7 @@
 
 #include "plugins/renderers/CPU/CPURenderer.hpp"
 #include "plugins/renderers/CPU/Renderer.hpp"
+#include <stdexcept>
 
 using namespace RayTracer;
 
@@ -28,6 +29,11 @@ bool CPURenderer::isAvailable(std::string &reason) const
 
 void CPURenderer::run(const RenderContext &context)
 {
+    if (!context.scene || !context.camera)
+        throw std::invalid_argument("CPU renderer requires a scene and camera");
+    if (context.options.frames <= 0)
+        throw std::invalid_argument("CPU renderer requires at least one sample");
+
     if (context.camera->getImageWidth() != context.options.width ||
         context.camera->getImageHeight() != context.options.height)
     {

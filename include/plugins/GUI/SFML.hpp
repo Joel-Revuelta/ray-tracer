@@ -26,7 +26,8 @@ class SFML : public IGUI
     ~SFML();
 
     void loadPPM(const std::string &path) override;
-    void setImage(const std::size_t &width, const std::size_t &height, std::vector<uint32_t> &pixels) override;
+    void setImage(const std::size_t &width, const std::size_t &height,
+                  const std::vector<uint32_t> &pixels) override;
     void setSize(const std::size_t &width, const std::size_t &height) override;
     void setPixels(const Pixels &pixels) override;
     void setPixel(const std::size_t &x, const std::size_t &y, const Color4D &color) override;

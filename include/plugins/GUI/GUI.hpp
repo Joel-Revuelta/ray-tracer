@@ -21,7 +21,8 @@ class IGUI
     virtual ~IGUI() = default;
 
     virtual void loadPPM(const std::string &path) = 0;
-    virtual void setImage(const std::size_t &width, const std::size_t &height, std::vector<uint32_t> &pixels) = 0;
+    virtual void setImage(const std::size_t &width, const std::size_t &height,
+                          const std::vector<uint32_t> &pixels) = 0;
     virtual void setSize(const std::size_t &width, const std::size_t &height) = 0;
     virtual void setPixels(const std::vector<std::vector<Color4D>> &pixels) = 0;
     virtual void setPixel(const std::size_t &x, const std::size_t &y, const Color4D &color) = 0;

@@ -29,6 +29,10 @@ class CameraController
     // Stores the pose that R restores. Call once before interactive rendering.
     void captureInitial(const Camera &camera);
 
+    // True for keys that can change the camera pose. Locks and unknown keys do
+    // not require restarting an in-flight frame.
+    bool isCameraEvent(char event) const;
+
     // Returns true when the camera changed and the render should restart.
     bool handleEvent(char event, Camera &camera);
 

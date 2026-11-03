@@ -16,7 +16,7 @@ ExternSphere::~ExternSphere()
 {
 }
 
-extern "C" std::shared_ptr<IPrimitive> create(const double radius, const Vec3D &center, const uint materialIdx)
+extern "C" std::shared_ptr<IPrimitive> create(double radius, Vec3D center, uint materialIdx)
 {
     return std::make_shared<Sphere>(radius, center, materialIdx);
 }

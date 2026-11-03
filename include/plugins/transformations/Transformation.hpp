@@ -18,13 +18,14 @@ class ITransformation // Interface
   public:
     virtual ~ITransformation(void) = default;
 
-    // recive object and detect type and depending of type do necessary operations, Use typeid and dynamic_cast
-    virtual void doTransformation(ITransformable &obj) = 0;
+    // Apply this transformation to an object. Transformations do not mutate
+    // their own state, so they can be applied through a const reference.
+    virtual void doTransformation(ITransformable &obj) const = 0;
 
   private:
-    virtual void doTransformationPrimitive(ITransformable &obj) = 0;
-    virtual void doTransformationScene(ITransformable &obj) = 0;
-    virtual void doTransformationLight(ITransformable &obj) = 0;
+    virtual void doTransformationPrimitive(ITransformable &obj) const = 0;
+    virtual void doTransformationScene(ITransformable &obj) const = 0;
+    virtual void doTransformationLight(ITransformable &obj) const = 0;
 };
 } // namespace RayTracer
 

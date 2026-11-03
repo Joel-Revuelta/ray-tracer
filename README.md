@@ -31,10 +31,10 @@ full-HD and 8K still renders.
 
 | Dependency | Notes |
 | --- | --- |
-| CMake | 3.16 minimum; CMake 3.17+ for CUDA discovery. Tested with 4.2.3. |
+| CMake | 3.20 minimum. Tested with 4.2.3. |
 | C++20 compiler | Tested with GCC 15.2. |
 | `libconfig++` | Found through `pkg-config`. |
-| SFML 3.0.x | Graphics, Window, System and Audio. Tested with SFML 3.0.2. |
+| SFML 3.0.x | Optional GUI plugin; Graphics, Window and System. Tested with SFML 3.0.2. |
 | Threads / `dl` | Standard system libraries. |
 | CUDA Toolkit | Optional. Tested with CUDA 13.4. |
 | NVIDIA driver | Required for the CUDA renderer. |
@@ -45,19 +45,33 @@ For Debian/Ubuntu, the package names are typically `build-essential`, `cmake`,
 provides SFML 3.0.x, or build SFML 3 from source. `python3-pil` provides Pillow.
 
 Install the native dependencies with your package manager. SFML must be 3.0.x;
-older SFML 2.x releases are not compatible. The CUDA renderer currently builds
-for compute capability `sm_89` (Ada / RTX 4070 Laptop); change
-`CUDA_ARCHITECTURES` in `CMakeLists.txt` if you target another GPU.
+older SFML 2.x releases are not compatible. The CUDA renderer builds for
+compute capability `89` by default (Ada / RTX 4070 Laptop). Set
+`-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 
 ## Build
+
+The project defaults to a Release build. Pass
+`-DCMAKE_BUILD_TYPE=Debug` for a debug build.
 
 ```bash
 cmake -S . -B build
 cmake --build build -j"$(nproc)"
+ctest --test-dir build --output-on-failure
 ```
 
 The executable is written to the repository root as `./raytracer`, the shared
 core library is kept in `build/`, and plugins are written to `plugins/`.
+
+Install a self-contained bundle with:
+
+```bash
+cmake --install build --prefix /opt/raytracer
+```
+
+The installer puts the executable and core library in `bin/`, plugins in
+`bin/plugins/`, and scenes in `share/raytracer/scenes/`. Plugin lookup also
+honours `RAYTRACER_PLUGIN_DIR` and searches next to the executable.
 
 CUDA is detected automatically:
 
@@ -65,8 +79,14 @@ CUDA is detected automatically:
 # Disable CUDA and build only the CPU renderer
 cmake -S . -B build -DRAYTRACER_ENABLE_CUDA=OFF
 
+# Build a headless client without the SFML GUI plugin
+cmake -S . -B build -DRAYTRACER_ENABLE_GUI=OFF
+
 # Point CMake at a specific toolkit
 cmake -S . -B build -DCUDAToolkit_ROOT=/usr/local/cuda-13.4
+
+# Target another GPU generation
+cmake -S . -B build -DRAYTRACER_CUDA_ARCH=86
 ```
 
 Run the binary from the repository root so that `./plugins/` resolves correctly.
@@ -290,8 +310,8 @@ was detected. Check `./raytracer --list-renderers`, then rebuild with CUDA
 enabled or use `--renderer cpu`.
 
 **CUDA kernel image error on another GPU**
-The CUDA plugin is compiled for `sm_89`. Change `CUDA_ARCHITECTURES` in
-`CMakeLists.txt` and rebuild for the target GPU.
+The CUDA plugin is compiled for compute capability `89` by default. Reconfigure
+with `-DRAYTRACER_CUDA_ARCH=<cc>` and rebuild for the target GPU.
 
 **`--output /nonexistent/...` exits with an error**
 The output directory must exist and be writable. This is intentional: the

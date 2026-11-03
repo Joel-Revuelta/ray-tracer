@@ -134,6 +134,13 @@ inline Vec3D vec3DRandom(float min, float max)
                  Utils::numericGenerateRandom<float>(min, max));
 }
 
+inline Vec3D vec3DRandom(float min, float max, uint32_t &seed)
+{
+    return Vec3D(Utils::numericGeneratePseudoRandom<float>(seed, min, max),
+                 Utils::numericGeneratePseudoRandom<float>(seed, min, max),
+                 Utils::numericGeneratePseudoRandom<float>(seed, min, max));
+}
+
 /**
  * Generates a random 3D vector within a unit sphere.
  *
@@ -154,6 +161,19 @@ inline Vec3D vec3DRandomOnUnitSphere(void)
     }
 }
 
+inline Vec3D vec3DRandomOnUnitSphere(uint32_t &seed)
+{
+    while (true)
+    {
+        Vec3D v = vec3DRandom(-1, 1, seed);
+        const float lengthSquared = v.lengthSquared();
+
+        if (lengthSquared >= 1.0f || lengthSquared < 1e-12f)
+            continue;
+        return v;
+    }
+}
+
 /**
  * Generates a random normalized vector on a 3D sphere space.
  *
@@ -162,6 +182,11 @@ inline Vec3D vec3DRandomOnUnitSphere(void)
 inline Vec3D vec3DRandomSphereUnit(void)
 {
     return vec3DNormalize(vec3DRandomOnUnitSphere());
+}
+
+inline Vec3D vec3DRandomSphereUnit(uint32_t &seed)
+{
+    return vec3DNormalize(vec3DRandomOnUnitSphere(seed));
 }
 
 /**
@@ -179,6 +204,29 @@ inline Vec3D vec3DRandomOnHemisphere(const Vec3D &surfaceNormal)
         return onUnitSphere;
     else // Ray outside the hemisphere
         return -onUnitSphere;
+}
+
+/**
+ * Generates a cosine-weighted random direction in the hemisphere around a
+ * normalized surface normal. This is the correct sampling distribution for a
+ * Lambertian surface.
+ */
+inline Vec3D vec3DRandomCosineHemisphere(const Vec3D &surfaceNormal)
+{
+    const Vec3D direction = vec3DRandomSphereUnit() + surfaceNormal;
+
+    if (direction.lengthSquared() < 1e-12f)
+        return surfaceNormal;
+    return vec3DNormalize(direction);
+}
+
+inline Vec3D vec3DRandomCosineHemisphere(const Vec3D &surfaceNormal, uint32_t &seed)
+{
+    const Vec3D direction = vec3DRandomSphereUnit(seed) + surfaceNormal;
+
+    if (direction.lengthSquared() < 1e-12f)
+        return surfaceNormal;
+    return vec3DNormalize(direction);
 }
 
 /**
@@ -211,5 +259,7 @@ inline Vec3D reflect(const Vec3D &incidentVector, const Vec3D &normalVector)
 }
 
 } // namespace RayTracer
+
+#include "Vec3D.inl"
 
 #endif // VEC3D_HPP_

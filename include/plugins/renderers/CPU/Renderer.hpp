@@ -29,6 +29,8 @@
 namespace RayTracer
 {
 
+class RenderPool;
+
 class Renderer
 {
   public:
@@ -82,6 +84,7 @@ class Renderer
 
     std::ostream *_outStream = nullptr;
     std::fstream _fileStream;
+    std::unique_ptr<RenderPool> _pool;
 
     // Private methods
   private:
@@ -90,8 +93,9 @@ class Renderer
     // Raytracing methods
     void renderFrame(void);
     Color4D getPixelColor(uint32_t seed, int x, int y);
-    Color3D computePhongLighting(const HitPayload &payload, const std::shared_ptr<ILight> &light);
-    Vec3D computeNextRayDirection(const Ray &ray, const HitPayload &payload);
+    Color3D computePhongLighting(const HitPayload &payload, const IMaterial &material,
+                                 const std::shared_ptr<ILight> &light, const Ray &ray);
+    Vec3D computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed);
     HitPayload shotRay(const Ray &ray);
     HitPayload missHit(void);
     void manageEvent(char evt);

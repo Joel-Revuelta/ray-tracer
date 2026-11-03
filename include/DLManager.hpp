@@ -26,7 +26,9 @@ class DLManager
     DLManager(const char *libraryPath);
     ~DLManager(void) noexcept;
 
-    void closeLib(void);
+    DLManager(const DLManager &) = delete;
+    DLManager &operator=(const DLManager &) = delete;
+
     void openLib(const std::string &libraryPath);
     void changeLib(const std::string &libraryPath);
 
@@ -60,6 +62,8 @@ class DLManager
     }
 
   private:
+    void closeLib(void);
+
     void *currentHandle;
     std::string _libPath;
     std::unordered_map<std::string, void *> handles;

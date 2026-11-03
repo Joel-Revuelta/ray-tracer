@@ -19,7 +19,12 @@ FlatColorMaterial::~FlatColorMaterial(void)
 {
 }
 
-extern "C" std::shared_ptr<IMaterial> create(const Color3D &color)
+std::shared_ptr<IMaterial> FlatColorMaterial::clone(void) const
+{
+    return std::make_shared<FlatColorMaterial>(*this);
+}
+
+extern "C" std::shared_ptr<IMaterial> create(Color3D color)
 {
     return std::make_shared<FlatColorMaterial>(color);
 }

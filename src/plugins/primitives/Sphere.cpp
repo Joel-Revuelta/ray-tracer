@@ -22,7 +22,7 @@ Sphere::~Sphere(void)
 
 void Sphere::doTransformation(const ITransformation &t)
 {
-    (void)t;
+    t.doTransformation(*this);
 }
 
 bool Sphere::getData(PrimitiveData &data) const
@@ -34,6 +34,11 @@ bool Sphere::getData(PrimitiveData &data) const
     return true;
 }
 
+std::shared_ptr<IPrimitive> Sphere::clone(void) const
+{
+    return std::make_shared<Sphere>(*this);
+}
+
 bool Sphere::hit(const Ray &ray, HitPayload &payload, size_t i) const
 {
     const Vec3D direction = ray.getDirection();
@@ -41,7 +46,7 @@ bool Sphere::hit(const Ray &ray, HitPayload &payload, size_t i) const
 
     // A zero-length ray cannot intersect anything, and a non-positive radius
     // describes an empty sphere.
-    if (getRadius() <= 0.0f || a < Ray::EPSILON)
+    if (getRadius() <= 0.0f || a < Ray::DIRECTION_EPSILON)
         return false;
 
     const Vec3D originToCenter = ray.getOrigin() - getCenter();

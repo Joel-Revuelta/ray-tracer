@@ -30,6 +30,9 @@ class Ray
     Point3D at(float t) const;
 
     constexpr static const float EPSILON = 0.0001f;
+    // Squared-length threshold for rejecting a degenerate direction. This must
+    // be much smaller than EPSILON, which is a hit-distance tolerance.
+    constexpr static const float DIRECTION_EPSILON = 1e-12f;
 
   private:
     Point3D _origin;

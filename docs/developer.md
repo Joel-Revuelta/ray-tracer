@@ -19,17 +19,22 @@ All plugins link against `raytracer_core`. This gives the executable and every
 plugin one definition of shared types and one set of RTTI symbols, which is
 required for safe `std::shared_ptr` and interface use across shared libraries.
 
+Transformation plugins are the exception: they currently compile the concrete
+primitive sources as well so their `dynamic_cast` dispatch can see those types.
+Keep primitive layouts in sync until that dispatch is replaced with virtual
+hooks.
+
 ## Prerequisites
 
-- CMake 3.16+ (3.17+ for CUDA discovery; tested with 4.2.3)
+- CMake 3.20+ (tested with 4.2.3)
 - C++20 compiler (tested with GCC 15.2)
 - `libconfig++` development package
-- SFML 3.0.x development package (Graphics, Window, System, Audio)
+- Optional SFML 3.0.x development package (Graphics, Window, System)
 - Optional CUDA Toolkit 13.x (tested with 13.4)
 - Optional Python 3 + Pillow for the scene render scripts
 
-The CUDA renderer currently compiles for `sm_89` (Ada / RTX 4070 Laptop). Adjust
-`CUDA_ARCHITECTURES` in `CMakeLists.txt` for a different GPU.
+The CUDA renderer compiles for compute capability `89` (Ada / RTX 4070 Laptop)
+by default. Set `-DRAYTRACER_CUDA_ARCH=<cc>` for a different GPU.
 
 ## Build
 
@@ -122,7 +127,9 @@ extern "C" std::shared_ptr<RayTracer::SomeInterface> create(/* args */);
 ```
 
 The return type and argument list must match what `Factory::create<T>` expects.
-Primitive, material, light and renderer plugins follow this pattern.
+Object parameters such as `Vec3D` and `Color3D` are passed by value in the
+exported signature. Primitive, material, light and renderer plugins follow this
+pattern.
 
 ### Scene and parser
 
@@ -213,6 +220,7 @@ uses one-sample batches; keep that behavior if you modify it.
    - `getData(PrimitiveData &)` for GPU/flat renderers
    - `getMaterialIndex()` / `setMaterialIndex()`
    - `doTransformation()` (or intentionally ignore it)
+   - `clone()` so nested-scene merging can copy the primitive safely
 3. Add an `ExternMyPrimitive.cpp` with the exported `create` function.
 4. Add the plugin target in `CMakeLists.txt` and link `raytracer_core`.
 5. Add the type and library to `Factory` in `src/factory/Factory.cpp`.
@@ -226,7 +234,8 @@ Use the existing sphere/plane/cylinder/cone implementations as references.
 1. Add the class under `include/plugins/materials` or
    `include/plugins/lights`.
 2. Implement the interface. Lights must implement `getData(LightData &)` for the
-   CUDA renderer.
+   CUDA renderer. Implement `clone()` for materials and lights that should be
+   copied independently when nested scenes are merged.
 3. Export `create` from a plugin source.
 4. Add a CMake target and `Factory` mapping.
 5. Add parser support and validation.
@@ -323,8 +332,9 @@ RENDERER=cuda FRAMES=1000 ./scenes/render_hd.sh
 - CPU vs CUDA: CUDA is typically orders of magnitude faster at high sample
   counts. Use the CPU renderer for debugging renderer logic and the CUDA renderer
   for final high-resolution renders.
-- The CUDA renderer is compiled for `sm_89`. A kernel image error on another GPU
-  means `CUDA_ARCHITECTURES` must be changed and the plugin rebuilt.
+- The CUDA renderer is compiled for compute capability `89` by default. A kernel
+  image error on another GPU means `-DRAYTRACER_CUDA_ARCH=<cc>` must be used and
+  the plugin rebuilt.
 - 8K CUDA sessions use roughly 530 MB for accumulation and 130 MB for the output
   buffer, plus texture memory in GUI mode. 8K should be rendered with `--cli`.
 - `Infinity Mirror` is the most expensive scene because of nested metallic

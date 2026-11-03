@@ -28,6 +28,7 @@ struct MaterialData
     float ambientReflection = 0.0f;
     float diffuseReflection = 0.0f;
     float specularReflection = 0.0f;
+    float ior = 1.5f;
 };
 
 struct CameraData

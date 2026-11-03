@@ -38,6 +38,35 @@ void requireNonZeroVector(const Vec3D &vector, const std::string &name)
     if (!std::isfinite(vector.lengthSquared()) || vector.lengthSquared() < 1e-12f)
         throw std::runtime_error(name + " must be a non-zero vector");
 }
+
+uint parseMaterialIndex(const libconfig::Setting &setting)
+{
+    const int index = setting.lookup("material");
+
+    if (index < 0)
+        throw std::runtime_error("Material index must not be negative");
+    return static_cast<uint>(index);
+}
+
+class NestingGuard
+{
+  public:
+    explicit NestingGuard(int &depth) : _depth(depth)
+    {
+        ++_depth;
+    }
+
+    ~NestingGuard(void)
+    {
+        --_depth;
+    }
+
+    NestingGuard(const NestingGuard &) = delete;
+    NestingGuard &operator=(const NestingGuard &) = delete;
+
+  private:
+    int &_depth;
+};
 } // namespace
 
 Parser::Parser(void)
@@ -141,14 +170,20 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
 
         if (type == "diffuse")
         {
-            material = _factory.create<IMaterial>("DiffuseMaterial", double(setting.lookup("ambientReflection")),
-                                                  double(setting.lookup("diffuseReflection")),
+            const double ambientReflection = setting.lookup("ambientReflection");
+            const double diffuseReflection = setting.lookup("diffuseReflection");
+
+            requireNonNegative(ambientReflection, "Diffuse material ambient reflection");
+            requireNonNegative(diffuseReflection, "Diffuse material diffuse reflection");
+            material = _factory.create<IMaterial>("DiffuseMaterial", ambientReflection, diffuseReflection,
                                                   parseColor(setting.lookup("color")));
         }
         else if (type == "emissive")
         {
-            material = _factory.create<IMaterial>("EmissiveMaterial", parseColor(setting.lookup("color")),
-                                                  double(setting.lookup("intensity")),
+            const double intensity = setting.lookup("intensity");
+
+            requireNonNegative(intensity, "Emissive material intensity");
+            material = _factory.create<IMaterial>("EmissiveMaterial", parseColor(setting.lookup("color")), intensity,
                                                   parseColor(setting.lookup("emissionColor")));
         }
         else if (type == "metallic" || type == "metalic")
@@ -157,7 +192,10 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
         }
         else if (type == "dielectric")
         {
-            throw std::runtime_error("Material type 'dielectric' is not implemented");
+            const double ior = setting.exists("ior") ? double(setting.lookup("ior")) : 1.5;
+
+            requirePositive(ior, "Dielectric material IOR");
+            material = _factory.create<IMaterial>("DielectricMaterial", parseColor(setting.lookup("color")), ior);
         }
         else if (type == "flatColor")
         {
@@ -165,16 +203,7 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
         }
         else
         {
-            const IMaterial::MaterialType materialType = parseMaterialType(type);
-
-            if (materialType == IMaterial::TYPE_COUNT)
-                throw std::runtime_error("Unknown material type: " + type);
-
-            material = _factory.create<IMaterial>(
-                "CustomMaterial", double(setting.lookup("ambientReflection")),
-                double(setting.lookup("diffuseReflection")), double(setting.lookup("specularReflection")),
-                parseColor(setting.lookup("diffuseColor")), double(setting.lookup("emissionPower")),
-                parseColor(setting.lookup("emissionColor")), materialType);
+            throw std::runtime_error("Unknown material type: " + type);
         }
         sceneBuilder.addMaterial(material);
     }
@@ -322,6 +351,10 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
  */
 std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting)
 {
+    if (_sceneNestingDepth >= 32)
+        throw std::runtime_error("Scene nesting is too deep (maximum depth is 32)");
+
+    NestingGuard nestingGuard(_sceneNestingDepth);
     SceneBuilder sceneBuilder;
 
     // Materials must be registered before primitives, because a nested scene
@@ -356,7 +389,7 @@ std::shared_ptr<IPrimitive> Parser::parseSphere(libconfig::Setting &sphereSettin
 
     std::shared_ptr<IPrimitive> sphere =
         _factory.create<IPrimitive>("Sphere", radius, parsePoint(sphereSetting.lookup("position")),
-                                    uint(sphereSetting.lookup("material")));
+                                    parseMaterialIndex(sphereSetting));
 
     return sphere;
 }
@@ -376,7 +409,7 @@ std::shared_ptr<IPrimitive> Parser::parsePlane(libconfig::Setting &planeSetting)
 
     std::shared_ptr<IPrimitive> plane =
         _factory.create<IPrimitive>("Plane", normal, parsePoint(planeSetting.lookup("position")),
-                                    uint(planeSetting.lookup("material")));
+                                    parseMaterialIndex(planeSetting));
 
     return plane;
 }
@@ -398,7 +431,7 @@ std::shared_ptr<IPrimitive> Parser::parseCylinder(libconfig::Setting &cylinderSe
 
     std::shared_ptr<IPrimitive> cylinder =
         _factory.create<IPrimitive>("Cylinder", radius, parsePoint(cylinderSetting.lookup("center")), height,
-                                    uint(cylinderSetting.lookup("material")));
+                                    parseMaterialIndex(cylinderSetting));
 
     return cylinder;
 }
@@ -420,7 +453,7 @@ std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
 
     std::shared_ptr<IPrimitive> cone =
         _factory.create<IPrimitive>("Cone", radius, parseVector(coneSetting.lookup("center")), height,
-                                    uint(coneSetting.lookup("material")));
+                                    parseMaterialIndex(coneSetting));
 
     return cone;
 }
@@ -434,8 +467,14 @@ std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
  */
 Point3D Parser::parsePoint(const libconfig::Setting &pointSetting)
 {
-    return Point3D(double(pointSetting.lookup("x")), double(pointSetting.lookup("y")),
-                   double(pointSetting.lookup("z")));
+    const double x = pointSetting.lookup("x");
+    const double y = pointSetting.lookup("y");
+    const double z = pointSetting.lookup("z");
+
+    requireFinite(x, "Point x");
+    requireFinite(y, "Point y");
+    requireFinite(z, "Point z");
+    return Point3D(x, y, z);
 }
 
 /**
@@ -447,8 +486,14 @@ Point3D Parser::parsePoint(const libconfig::Setting &pointSetting)
  */
 Vec3D Parser::parseVector(const libconfig::Setting &vectorSetting)
 {
-    return Vec3D(double(vectorSetting.lookup("x")), double(vectorSetting.lookup("y")),
-                 double(vectorSetting.lookup("z")));
+    const double x = vectorSetting.lookup("x");
+    const double y = vectorSetting.lookup("y");
+    const double z = vectorSetting.lookup("z");
+
+    requireFinite(x, "Vector x");
+    requireFinite(y, "Vector y");
+    requireFinite(z, "Vector z");
+    return Vec3D(x, y, z);
 }
 
 /**
@@ -460,31 +505,14 @@ Vec3D Parser::parseVector(const libconfig::Setting &vectorSetting)
  */
 Color3D Parser::parseColor(const libconfig::Setting &colorSetting)
 {
-    return Color3D(double(colorSetting.lookup("r")), double(colorSetting.lookup("g")),
-                   double(colorSetting.lookup("b")));
-}
+    const double r = colorSetting.lookup("r");
+    const double g = colorSetting.lookup("g");
+    const double b = colorSetting.lookup("b");
 
-/**
- * Parses the material type configuration from the configuration file.
- * Sets the material type.
- *
- * @param type The material type to parse.
- * @return The material type.
- */
-IMaterial::MaterialType Parser::parseMaterialType(const std::string &type)
-{
-    if (type == "diffuse")
-        return IMaterial::MaterialType::DIFFUSE;
-    else if (type == "emissive")
-        return IMaterial::MaterialType::EMISSIVE;
-    else if (type == "metallic" || type == "metalic")
-        return IMaterial::MaterialType::METALLIC;
-    else if (type == "dielectric")
-        return IMaterial::MaterialType::DIELECTRIC;
-    else if (type == "flatColor")
-        return IMaterial::MaterialType::FLAT_COLOR;
-    else
-        return IMaterial::MaterialType::TYPE_COUNT;
+    requireFinite(r, "Color red");
+    requireFinite(g, "Color green");
+    requireFinite(b, "Color blue");
+    return Color3D(r, g, b);
 }
 
 std::shared_ptr<Camera> Parser::getParsedCamera(void) const

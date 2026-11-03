@@ -27,7 +27,7 @@ Cone::~Cone()
 
 void Cone::doTransformation(const ITransformation &t)
 {
-    (void)t;
+    t.doTransformation(*this);
 }
 
 bool Cone::getData(PrimitiveData &data) const
@@ -39,6 +39,11 @@ bool Cone::getData(PrimitiveData &data) const
     data.height = _height;
     data.coneBaseAbove = _rotation;
     return true;
+}
+
+std::shared_ptr<IPrimitive> Cone::clone(void) const
+{
+    return std::make_shared<Cone>(*this);
 }
 
 bool Cone::hit(const Ray &ray, HitPayload &payload, size_t i) const

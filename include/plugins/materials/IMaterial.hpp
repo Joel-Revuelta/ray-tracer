@@ -9,6 +9,7 @@
 #define I_MATERIAL_HPP_
 
 #include "Color.hpp"
+#include <memory>
 
 namespace RayTracer
 {
@@ -34,6 +35,20 @@ class IMaterial
     virtual float getDiffuseReflectionCoefficient(void) const = 0;
     virtual float getSpecularReflectionCoefficient(void) const = 0;
     virtual float getEmissionPower(void) const = 0;
+
+    // Refractive index used by dielectric materials. Non-dielectric materials
+    // inherit this default and never use it.
+    virtual float getIndexOfRefraction(void) const
+    {
+        return 1.5f;
+    }
+
+    // Returns an independent copy for scene composition. Materials that do not
+    // implement cloning fall back to sharing the original instance.
+    virtual std::shared_ptr<IMaterial> clone(void) const
+    {
+        return nullptr;
+    }
 
     virtual void setType(const MaterialType &type) = 0;
     virtual void setDiffuseColor(const Color3D &diffuseColor) = 0;

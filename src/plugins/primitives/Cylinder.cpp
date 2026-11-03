@@ -27,7 +27,7 @@ Cylinder::~Cylinder()
 
 void Cylinder::doTransformation(const ITransformation &t)
 {
-    (void)t;
+    t.doTransformation(*this);
 }
 
 bool Cylinder::getData(PrimitiveData &data) const
@@ -79,6 +79,11 @@ bool Cylinder::getData(PrimitiveData &data) const
 
 //     return true;
 // }
+
+std::shared_ptr<IPrimitive> Cylinder::clone(void) const
+{
+    return std::make_shared<Cylinder>(*this);
+}
 
 bool Cylinder::hit(const Ray &ray, HitPayload &payload, size_t i) const
 {

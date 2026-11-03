@@ -144,4 +144,5 @@ a non-positive sphere/cylinder/cone radius or height, a zero plane normal or
 light direction, a field of view outside `(0, 180)`, a camera position equal to
 its look-at point, or an out-of-range material index prints an error and the
 program exits with a non-zero status without writing an image. `metallic` also
-accepts the legacy spelling `metalic`; `dielectric` is not implemented.
+accepts the legacy spelling `metalic`. Dielectrics support a positive `ior`
+value (default `1.5`).

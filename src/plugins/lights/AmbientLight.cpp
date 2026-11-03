@@ -24,8 +24,12 @@ AmbientLight::~AmbientLight(void)
 
 void AmbientLight::doTransformation(const ITransformation &t)
 {
-    (void)t;
-    return;
+    t.doTransformation(*this);
+}
+
+std::shared_ptr<ILight> AmbientLight::clone(void) const
+{
+    return std::make_shared<AmbientLight>(*this);
 }
 
 bool AmbientLight::getData(LightData &data) const
@@ -49,6 +53,23 @@ Color3D AmbientLight::calculateLighting(const HitPayload &payload) const
 {
     (void)payload;
     return getColor() * getIntensity();
+}
+
+Color3D AmbientLight::getRadiance(const HitPayload &payload) const
+{
+    (void)payload;
+    return getColor() * getIntensity();
+}
+
+Vec3D AmbientLight::getLightDirection(const HitPayload &payload) const
+{
+    (void)payload;
+    return Vec3D(0.0f);
+}
+
+bool AmbientLight::isAmbient(void) const
+{
+    return true;
 }
 
 bool AmbientLight::isPointInShadow(const HitPayload &payload, const Scene &scene) const
@@ -78,7 +99,7 @@ void AmbientLight::setColor(const Color3D &color)
     _color = color;
 }
 
-extern "C" std::shared_ptr<ILight> create(const Color3D &color, const double intensity)
+extern "C" std::shared_ptr<ILight> create(Color3D color, double intensity)
 {
     return std::make_shared<AmbientLight>(color, intensity);
 }

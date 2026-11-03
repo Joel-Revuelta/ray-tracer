@@ -21,23 +21,27 @@ Rotation::~Rotation()
 {
 }
 
-void Rotation::doTransformation(ITransformable &obj)
+void Rotation::doTransformation(ITransformable &obj) const
 {
     if (dynamic_cast<Scene *>(&obj))
         doTransformationScene(obj);
     else if (dynamic_cast<IPrimitive *>(&obj))
         doTransformationPrimitive(obj);
+    else if (dynamic_cast<ILight *>(&obj))
+        doTransformationLight(obj);
 }
 
-void Rotation::doTransformationScene(ITransformable &obj)
+void Rotation::doTransformationScene(ITransformable &obj) const
 {
     Scene *scene = dynamic_cast<Scene *>(&obj);
 
     for (const auto &primitive : scene->getPrimitives())
         doTransformationPrimitive(*primitive);
+    for (const auto &light : scene->getLights())
+        doTransformationLight(*light);
 }
 
-void Rotation::doTransformationPrimitive(ITransformable &obj)
+void Rotation::doTransformationPrimitive(ITransformable &obj) const
 {
     IPrimitive *primitive = dynamic_cast<IPrimitive *>(&obj);
 
@@ -63,32 +67,32 @@ void Rotation::doTransformationPrimitive(ITransformable &obj)
     }
 }
 
-void Rotation::doTransformationLight(ITransformable &obj)
+void Rotation::doTransformationLight(ITransformable &obj) const
 {
     (void)obj;
 }
 
-void Rotation::doRotationSphere(Sphere &sphere)
+void Rotation::doRotationSphere(Sphere &sphere) const
 {
     (void)sphere;
 }
 
-void Rotation::doRotationCylinder(Cylinder &cylinder)
+void Rotation::doRotationCylinder(Cylinder &cylinder) const
 {
-    cylinder.setAxis(Vec3D(_rotation.getX(), _rotation.getY(), _rotation.getZ()));
+    cylinder.setAxis(_rotation);
 }
 
-void Rotation::doRotationCone(Cone &cone)
+void Rotation::doRotationCone(Cone &cone) const
 {
     cone.setRotation(true);
 }
 
-void Rotation::doRotationPlane(Plane &plane)
+void Rotation::doRotationPlane(Plane &plane) const
 {
     plane.setNormal(_rotation);
 }
 
-extern "C" std::shared_ptr<ITransformation> create(const Vec3D &rotation)
+extern "C" std::shared_ptr<ITransformation> create(Vec3D rotation)
 {
     return std::make_shared<Rotation>(rotation);
 }

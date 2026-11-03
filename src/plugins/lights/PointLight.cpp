@@ -34,8 +34,12 @@ PointLight::~PointLight(void)
 
 void PointLight::doTransformation(const ITransformation &t)
 {
-    (void)t;
-    return;
+    t.doTransformation(*this);
+}
+
+std::shared_ptr<ILight> PointLight::clone(void) const
+{
+    return std::make_shared<PointLight>(*this);
 }
 
 bool PointLight::getData(LightData &data) const
@@ -52,22 +56,25 @@ bool PointLight::getData(LightData &data) const
 
 Color3D PointLight::calculateLighting(const HitPayload &payload) const
 {
-    // Compute light direction and distance
-    Vec3D lightDirection = vec3DNormalize(getPosition() - payload.getHitPosition());
-    float distance = (getPosition() - payload.getHitPosition()).length();
+    const float diffuseFactor =
+        std::max<float>(vec3DDot(getLightDirection(payload), payload.getHitNormal()), 0.0f);
 
-    // Compute physically based attenuation. The constant term keeps the
-    // expression well-defined close to the light.
+    return diffuseFactor * getRadiance(payload);
+}
+
+Color3D PointLight::getRadiance(const HitPayload &payload) const
+{
+    const float distance = (getPosition() - payload.getHitPosition()).length();
     const float denominator = getAttenuationConstant() + getAttenuationLinear() * distance +
                               getAttenuationQuadratic() * distance * distance;
     const float attenuation = denominator > 0.0f ? 1.0f / denominator : 0.0f;
 
-    // Compute diffuse
-    float diffuseFactor = vec3DDot(lightDirection, payload.getHitNormal());
-    Color3D diffuseContrib = std::max<double>(diffuseFactor, 0.0) * getColor() * getIntensity() * attenuation;
+    return getColor() * getIntensity() * attenuation;
+}
 
-    // Return the combined lighting contributions
-    return diffuseContrib;
+Vec3D PointLight::getLightDirection(const HitPayload &payload) const
+{
+    return vec3DNormalize(getPosition() - payload.getHitPosition());
 }
 
 bool PointLight::isPointInShadow(const HitPayload &payload, const Scene &scene) const
@@ -148,9 +155,9 @@ float PointLight::getAttenuationQuadratic(void) const
     return _attenuationQuadratic;
 }
 
-extern "C" std::shared_ptr<ILight> create(const Vec3D &position, const Color3D &color, const double intensity,
-                                          const double attenuationConstant, const double attenuationLinear,
-                                          const double attenuationQuadratic)
+extern "C" std::shared_ptr<ILight> create(Vec3D position, Color3D color, double intensity,
+                                          double attenuationConstant, double attenuationLinear,
+                                          double attenuationQuadratic)
 {
     return std::make_shared<PointLight>(position, color, intensity, attenuationConstant, attenuationLinear,
                                         attenuationQuadratic);

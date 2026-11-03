@@ -50,7 +50,6 @@ class Parser
     Color3D parseColor(const libconfig::Setting &colorSetting);
     Point3D parsePoint(const libconfig::Setting &pointSetting);
     Vec3D parseVector(const libconfig::Setting &vectorSetting);
-    IMaterial::MaterialType parseMaterialType(const std::string &type);
 
     std::shared_ptr<Camera> getParsedCamera(void) const;
 
@@ -58,6 +57,7 @@ class Parser
     Factory _factory;
     std::shared_ptr<Camera> _camera;
     libconfig::Config _config;
+    int _sceneNestingDepth = 0;
 };
 
 } // namespace RayTracer

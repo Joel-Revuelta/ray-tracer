@@ -19,6 +19,7 @@ class CustomMaterial : public AMaterial
                    const Color3D &diffuseColor, const float emissionPower, const Color3D &emissionColor,
                    const MaterialType type);
     ~CustomMaterial(void);
+    std::shared_ptr<IMaterial> clone(void) const override;
 };
 } // namespace RayTracer
 

@@ -2,144 +2,134 @@
 ** EPITECH PROJECT, 2023
 ** raytracer
 ** File description:
-** Vec3D.cpp
+** Vec3D inline implementation
 */
 
-#include "Vec3D.hpp"
+#ifndef VEC3D_INL_
+#define VEC3D_INL_
+
 #include "VectorIndexOutOfBounds.hpp"
+#include <cmath>
 
-using namespace RayTracer;
+namespace RayTracer
+{
 
-Vec3D::Vec3D(void) : _pos3D({0, 0, 0})
+inline Vec3D::Vec3D(void) : _pos3D({0, 0, 0})
 {
 }
 
-Vec3D::Vec3D(const float all) : _pos3D({all, all, all})
+inline Vec3D::Vec3D(const float all) : _pos3D({all, all, all})
 {
 }
 
-Vec3D::Vec3D(const float x, const float y, const float z) : _pos3D({x, y, z})
+inline Vec3D::Vec3D(const float x, const float y, const float z) : _pos3D({x, y, z})
 {
 }
 
-Vec3D::~Vec3D(void)
+inline Vec3D::~Vec3D(void)
 {
 }
 
-/**
- * Calculates the squared length of the vector.
- *
- * @return The squared length of the vector.
- */
-float Vec3D::lengthSquared(void) const
+inline float Vec3D::lengthSquared(void) const
 {
     return _pos3D[0] * _pos3D[0] + _pos3D[1] * _pos3D[1] + _pos3D[2] * _pos3D[2];
 }
 
-/**
- * Calculates the length of the vector.
- *
- * @return The length of the vector.
- */
-float Vec3D::length(void) const
+inline float Vec3D::length(void) const
 {
-    return sqrt(lengthSquared());
+    return std::sqrt(lengthSquared());
 }
 
-float Vec3D::getX(void) const
+inline float Vec3D::getX(void) const
 {
     return _pos3D[0];
 }
 
-float Vec3D::getY(void) const
+inline float Vec3D::getY(void) const
 {
     return _pos3D[1];
 }
 
-float Vec3D::getZ(void) const
+inline float Vec3D::getZ(void) const
 {
     return _pos3D[2];
 }
 
-void Vec3D::setX(const float x)
+inline void Vec3D::setX(const float x)
 {
     _pos3D[0] = x;
 }
 
-void Vec3D::setY(const float y)
+inline void Vec3D::setY(const float y)
 {
     _pos3D[1] = y;
 }
 
-void Vec3D::setZ(const float z)
+inline void Vec3D::setZ(const float z)
 {
     _pos3D[2] = z;
 }
 
-Vec3D Vec3D::operator-(void) const
+inline Vec3D Vec3D::operator-(void) const
 {
     return Vec3D(-_pos3D[0], -_pos3D[1], -_pos3D[2]);
 }
 
-float Vec3D::operator[](int i) const
+inline float Vec3D::operator[](int i) const
 {
     if (i < 0 || i >= 3)
-    {
         throw VectorIndexOutOfBounds();
-    }
     return _pos3D[i];
 }
 
-float &Vec3D::operator[](int i)
+inline float &Vec3D::operator[](int i)
 {
     if (i < 0 || i >= 3)
-    {
         throw VectorIndexOutOfBounds();
-    }
     return _pos3D[i];
 }
 
-Vec3D Vec3D::operator+(const Vec3D &rhsVec3D) const
+inline Vec3D Vec3D::operator+(const Vec3D &rhsVec3D) const
 {
     return Vec3D(_pos3D[0] + rhsVec3D.getX(), _pos3D[1] + rhsVec3D.getY(), _pos3D[2] + rhsVec3D.getZ());
 }
 
-Vec3D Vec3D::operator-(const Vec3D &rhsVec3D) const
+inline Vec3D Vec3D::operator-(const Vec3D &rhsVec3D) const
 {
     return Vec3D(_pos3D[0] - rhsVec3D.getX(), _pos3D[1] - rhsVec3D.getY(), _pos3D[2] - rhsVec3D.getZ());
 }
 
-Vec3D Vec3D::operator*(const Vec3D &rhsVec3D) const
+inline Vec3D Vec3D::operator*(const Vec3D &rhsVec3D) const
 {
     return Vec3D(_pos3D[0] * rhsVec3D.getX(), _pos3D[1] * rhsVec3D.getY(), _pos3D[2] * rhsVec3D.getZ());
 }
 
-Vec3D Vec3D::operator/(const Vec3D &rhsVec3D) const
+inline Vec3D Vec3D::operator/(const Vec3D &rhsVec3D) const
 {
     return Vec3D(_pos3D[0] / rhsVec3D.getX(), _pos3D[1] / rhsVec3D.getY(), _pos3D[2] / rhsVec3D.getZ());
 }
 
-Vec3D Vec3D::operator+(const float t) const
+inline Vec3D Vec3D::operator+(const float t) const
 {
     return Vec3D(_pos3D[0] + t, _pos3D[1] + t, _pos3D[2] + t);
 }
 
-Vec3D Vec3D::operator-(const float t) const
+inline Vec3D Vec3D::operator-(const float t) const
 {
     return Vec3D(_pos3D[0] - t, _pos3D[1] - t, _pos3D[2] - t);
 }
 
-Vec3D Vec3D::operator*(const float t) const
+inline Vec3D Vec3D::operator*(const float t) const
 {
     return Vec3D(_pos3D[0] * t, _pos3D[1] * t, _pos3D[2] * t);
 }
 
-Vec3D Vec3D::operator/(const float t) const
+inline Vec3D Vec3D::operator/(const float t) const
 {
     return Vec3D(_pos3D[0] / t, _pos3D[1] / t, _pos3D[2] / t);
 }
 
-Vec3D &Vec3D::operator+=(const Vec3D &rhsVec3D)
+inline Vec3D &Vec3D::operator+=(const Vec3D &rhsVec3D)
 {
     _pos3D[0] += rhsVec3D.getX();
     _pos3D[1] += rhsVec3D.getY();
@@ -147,7 +137,7 @@ Vec3D &Vec3D::operator+=(const Vec3D &rhsVec3D)
     return *this;
 }
 
-Vec3D &Vec3D::operator-=(const Vec3D &rhsVec3D)
+inline Vec3D &Vec3D::operator-=(const Vec3D &rhsVec3D)
 {
     _pos3D[0] -= rhsVec3D.getX();
     _pos3D[1] -= rhsVec3D.getY();
@@ -155,7 +145,7 @@ Vec3D &Vec3D::operator-=(const Vec3D &rhsVec3D)
     return *this;
 }
 
-Vec3D &Vec3D::operator*=(const Vec3D &rhsVec3D)
+inline Vec3D &Vec3D::operator*=(const Vec3D &rhsVec3D)
 {
     _pos3D[0] *= rhsVec3D.getX();
     _pos3D[1] *= rhsVec3D.getY();
@@ -163,7 +153,7 @@ Vec3D &Vec3D::operator*=(const Vec3D &rhsVec3D)
     return *this;
 }
 
-Vec3D &Vec3D::operator/=(const Vec3D &rhsVec3D)
+inline Vec3D &Vec3D::operator/=(const Vec3D &rhsVec3D)
 {
     _pos3D[0] /= rhsVec3D.getX();
     _pos3D[1] /= rhsVec3D.getY();
@@ -171,7 +161,7 @@ Vec3D &Vec3D::operator/=(const Vec3D &rhsVec3D)
     return *this;
 }
 
-Vec3D &Vec3D::operator*=(const float t)
+inline Vec3D &Vec3D::operator*=(const float t)
 {
     _pos3D[0] *= t;
     _pos3D[1] *= t;
@@ -179,7 +169,7 @@ Vec3D &Vec3D::operator*=(const float t)
     return *this;
 }
 
-Vec3D &Vec3D::operator/=(const float t)
+inline Vec3D &Vec3D::operator/=(const float t)
 {
     _pos3D[0] /= t;
     _pos3D[1] /= t;
@@ -187,40 +177,38 @@ Vec3D &Vec3D::operator/=(const float t)
     return *this;
 }
 
-// Below are the friend non-member functions
-namespace RayTracer
-{
-
-Vec3D operator+(const float t, const Vec3D &rhsVec3D)
+inline Vec3D operator+(const float t, const Vec3D &rhsVec3D)
 {
     return Vec3D(rhsVec3D.getX() + t, rhsVec3D.getY() + t, rhsVec3D.getZ() + t);
 }
 
-Vec3D operator-(const float t, const Vec3D &rhsVec3D)
+inline Vec3D operator-(const float t, const Vec3D &rhsVec3D)
 {
     return Vec3D(rhsVec3D.getX() - t, rhsVec3D.getY() - t, rhsVec3D.getZ() - t);
 }
 
-Vec3D operator*(const float t, const Vec3D &rhsVec3D)
+inline Vec3D operator*(const float t, const Vec3D &rhsVec3D)
 {
     return Vec3D(rhsVec3D.getX() * t, rhsVec3D.getY() * t, rhsVec3D.getZ() * t);
 }
 
-Vec3D operator/(const float t, const Vec3D &rhsVec3D)
+inline Vec3D operator/(const float t, const Vec3D &rhsVec3D)
 {
     return Vec3D(rhsVec3D.getX() / t, rhsVec3D.getY() / t, rhsVec3D.getZ() / t);
 }
 
-Vec3D &operator*=(const float t, Vec3D &rhsVec3D)
+inline Vec3D &operator*=(const float t, Vec3D &rhsVec3D)
 {
     rhsVec3D *= t;
     return rhsVec3D;
 }
 
-Vec3D &operator/=(const float t, Vec3D &rhsVec3D)
+inline Vec3D &operator/=(const float t, Vec3D &rhsVec3D)
 {
     rhsVec3D /= t;
     return rhsVec3D;
 }
 
 } // namespace RayTracer
+
+#endif // VEC3D_INL_

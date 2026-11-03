@@ -70,6 +70,7 @@ struct Material
     float ambientReflection;
     float diffuseReflection;
     float specularReflection;
+    float ior;
 };
 
 struct Light
@@ -94,6 +95,17 @@ struct Camera
     int height;
 };
 
+struct BVHNode
+{
+    Vec3 min;
+    Vec3 max;
+    int left;
+    int right;
+    int start;
+    int count;
+    int leaf;
+};
+
 struct SceneView
 {
     const Primitive *primitives;
@@ -102,6 +114,12 @@ struct SceneView
     int materialCount;
     const Light *lights;
     int lightCount;
+    const BVHNode *nodes;
+    int nodeCount;
+    const int *primitiveIndices;
+    int primitiveIndexCount;
+    const int *unboundedIndices;
+    int unboundedCount;
     Camera camera;
 };
 

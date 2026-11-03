@@ -6,6 +6,7 @@
 */
 
 #include "plugins/renderers/CUDA/CudaKernels.hpp"
+#include <cstddef>
 #include <cuda_runtime.h>
 #include <math.h>
 
@@ -16,6 +17,7 @@ namespace Cuda
 namespace
 {
 constexpr float RAY_EPSILON = 0.0001f;
+constexpr float DIRECTION_EPSILON = 1e-12f;
 constexpr float AXIS_EPSILON = 1e-6f;
 constexpr float CONE_EPSILON = 1e-6f;
 constexpr int MAX_BOUNCES = 15;
@@ -113,13 +115,14 @@ __device__ inline Vec3 randomOnUnitSphere(unsigned int &state)
     }
 }
 
-__device__ inline Vec3 randomOnHemisphere(const Vec3 &normal, unsigned int &state)
+__device__ inline Vec3 randomCosineHemisphere(const Vec3 &normal, unsigned int &state)
 {
-    const Vec3 onUnitSphere = randomOnUnitSphere(state);
+    const Vec3 direction = add(randomOnUnitSphere(state), normal);
+    const float lenSquared = lengthSquared(direction);
 
-    if (dot(onUnitSphere, normal) > 0.0f)
-        return onUnitSphere;
-    return negate(onUnitSphere);
+    if (!isfinite(lenSquared) || lenSquared < 1e-12f)
+        return normal;
+    return scale(direction, 1.0f / sqrtf(lenSquared));
 }
 
 struct Ray
@@ -142,7 +145,7 @@ __device__ bool intersectSphere(const Primitive &primitive, const Ray &ray, floa
     const Vec3 originToCenter = sub(ray.origin, primitive.center);
     const float a = dot(ray.direction, ray.direction);
 
-    if (a < RAY_EPSILON)
+    if (a < DIRECTION_EPSILON)
         return false;
 
     const float b = 2.0f * dot(ray.direction, originToCenter);
@@ -393,6 +396,82 @@ __device__ bool intersectPrimitive(const Primitive &primitive, const Ray &ray, f
     }
 }
 
+__device__ bool intersectBounds(const BVHNode &node, const Ray &ray, float maxDistance)
+{
+    const float origin[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
+    const float direction[3] = {ray.direction.x, ray.direction.y, ray.direction.z};
+    const float minimum[3] = {node.min.x, node.min.y, node.min.z};
+    const float maximum[3] = {node.max.x, node.max.y, node.max.z};
+    float nearDistance = 0.0f;
+    float farDistance = maxDistance;
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        if (fabsf(direction[axis]) < DIRECTION_EPSILON)
+        {
+            if (origin[axis] < minimum[axis] || origin[axis] > maximum[axis])
+                return false;
+            continue;
+        }
+
+        float first = (minimum[axis] - origin[axis]) / direction[axis];
+        float second = (maximum[axis] - origin[axis]) / direction[axis];
+
+        if (first > second)
+        {
+            const float swap = first;
+            first = second;
+            second = swap;
+        }
+
+        nearDistance = fmaxf(nearDistance, first);
+        farDistance = fminf(farDistance, second);
+
+        if (nearDistance > farDistance)
+            return false;
+    }
+
+    return true;
+}
+
+__device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &distance, Vec3 &normal, int &index)
+{
+    int stack[64];
+    int stackSize = 0;
+    bool hit = false;
+
+    stack[stackSize++] = 0;
+
+    while (stackSize > 0)
+    {
+        const int nodeIndex = stack[--stackSize];
+        const BVHNode &node = scene.nodes[nodeIndex];
+
+        if (!intersectBounds(node, ray, distance))
+            continue;
+
+        if (node.leaf)
+        {
+            for (int i = 0; i < node.count; ++i)
+            {
+                const int primitiveIndex = scene.primitiveIndices[node.start + i];
+
+                if (intersectPrimitive(scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
+                    hit = true;
+            }
+        }
+        else
+        {
+            if (node.left >= 0)
+                stack[stackSize++] = node.left;
+            if (node.right >= 0)
+                stack[stackSize++] = node.right;
+        }
+    }
+
+    return hit;
+}
+
 __device__ bool intersectScene(const SceneView &scene, const Ray &ray, float &distance, Vec3 &normal, int &index)
 {
     distance = INFINITY;
@@ -400,11 +479,25 @@ __device__ bool intersectScene(const SceneView &scene, const Ray &ray, float &di
     index = -1;
     bool hit = false;
 
-    for (int i = 0; i < scene.primitiveCount; ++i)
+    if (scene.nodeCount > 0)
+        hit = intersectBVH(scene, ray, distance, normal, index);
+    else
     {
-        if (intersectPrimitive(scene.primitives[i], ray, distance, normal, index, i))
+        for (int i = 0; i < scene.primitiveCount; ++i)
+        {
+            if (intersectPrimitive(scene.primitives[i], ray, distance, normal, index, i))
+                hit = true;
+        }
+    }
+
+    for (int i = 0; i < scene.unboundedCount; ++i)
+    {
+        const int primitiveIndex = scene.unboundedIndices[i];
+
+        if (intersectPrimitive(scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
             hit = true;
     }
+
     return hit;
 }
 
@@ -414,50 +507,117 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
     Vec3 normal = makeVec3(0.0f, 0.0f, 0.0f);
     int index = -1;
 
-    for (int i = 0; i < scene.primitiveCount; ++i)
+    if (scene.nodeCount > 0)
     {
-        if (intersectPrimitive(scene.primitives[i], ray, distance, normal, index, i))
+        int stack[64];
+        int stackSize = 0;
+
+        stack[stackSize++] = 0;
+
+        while (stackSize > 0)
+        {
+            const int nodeIndex = stack[--stackSize];
+            const BVHNode &node = scene.nodes[nodeIndex];
+
+            if (!intersectBounds(node, ray, distance))
+                continue;
+
+            if (node.leaf)
+            {
+                for (int i = 0; i < node.count; ++i)
+                {
+                    const int primitiveIndex = scene.primitiveIndices[node.start + i];
+
+                    if (intersectPrimitive(scene.primitives[primitiveIndex], ray, distance, normal, index,
+                                           primitiveIndex))
+                        return true;
+                }
+            }
+            else
+            {
+                if (node.left >= 0)
+                    stack[stackSize++] = node.left;
+                if (node.right >= 0)
+                    stack[stackSize++] = node.right;
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < scene.primitiveCount; ++i)
+        {
+            if (intersectPrimitive(scene.primitives[i], ray, distance, normal, index, i))
+                return true;
+        }
+    }
+
+    for (int i = 0; i < scene.unboundedCount; ++i)
+    {
+        const int primitiveIndex = scene.unboundedIndices[i];
+
+        if (intersectPrimitive(scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
             return true;
     }
+
     return false;
 }
 
-__device__ Vec3 lightContribution(const SceneView &scene, const Light &light, const Vec3 &hitPosition,
-                                  const Vec3 &hitNormal)
+struct LightSample
 {
+    Vec3 direction;
+    Vec3 radiance;
+    bool valid;
+};
+
+__device__ LightSample sampleLight(const SceneView &scene, const Light &light, const Vec3 &hitPosition,
+                                   const Vec3 &hitNormal)
+{
+    LightSample sample{makeVec3(0.0f, 0.0f, 0.0f), makeVec3(0.0f, 0.0f, 0.0f), false};
+
     if (light.type == LIGHT_AMBIENT)
-        return scale(light.color, light.intensity);
+    {
+        sample.radiance = scale(light.color, light.intensity);
+        sample.valid = true;
+        return sample;
+    }
 
     if (light.type == LIGHT_DIRECTIONAL)
     {
-        const Vec3 direction = normalize(light.direction);
-        const float diffuseFactor = dot(direction, hitNormal);
+        sample.direction = normalize(light.direction);
 
-        if (diffuseFactor <= 0.0f)
-            return makeVec3(0.0f, 0.0f, 0.0f);
-        if (occluded(scene, Ray{add(hitPosition, scale(hitNormal, RAY_EPSILON)), direction}, INFINITY))
-            return makeVec3(0.0f, 0.0f, 0.0f);
-        return scale(light.color, light.intensity * diffuseFactor);
+        if (dot(sample.direction, hitNormal) <= 0.0f)
+            return sample;
+        if (occluded(scene, Ray{add(hitPosition, scale(hitNormal, RAY_EPSILON)), sample.direction}, INFINITY))
+            return sample;
+
+        sample.radiance = scale(light.color, light.intensity);
+        sample.valid = true;
+        return sample;
     }
 
     if (light.type == LIGHT_POINT)
     {
         const Vec3 toLight = sub(light.position, hitPosition);
         const float distance = length(toLight);
-        const Vec3 direction = normalize(toLight);
+
+        sample.direction = normalize(toLight);
+
+        if (dot(sample.direction, hitNormal) <= 0.0f)
+            return sample;
+
         const float denominator = light.attenuationConstant + light.attenuationLinear * distance +
                                   light.attenuationQuadratic * distance * distance;
         const float attenuation = denominator > 0.0f ? 1.0f / denominator : 0.0f;
-        const float diffuseFactor = dot(direction, hitNormal);
 
-        if (diffuseFactor <= 0.0f)
-            return makeVec3(0.0f, 0.0f, 0.0f);
-        if (occluded(scene, Ray{add(hitPosition, scale(hitNormal, RAY_EPSILON)), direction}, distance))
-            return makeVec3(0.0f, 0.0f, 0.0f);
-        return scale(light.color, light.intensity * diffuseFactor * attenuation);
+        if (occluded(scene, Ray{add(hitPosition, scale(hitNormal, RAY_EPSILON)), sample.direction}, distance))
+            return sample;
+
+        sample.radiance = scale(light.color, light.intensity * attenuation);
+        sample.valid = true;
+        return sample;
     }
 
-    return makeVec3(0.0f, 0.0f, 0.0f);
+    return sample;
 }
 
 __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
@@ -470,11 +630,18 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
             scale(scene.camera.pixelHeightDistance, static_cast<float>(y)));
     Vec3 direction = sub(pixelPosition, scene.camera.lookFrom);
 
-    direction.x += randomFloat(state) * 0.03f;
-    direction.y += randomFloat(state) * 0.03f;
+    // Jitter in pixel space so anti-aliasing does not depend on scene scale or
+    // camera distance.
+    const float jitterX = randomFloat(state) - 0.5f;
+    const float jitterY = randomFloat(state) - 0.5f;
+
+    direction = add(direction, add(scale(scene.camera.pixelWidthDistance, jitterX),
+                                   scale(scene.camera.pixelHeightDistance, jitterY)));
 
     Ray ray{scene.camera.lookFrom, direction};
     Vec3 accumulated = makeVec3(0.0f, 0.0f, 0.0f);
+    Vec3 throughput = makeVec3(1.0f, 1.0f, 1.0f);
+    bool insideDielectric = false;
 
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
@@ -493,27 +660,90 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         const Material &material = scene.materials[primitive.materialIndex];
         const Vec3 hitPosition = rayAt(ray, distance);
 
+        if (material.type == MATERIAL_DIELECTRIC)
+        {
+            const float cosi = clamp01(-dot(ray.direction, normal));
+            const float etaI = insideDielectric ? material.ior : 1.0f;
+            const float etaT = insideDielectric ? 1.0f : material.ior;
+            const float eta = etaI / etaT;
+            const float k = 1.0f - eta * eta * (1.0f - cosi * cosi);
+            const float ratio = (etaI - etaT) / (etaI + etaT);
+            const float reflectance = ratio * ratio;
+            const float fresnel = reflectance + (1.0f - reflectance) * powf(1.0f - cosi, 5.0f);
+            const bool reflectRay = k < 0.0f || randomFloat(state) < fresnel;
+            Vec3 nextDirection;
+
+            if (reflectRay)
+                nextDirection = normalize(reflect(ray.direction, normal));
+            else
+            {
+                nextDirection =
+                    normalize(add(scale(ray.direction, eta), scale(normal, eta * cosi - sqrtf(k))));
+                insideDielectric = !insideDielectric;
+            }
+
+            if (lengthSquared(nextDirection) < 1e-12f)
+                break;
+
+            throughput = multiply(throughput, material.diffuseColor);
+
+            if (lengthSquared(throughput) < 1e-6f)
+                break;
+
+            ray.origin = add(hitPosition, scale(nextDirection, RAY_EPSILON));
+            ray.direction = nextDirection;
+            continue;
+        }
+
+        const Vec3 viewDirection = normalize(negate(ray.direction));
+        const float phongCoefficient =
+            material.ambientReflection + material.diffuseReflection + material.specularReflection;
+
         if (material.type == MATERIAL_EMISSIVE)
-            accumulated = add(accumulated, material.emissionColor);
+            accumulated = add(accumulated, multiply(throughput, material.emissionColor));
 
         for (int lightIndex = 0; lightIndex < scene.lightCount; ++lightIndex)
         {
-            const Vec3 contribution = lightContribution(scene, scene.lights[lightIndex], hitPosition, normal);
-            const float phongCoefficient =
-                material.ambientReflection + material.diffuseReflection + material.specularReflection;
-            const Vec3 phongColor = scale(multiply(contribution, material.diffuseColor), phongCoefficient);
+            const Light &light = scene.lights[lightIndex];
+            const LightSample sample = sampleLight(scene, light, hitPosition, normal);
+
+            if (!sample.valid)
+                continue;
+
+            Vec3 contribution;
+
+            if (light.type == LIGHT_AMBIENT)
+                contribution = scale(sample.radiance, phongCoefficient);
+            else
+            {
+                const float diffuseFactor = fmaxf(dot(normal, sample.direction), 0.0f);
+                const Vec3 halfDirection = normalize(add(sample.direction, viewDirection));
+                const float specularFactor = powf(fmaxf(dot(normal, halfDirection), 0.0f), 64.0f);
+
+                contribution = add(scale(sample.radiance, phongCoefficient * diffuseFactor),
+                                   scale(sample.radiance, material.specularReflection * specularFactor));
+            }
+
+            const Vec3 phongColor = multiply(multiply(contribution, material.diffuseColor), throughput);
 
             accumulated = add(accumulated, phongColor);
         }
 
-        if (material.type == MATERIAL_EMISSIVE || material.type == MATERIAL_FLAT_COLOR ||
-            material.type == MATERIAL_DIELECTRIC)
+        if (material.type == MATERIAL_EMISSIVE || material.type == MATERIAL_FLAT_COLOR)
             break;
+
+        if (material.type == MATERIAL_DIFFUSE || material.type == MATERIAL_METALLIC)
+        {
+            throughput = multiply(throughput, material.diffuseColor);
+
+            if (lengthSquared(throughput) < 1e-6f)
+                break;
+        }
 
         Vec3 nextDirection = makeVec3(0.0f, 0.0f, 0.0f);
 
         if (material.type == MATERIAL_DIFFUSE)
-            nextDirection = randomOnHemisphere(normal, state);
+            nextDirection = randomCosineHemisphere(normal, state);
         else if (material.type == MATERIAL_METALLIC)
             nextDirection = normalize(reflect(ray.direction, normal));
         else
@@ -538,7 +768,8 @@ __global__ void renderKernel(SceneView scene, int sampleStart, int sampleCount, 
     if (x >= scene.camera.width || y >= scene.camera.height)
         return;
 
-    const int index = x + y * scene.camera.width;
+    const std::size_t index = static_cast<std::size_t>(x) +
+                              static_cast<std::size_t>(y) * static_cast<std::size_t>(scene.camera.width);
     float4 sum = accumulation[index];
 
     for (int sampleOffset = 0; sampleOffset < sampleCount; ++sampleOffset)
@@ -556,9 +787,13 @@ __global__ void renderKernel(SceneView scene, int sampleStart, int sampleCount, 
     const float inverseSamples = 1.0f / static_cast<float>(renderedSamples);
     uchar4 pixel;
 
-    pixel.x = static_cast<unsigned char>(clamp01(sum.x * inverseSamples) * 255.0f);
-    pixel.y = static_cast<unsigned char>(clamp01(sum.y * inverseSamples) * 255.0f);
-    pixel.z = static_cast<unsigned char>(clamp01(sum.z * inverseSamples) * 255.0f);
+    const float red = clamp01(sqrtf(fmaxf(sum.x * inverseSamples, 0.0f)));
+    const float green = clamp01(sqrtf(fmaxf(sum.y * inverseSamples, 0.0f)));
+    const float blue = clamp01(sqrtf(fmaxf(sum.z * inverseSamples, 0.0f)));
+
+    pixel.x = static_cast<unsigned char>(red * 255.0f + 0.5f);
+    pixel.y = static_cast<unsigned char>(green * 255.0f + 0.5f);
+    pixel.z = static_cast<unsigned char>(blue * 255.0f + 0.5f);
     pixel.w = 255;
     output[index] = pixel;
 }

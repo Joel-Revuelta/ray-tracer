@@ -22,8 +22,13 @@ DiffuseMaterial::~DiffuseMaterial(void)
 {
 }
 
-extern "C" std::shared_ptr<IMaterial> create(const double ambientReflectionCoefficient,
-                                             const double diffuseReflectionCoefficient, const Color3D &color)
+std::shared_ptr<IMaterial> DiffuseMaterial::clone(void) const
+{
+    return std::make_shared<DiffuseMaterial>(*this);
+}
+
+extern "C" std::shared_ptr<IMaterial> create(double ambientReflectionCoefficient,
+                                             double diffuseReflectionCoefficient, Color3D color)
 {
     return std::make_shared<DiffuseMaterial>(ambientReflectionCoefficient, diffuseReflectionCoefficient, color);
 }

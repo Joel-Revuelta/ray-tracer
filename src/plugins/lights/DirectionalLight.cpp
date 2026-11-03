@@ -28,8 +28,12 @@ DirectionalLight::~DirectionalLight(void)
 
 void DirectionalLight::doTransformation(const ITransformation &t)
 {
-    (void)t;
-    return;
+    t.doTransformation(*this);
+}
+
+std::shared_ptr<ILight> DirectionalLight::clone(void) const
+{
+    return std::make_shared<DirectionalLight>(*this);
 }
 
 bool DirectionalLight::getData(LightData &data) const
@@ -49,10 +53,22 @@ bool DirectionalLight::getData(LightData &data) const
  */
 Color3D DirectionalLight::calculateLighting(const HitPayload &payload) const
 {
-    // Compute diffuse component
-    float diffuseFactor = vec3DDot(vec3DNormalize(getDirection()), payload.getHitNormal());
-    Color3D lightContrib = std::max<float>(diffuseFactor, 0.0) * getColor() * getIntensity();
-    return lightContrib;
+    const float diffuseFactor =
+        std::max<float>(vec3DDot(getLightDirection(payload), payload.getHitNormal()), 0.0f);
+
+    return diffuseFactor * getRadiance(payload);
+}
+
+Color3D DirectionalLight::getRadiance(const HitPayload &payload) const
+{
+    (void)payload;
+    return getColor() * getIntensity();
+}
+
+Vec3D DirectionalLight::getLightDirection(const HitPayload &payload) const
+{
+    (void)payload;
+    return vec3DNormalize(getDirection());
 }
 
 bool DirectionalLight::isPointInShadow(const HitPayload &payload, const Scene &scene) const
@@ -102,7 +118,7 @@ void DirectionalLight::setDirection(const Vec3D &direction)
     _direction = direction;
 }
 
-extern "C" std::shared_ptr<ILight> create(const Vec3D &direction, const Color3D &color, const double intensity)
+extern "C" std::shared_ptr<ILight> create(Vec3D direction, Color3D color, double intensity)
 {
     return std::make_shared<DirectionalLight>(direction, color, intensity);
 }

@@ -7,11 +7,13 @@
 
 #include "SFML.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 
 using namespace RayTracer;
@@ -47,15 +49,48 @@ void SFML::loadPPM(const std::string &path)
     if (!file)
         throw std::runtime_error("Cannot open file: " + path);
 
-    std::string header;
-    int maxColorValue;
-    file >> header >> _width >> _height >> maxColorValue;
+    std::string magic;
+    int width = 0;
+    int height = 0;
+    int maxColorValue = 0;
 
+    file >> magic >> width >> height >> maxColorValue;
+
+    if (magic != "P6")
+        throw std::runtime_error("Unsupported PPM format (expected binary P6): " + path);
+    if (width <= 0 || height <= 0)
+        throw std::runtime_error("Invalid dimensions in PPM file: " + path);
     if (maxColorValue != 255)
         throw std::runtime_error("Invalid max color value in PPM file: " + path);
 
+    // The header is followed by exactly one whitespace character. Accept CRLF
+    // as well, but do not use std::ws here: the pixel data itself may start
+    // with a whitespace-valued byte.
+    char separator = '\0';
+    file.get(separator);
+    if (!std::isspace(static_cast<unsigned char>(separator)))
+        throw std::runtime_error("Malformed PPM header: " + path);
+    if (separator == '\r')
+    {
+        char lineFeed = '\0';
+        file.get(lineFeed);
+        if (lineFeed != '\n')
+            throw std::runtime_error("Malformed PPM line ending: " + path);
+    }
+
+    const std::size_t pixelCount =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    std::vector<std::uint8_t> rgb(pixelCount * 3u);
+
+    file.read(reinterpret_cast<char *>(rgb.data()), static_cast<std::streamsize>(rgb.size()));
+    if (file.gcount() != static_cast<std::streamsize>(rgb.size()))
+        throw std::runtime_error("Truncated PPM pixel data: " + path);
+
+    _width = static_cast<std::size_t>(width);
+    _height = static_cast<std::size_t>(height);
+
     sf::Image image({static_cast<unsigned int>(_width), static_cast<unsigned int>(_height)});
-    _pixels.resize(_height, std::vector<Color4D>(_width));
+    _pixels.assign(_height, std::vector<Color4D>(_width));
     _window.close();
     _window.create(sf::VideoMode({static_cast<unsigned int>(_width), static_cast<unsigned int>(_height)}), "Raytracer");
 
@@ -63,16 +98,18 @@ void SFML::loadPPM(const std::string &path)
     {
         for (std::size_t x = 0; x < _width; ++x)
         {
-            std::uint16_t color[3];
-            file >> color[0] >> color[1] >> color[2];
-            _pixels[y][x] = Color4D(color[0], color[1], color[2]);
-            image.setPixel({static_cast<unsigned int>(x), static_cast<unsigned int>(y)},
-                           sf::Color(color[0], color[1], color[2]));
+            const std::size_t offset = (x + y * _width) * 3u;
+            const std::uint8_t r = rgb[offset];
+            const std::uint8_t g = rgb[offset + 1u];
+            const std::uint8_t b = rgb[offset + 2u];
+
+            _pixels[y][x] = Color4D(r, g, b);
+            image.setPixel({static_cast<unsigned int>(x), static_cast<unsigned int>(y)}, sf::Color(r, g, b));
         }
     }
+
     if (!_texture.loadFromImage(image))
         throw std::runtime_error("Failed to load texture from image: " + path);
-    file.close();
 }
 
 void SFML::setSize(const std::size_t &width, const std::size_t &height)
@@ -103,7 +140,7 @@ void SFML::setPixels(const Pixels &pixels)
     textureUpdate();
 }
 
-void SFML::setImage(const std::size_t &width, const std::size_t &height, std::vector<uint32_t> &pixels)
+void SFML::setImage(const std::size_t &width, const std::size_t &height, const std::vector<uint32_t> &pixels)
 {
     if (width == 0 || height == 0 || pixels.size() < width * height)
     {
@@ -111,7 +148,7 @@ void SFML::setImage(const std::size_t &width, const std::size_t &height, std::ve
         return;
     }
 
-    std::uint8_t *ptr = reinterpret_cast<std::uint8_t *>(pixels.data());
+    const std::uint8_t *ptr = reinterpret_cast<const std::uint8_t *>(pixels.data());
 
     // std::cerr << (int)vec8[0] << " " << (int)vec8[1] << " " << (int)vec8[2] << " " << (int)vec8[3] << std::endl;
 

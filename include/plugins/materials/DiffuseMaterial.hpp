@@ -18,6 +18,7 @@ class DiffuseMaterial : public AMaterial
     DiffuseMaterial(const float &ambientReflectionCoefficient, const float &diffuseReflectionCoefficient,
                     const Color3D &color);
     ~DiffuseMaterial(void);
+    std::shared_ptr<IMaterial> clone(void) const override;
 };
 } // namespace RayTracer
 

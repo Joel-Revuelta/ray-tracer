@@ -1,5 +1,14 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(raytracer)
+
+include(GNUInstallDirs)
+
+# Optimised builds are the sensible default for a CPU/GPU renderer. Users can
+# still request Debug/RelWithDebInfo explicitly.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
 
 # Set C++ Standard
 set(CMAKE_CXX_STANDARD 20)
@@ -34,15 +43,19 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBCONFIG++ REQUIRED libconfig++)
 include_directories(${LIBCONFIG++_INCLUDE_DIRS})
 find_package(Threads REQUIRED)
-find_package(SFML 3.0 COMPONENTS Graphics Window System Audio REQUIRED)
+
+option(RAYTRACER_ENABLE_GUI "Build the SFML GUI plugin" ON)
+if (RAYTRACER_ENABLE_GUI)
+    find_package(SFML 3.0 COMPONENTS Graphics Window System REQUIRED)
+endif()
 
 # Shared core runtime used by the executable and every plugin.
-file(GLOB_RECURSE SOURCES_UTILS "src/utils/*.cpp")
-file(GLOB_RECURSE SOURCES_SCENE "src/scene/*.cpp")
-file(GLOB_RECURSE SOURCES_DLMANAGER "src/DLManager/*.cpp")
-file(GLOB_RECURSE SOURCES_FACTORY "src/factory/*.cpp")
-file(GLOB_RECURSE SOURCES_PARSER "src/plugins/parser/*.cpp")
-file(GLOB_RECURSE SOURCES_RENDER_COMMON "src/render/*.cpp")
+file(GLOB_RECURSE SOURCES_UTILS CONFIGURE_DEPENDS "src/utils/*.cpp")
+file(GLOB_RECURSE SOURCES_SCENE CONFIGURE_DEPENDS "src/scene/*.cpp")
+file(GLOB_RECURSE SOURCES_DLMANAGER CONFIGURE_DEPENDS "src/DLManager/*.cpp")
+file(GLOB_RECURSE SOURCES_FACTORY CONFIGURE_DEPENDS "src/factory/*.cpp")
+file(GLOB_RECURSE SOURCES_PARSER CONFIGURE_DEPENDS "src/plugins/parser/*.cpp")
+file(GLOB_RECURSE SOURCES_RENDER_COMMON CONFIGURE_DEPENDS "src/render/*.cpp")
 
 add_library(raytracer_core SHARED
     ${SOURCES_UTILS}
@@ -52,6 +65,7 @@ add_library(raytracer_core SHARED
     ${SOURCES_PARSER}
     ${SOURCES_RENDER_COMMON}
     src/Camera.cpp
+    src/plugins/materials/AMaterial.cpp
 )
 target_link_libraries(raytracer_core PUBLIC
     ${CMAKE_THREAD_LIBS_INIT}
@@ -72,6 +86,8 @@ target_link_libraries(raytracer_renderer_cpu PRIVATE raytracer_core)
 
 # CUDA renderer plugin (optional)
 option(RAYTRACER_ENABLE_CUDA "Build the CUDA renderer when the toolkit is available" ON)
+set(RAYTRACER_CUDA_ARCH "89" CACHE STRING
+    "CUDA architectures to compile for (for example 86, 89, or 86;89)")
 if (RAYTRACER_ENABLE_CUDA)
     find_package(CUDAToolkit QUIET)
     if (CUDAToolkit_FOUND)
@@ -85,87 +101,99 @@ if (RAYTRACER_ENABLE_CUDA)
             src/plugins/renderers/CUDA/Kernels.cu
         )
         target_link_libraries(raytracer_renderer_cuda PRIVATE raytracer_core CUDA::cudart_static)
+        string(REGEX MATCH "[0-9]+" RAYTRACER_CUDA_MIN_CC "${RAYTRACER_CUDA_ARCH}")
+        if (RAYTRACER_CUDA_MIN_CC STREQUAL "")
+            message(FATAL_ERROR "RAYTRACER_CUDA_ARCH must start with a numeric compute capability")
+        endif()
+        target_compile_definitions(raytracer_renderer_cuda PRIVATE
+            RAYTRACER_CUDA_MIN_CC=${RAYTRACER_CUDA_MIN_CC}
+        )
         set_target_properties(raytracer_renderer_cuda PROPERTIES
             CUDA_STANDARD 20
             CUDA_STANDARD_REQUIRED ON
-            CUDA_ARCHITECTURES 89
+            CUDA_ARCHITECTURES "${RAYTRACER_CUDA_ARCH}"
             LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
             PREFIX ""
         )
-        message(STATUS "CUDA renderer enabled (CUDA ${CUDAToolkit_VERSION})")
+        message(STATUS "CUDA renderer enabled (CUDA ${CUDAToolkit_VERSION}, architectures ${RAYTRACER_CUDA_ARCH})")
     else()
         message(STATUS "CUDA renderer disabled: CUDA toolkit not found")
     endif()
 endif()
 
-# CLI plugin
-file(GLOB_RECURSE SOURCES_CLI "src/plugins/CLI/*.cpp")
-add_library(raytracer_cli SHARED ${SOURCES_CLI})
-target_link_libraries(raytracer_cli PRIVATE raytracer_core)
-
-# GUI plugin
-file(GLOB_RECURSE SOURCES_GUI "src/plugins/GUI/*.cpp")
-add_library(raytracer_gui SHARED ${SOURCES_GUI})
-target_link_libraries(raytracer_gui PRIVATE raytracer_core SFML::Graphics SFML::Window SFML::System SFML::Audio)
+# GUI plugin (optional)
+if (RAYTRACER_ENABLE_GUI)
+    file(GLOB_RECURSE SOURCES_GUI CONFIGURE_DEPENDS "src/plugins/GUI/*.cpp")
+    add_library(raytracer_gui SHARED ${SOURCES_GUI})
+    target_link_libraries(raytracer_gui PRIVATE raytracer_core SFML::Graphics SFML::Window SFML::System)
+    set_target_properties(raytracer_gui PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
+        PREFIX ""
+    )
+endif()
 
 # Lights
-file(GLOB_RECURSE SOURCES_AMBIENT "src/plugins/lights/AmbientLight.cpp")
+file(GLOB_RECURSE SOURCES_AMBIENT CONFIGURE_DEPENDS "src/plugins/lights/AmbientLight.cpp")
 add_library(raytracer_light_ambient SHARED ${SOURCES_AMBIENT})
 target_link_libraries(raytracer_light_ambient PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_DIRECTIONAL "src/plugins/lights/DirectionalLight.cpp")
+file(GLOB_RECURSE SOURCES_DIRECTIONAL CONFIGURE_DEPENDS "src/plugins/lights/DirectionalLight.cpp")
 add_library(raytracer_light_directional SHARED ${SOURCES_DIRECTIONAL})
 target_link_libraries(raytracer_light_directional PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_POINT "src/plugins/lights/PointLight.cpp")
+file(GLOB_RECURSE SOURCES_POINT CONFIGURE_DEPENDS "src/plugins/lights/PointLight.cpp")
 add_library(raytracer_light_point SHARED ${SOURCES_POINT})
 target_link_libraries(raytracer_light_point PRIVATE raytracer_core)
 
 # Primitives
-file(GLOB_RECURSE SOURCES_PLANE "src/plugins/primitives/Plane.cpp")
-file(GLOB_RECURSE EXTERN_PLANE "src/plugins/primitives/ExternPlane.cpp")
+file(GLOB_RECURSE SOURCES_PLANE CONFIGURE_DEPENDS "src/plugins/primitives/Plane.cpp")
+file(GLOB_RECURSE EXTERN_PLANE CONFIGURE_DEPENDS "src/plugins/primitives/ExternPlane.cpp")
 add_library(raytracer_plane SHARED ${SOURCES_PLANE} ${EXTERN_PLANE})
 target_link_libraries(raytracer_plane PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_SPHERE "src/plugins/primitives/Sphere.cpp")
-file(GLOB_RECURSE EXTERN_SPHERE "src/plugins/primitives/ExternSphere.cpp")
+file(GLOB_RECURSE SOURCES_SPHERE CONFIGURE_DEPENDS "src/plugins/primitives/Sphere.cpp")
+file(GLOB_RECURSE EXTERN_SPHERE CONFIGURE_DEPENDS "src/plugins/primitives/ExternSphere.cpp")
 add_library(raytracer_sphere SHARED ${SOURCES_SPHERE} ${EXTERN_SPHERE})
 target_link_libraries(raytracer_sphere PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_CYLINDER "src/plugins/primitives/Cylinder.cpp")
-file(GLOB_RECURSE EXTERN_CYLINDER "src/plugins/primitives/ExternCylinder.cpp")
+file(GLOB_RECURSE SOURCES_CYLINDER CONFIGURE_DEPENDS "src/plugins/primitives/Cylinder.cpp")
+file(GLOB_RECURSE EXTERN_CYLINDER CONFIGURE_DEPENDS "src/plugins/primitives/ExternCylinder.cpp")
 add_library(raytracer_cylinder SHARED ${SOURCES_CYLINDER} ${EXTERN_CYLINDER})
 target_link_libraries(raytracer_cylinder PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_CONE "src/plugins/primitives/Cone.cpp")
-file(GLOB_RECURSE EXTERN_CONE "src/plugins/primitives/ExternCone.cpp")
+file(GLOB_RECURSE SOURCES_CONE CONFIGURE_DEPENDS "src/plugins/primitives/Cone.cpp")
+file(GLOB_RECURSE EXTERN_CONE CONFIGURE_DEPENDS "src/plugins/primitives/ExternCone.cpp")
 add_library(raytracer_cone SHARED ${SOURCES_CONE} ${EXTERN_CONE})
 target_link_libraries(raytracer_cone PRIVATE raytracer_core)
 
 # Materials
-file(GLOB_RECURSE SOURCES_CUSTOM_MATERIAL "src/plugins/materials/CustomMaterial.cpp" "src/plugins/materials/AMaterial.cpp")
+file(GLOB_RECURSE SOURCES_CUSTOM_MATERIAL CONFIGURE_DEPENDS "src/plugins/materials/CustomMaterial.cpp")
 add_library(raytracer_material_custom SHARED ${SOURCES_CUSTOM_MATERIAL})
 target_link_libraries(raytracer_material_custom PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_EMISSIVE "src/plugins/materials/EmissiveMaterial.cpp" "src/plugins/materials/AMaterial.cpp")
+file(GLOB_RECURSE SOURCES_EMISSIVE CONFIGURE_DEPENDS "src/plugins/materials/EmissiveMaterial.cpp")
 add_library(raytracer_material_emissive SHARED ${SOURCES_EMISSIVE})
 target_link_libraries(raytracer_material_emissive PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_FLAT "src/plugins/materials/FlatColorMaterial.cpp" "src/plugins/materials/AMaterial.cpp")
+file(GLOB_RECURSE SOURCES_FLAT CONFIGURE_DEPENDS "src/plugins/materials/FlatColorMaterial.cpp")
 add_library(raytracer_material_flat SHARED ${SOURCES_FLAT})
 target_link_libraries(raytracer_material_flat PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_METALLIC "src/plugins/materials/MetallicMaterial.cpp" "src/plugins/materials/AMaterial.cpp")
+file(GLOB_RECURSE SOURCES_METALLIC CONFIGURE_DEPENDS "src/plugins/materials/MetallicMaterial.cpp")
 add_library(raytracer_material_metallic SHARED ${SOURCES_METALLIC})
 target_link_libraries(raytracer_material_metallic PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_DIFFUSE "src/plugins/materials/DiffuseMaterial.cpp" "src/plugins/materials/AMaterial.cpp")
+file(GLOB_RECURSE SOURCES_DIELECTRIC CONFIGURE_DEPENDS "src/plugins/materials/DielectricMaterial.cpp")
+add_library(raytracer_material_dielectric SHARED ${SOURCES_DIELECTRIC})
+target_link_libraries(raytracer_material_dielectric PRIVATE raytracer_core)
+
+file(GLOB_RECURSE SOURCES_DIFFUSE CONFIGURE_DEPENDS "src/plugins/materials/DiffuseMaterial.cpp")
 add_library(raytracer_material_diffuse SHARED ${SOURCES_DIFFUSE})
 target_link_libraries(raytracer_material_diffuse PRIVATE raytracer_core)
 
 # Transformations compile the concrete primitives they manipulate, since
 # primitives are plugins themselves.
-file(GLOB_RECURSE SOURCES_TRANSLATION "src/plugins/transformations/Translation.cpp")
+file(GLOB_RECURSE SOURCES_TRANSLATION CONFIGURE_DEPENDS "src/plugins/transformations/Translation.cpp")
 add_library(raytracer_transformation_translation SHARED
     ${SOURCES_TRANSLATION}
     src/plugins/primitives/Sphere.cpp
@@ -175,7 +203,7 @@ add_library(raytracer_transformation_translation SHARED
 )
 target_link_libraries(raytracer_transformation_translation PRIVATE raytracer_core)
 
-file(GLOB_RECURSE SOURCES_ROTATION "src/plugins/transformations/Rotation.cpp")
+file(GLOB_RECURSE SOURCES_ROTATION CONFIGURE_DEPENDS "src/plugins/transformations/Rotation.cpp")
 add_library(raytracer_transformation_rotation SHARED
     ${SOURCES_ROTATION}
     src/plugins/primitives/Sphere.cpp
@@ -188,18 +216,25 @@ target_link_libraries(raytracer_transformation_rotation PRIVATE raytracer_core)
 # Custom targets
 add_custom_target(core DEPENDS raytracer)
 
-add_custom_target(cli DEPENDS raytracer_cli)
-
-add_custom_target(gui DEPENDS raytracer_gui)
+if (TARGET raytracer_gui)
+    add_custom_target(gui DEPENDS raytracer_gui)
+endif()
 
 add_custom_target(renderers DEPENDS raytracer_renderer_cpu)
 if (TARGET raytracer_renderer_cuda)
     add_dependencies(renderers raytracer_renderer_cuda)
 endif()
 
-add_custom_target(lights DEPENDS raytracer_light_ambient raytracer_light_directional)
+add_custom_target(lights DEPENDS raytracer_light_ambient raytracer_light_directional raytracer_light_point)
 
-add_custom_target(materials DEPENDS raytracer_material_flat)
+add_custom_target(materials DEPENDS
+    raytracer_material_custom
+    raytracer_material_emissive
+    raytracer_material_flat
+    raytracer_material_metallic
+    raytracer_material_dielectric
+    raytracer_material_diffuse
+)
 
 add_custom_target(primitives DEPENDS raytracer_plane raytracer_sphere raytracer_cylinder raytracer_cone)
 
@@ -211,8 +246,6 @@ set_target_properties(raytracer PROPERTIES
 )
 
 set_target_properties(
-    raytracer_cli
-    raytracer_gui
     raytracer_light_ambient
     raytracer_light_directional
     raytracer_light_point
@@ -224,6 +257,7 @@ set_target_properties(
     raytracer_material_emissive
     raytracer_material_flat
     raytracer_material_metallic
+    raytracer_material_dielectric
     raytracer_material_diffuse
     raytracer_transformation_translation
     raytracer_transformation_rotation
@@ -232,3 +266,65 @@ set_target_properties(
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
         PREFIX ""
 )
+
+# Basic smoke tests. Run them from the repository root because plugin paths are
+# resolved relative to the working directory.
+enable_testing()
+add_test(
+    NAME cli_cpu_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 1
+            --output ${CMAKE_BINARY_DIR}/cli_cpu_smoke.ppm
+)
+add_test(NAME list_renderers COMMAND $<TARGET_FILE:raytracer> --list-renderers)
+add_test(
+    NAME deterministic_cpu_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_render.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_negative_material
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_material.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_material.ppm
+)
+set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render
+    PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
+set_tests_properties(parser_rejects_negative_material PROPERTIES
+    WILL_FAIL TRUE
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
+)
+
+# Install a self-contained bundle: executable and core in bin/, plugins in
+# bin/plugins/ (or lib/raytracer/plugins when RAYTRACER_PLUGIN_DIR is used).
+set(RAYTRACER_PLUGIN_TARGETS
+    raytracer_light_ambient
+    raytracer_light_directional
+    raytracer_light_point
+    raytracer_plane
+    raytracer_sphere
+    raytracer_cylinder
+    raytracer_cone
+    raytracer_material_custom
+    raytracer_material_emissive
+    raytracer_material_flat
+    raytracer_material_metallic
+    raytracer_material_dielectric
+    raytracer_material_diffuse
+    raytracer_transformation_translation
+    raytracer_transformation_rotation
+    raytracer_renderer_cpu
+)
+if (TARGET raytracer_gui)
+    list(APPEND RAYTRACER_PLUGIN_TARGETS raytracer_gui)
+endif()
+if (TARGET raytracer_renderer_cuda)
+    list(APPEND RAYTRACER_PLUGIN_TARGETS raytracer_renderer_cuda)
+endif()
+
+install(TARGETS raytracer RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS raytracer_core LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS ${RAYTRACER_PLUGIN_TARGETS} LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins)
+install(DIRECTORY scenes/ DESTINATION ${CMAKE_INSTALL_DATADIR}/raytracer/scenes)
+set_target_properties(raytracer raytracer_core PROPERTIES INSTALL_RPATH "$ORIGIN")
+set_target_properties(${RAYTRACER_PLUGIN_TARGETS} PROPERTIES INSTALL_RPATH "$ORIGIN/..")

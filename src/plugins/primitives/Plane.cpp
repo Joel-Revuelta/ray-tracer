@@ -22,7 +22,7 @@ Plane::~Plane(void)
 
 void Plane::doTransformation(const ITransformation &t)
 {
-    (void)t;
+    t.doTransformation(*this);
 }
 
 bool Plane::getData(PrimitiveData &data) const
@@ -32,6 +32,11 @@ bool Plane::getData(PrimitiveData &data) const
     data.point = _point;
     data.normal = _normal;
     return true;
+}
+
+std::shared_ptr<IPrimitive> Plane::clone(void) const
+{
+    return std::make_shared<Plane>(*this);
 }
 
 bool Plane::hit(const Ray &ray, HitPayload &payload, size_t i) const

@@ -114,7 +114,19 @@ name = {
 
 Flat surfaces receive lighting for the first hit but do not bounce another ray.
 
-`dielectric` is not implemented and is rejected by the parser.
+### Dielectric
+
+```libconfig
+name = {
+    type = "dielectric";
+    ior = 1.5;
+    color = { r = 1.0; g = 1.0; b = 1.0; };
+};
+```
+
+`ior` is the refractive index and must be positive; it defaults to `1.5`.
+`color` tints the transmitted path. Dielectrics use Fresnel reflection,
+refraction, and total internal reflection instead of diffuse lighting.
 
 ## Primitives
 
@@ -299,15 +311,18 @@ scene is rejected.
 The parser rejects:
 
 - missing settings and wrong libconfig types,
-- unknown material types (and `dielectric`),
+- unknown material types,
 - sphere/cylinder/cone radius or height `<= 0`,
 - zero plane normals,
 - zero directional-light directions,
 - non-positive point-light attenuation constants,
 - negative intensities and negative linear/quadratic attenuation,
+- negative diffuse material reflection coefficients or emissive intensity,
+- non-positive dielectric IOR,
+- non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,
 - a camera position equal to its look-at point,
-- material indices outside the material list.
+- negative material indices, or indices outside the material list.
 
 Renderer selection errors (unknown renderer names, missing plugins, unavailable
 CUDA devices) are handled at runtime and are documented in [cli.md](cli.md).

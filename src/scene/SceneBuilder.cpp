@@ -81,19 +81,42 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
 
     ensureScene();
 
+    if (sceneToAdd.get() == _scene.get())
+        throw std::invalid_argument("Cannot merge a scene into itself");
+
     // Materials of a nested scene are appended to the parent scene, so every
     // primitive coming from that scene has to shift its material index.
     const uint materialOffset = static_cast<uint>(_scene->getMaterials().size());
 
     for (const auto &material : sceneToAdd->getMaterials())
-        _scene->addMaterial(material);
+    {
+        std::shared_ptr<IMaterial> copy = material->clone();
+
+        if (!copy)
+            copy = material;
+
+        _scene->addMaterial(copy);
+    }
     for (const auto &primitive : sceneToAdd->getPrimitives())
     {
-        primitive->setMaterialIndex(primitive->getMaterialIndex() + materialOffset);
-        _scene->addPrimitive(primitive);
+        std::shared_ptr<IPrimitive> copy = primitive->clone();
+
+        // Fall back to sharing for primitive types that do not implement clone.
+        if (!copy)
+            copy = primitive;
+
+        copy->setMaterialIndex(copy->getMaterialIndex() + materialOffset);
+        _scene->addPrimitive(copy);
     }
     for (const auto &light : sceneToAdd->getLights())
-        _scene->addLight(light);
+    {
+        std::shared_ptr<ILight> copy = light->clone();
+
+        if (!copy)
+            copy = light;
+
+        _scene->addLight(copy);
+    }
 }
 
 /**
@@ -114,6 +137,8 @@ std::shared_ptr<Scene> SceneBuilder::build(void)
         if (primitive->getMaterialIndex() >= materials.size())
             throw std::runtime_error("A primitive references a material index that does not exist");
     }
+
+    _scene->buildAcceleration();
     return _scene;
 }
 

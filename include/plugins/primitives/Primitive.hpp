@@ -12,6 +12,7 @@
 #include "Ray.hpp"
 #include "Transformable.hpp"
 #include "plugins/renderers/PrimitiveData.hpp"
+#include <memory>
 
 namespace RayTracer
 {
@@ -22,6 +23,13 @@ class IPrimitive : public ITransformable
     virtual ~IPrimitive(void) = default;
 
     virtual bool hit(const Ray &ray, HitPayload &payload, size_t i) const = 0;
+
+    // Returns an independent copy for scene composition. Primitive plugins that
+    // do not implement cloning fall back to sharing the original instance.
+    virtual std::shared_ptr<IPrimitive> clone(void) const
+    {
+        return nullptr;
+    }
 
     // Fills a renderer-neutral description of the primitive. Renderers that
     // work on a flat scene representation use this instead of dynamic_cast.

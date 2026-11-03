@@ -35,6 +35,7 @@ roughly linearly.
 
 ### Output
 
+- PPM values are gamma-corrected from the renderer's linear radiance.
 - CLI mode with `--output` writes a binary `P6` PPM file.
 - CLI mode without `--output` writes the PPM to standard output.
 - SFML mode writes a PPM only when `--output` is provided.

@@ -16,7 +16,7 @@ ExternPlane::~ExternPlane()
 {
 }
 
-extern "C" std::shared_ptr<IPrimitive> create(const Vec3D &normal, const Point3D &point, uint _materialIndex)
+extern "C" std::shared_ptr<IPrimitive> create(Vec3D normal, Vec3D point, uint _materialIndex)
 {
     return std::make_shared<Plane>(normal, point, _materialIndex);
 }

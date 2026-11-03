@@ -19,7 +19,7 @@ class NameOfTransformation : public ITransformation
     NameOfTransformation(void);
     ~NameOfTransformation(void);
 
-    void doTransformation(ITransformable &obj) override;
+    void doTransformation(ITransformable &obj) const override;
 
   private:
 };

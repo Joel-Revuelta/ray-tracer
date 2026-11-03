@@ -47,6 +47,31 @@ void CameraController::captureInitial(const Camera &camera)
     _hasInitialState = true;
 }
 
+bool CameraController::isCameraEvent(char event) const
+{
+    switch (event)
+    {
+    case 'w':
+    case 'a':
+    case 's':
+    case 'd':
+    case 'q':
+    case 'e':
+    case 'i':
+    case 'j':
+    case 'k':
+    case 'l':
+    case 'r':
+    case '+':
+    case '=':
+    case '-':
+    case '_':
+        return true;
+    default:
+        return false;
+    }
+}
+
 bool CameraController::handleEvent(char event, Camera &camera)
 {
     if (!event)

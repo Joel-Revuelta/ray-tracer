@@ -10,6 +10,7 @@
 #include "plugins/renderers/CUDA/CudaKernels.hpp"
 #include "plugins/renderers/PPM.hpp"
 #include "plugins/renderers/SceneSnapshot.hpp"
+#include "scene/PrimitiveBounds.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cuda_runtime.h>
@@ -24,6 +25,10 @@
 #include <vector>
 
 using namespace RayTracer;
+
+#ifndef RAYTRACER_CUDA_MIN_CC
+#define RAYTRACER_CUDA_MIN_CC 89
+#endif
 
 static_assert(static_cast<int>(PrimitiveType::SPHERE) == Cuda::PRIMITIVE_SPHERE, "primitive enum mismatch");
 static_assert(static_cast<int>(PrimitiveType::PLANE) == Cuda::PRIMITIVE_PLANE, "primitive enum mismatch");
@@ -143,6 +148,7 @@ std::vector<Cuda::Material> convertMaterials(const SceneSnapshot &snapshot)
         converted.ambientReflection = material.ambientReflection;
         converted.diffuseReflection = material.diffuseReflection;
         converted.specularReflection = material.specularReflection;
+        converted.ior = material.ior;
         materials.push_back(converted);
     }
     return materials;
@@ -170,6 +176,106 @@ std::vector<Cuda::Light> convertLights(const SceneSnapshot &snapshot)
     return lights;
 }
 
+struct HostBVH
+{
+    std::vector<Cuda::BVHNode> nodes;
+    std::vector<int> indices;
+    std::vector<int> unbounded;
+};
+
+HostBVH buildBVH(const SceneSnapshot &snapshot)
+{
+    struct Entry
+    {
+        int index;
+        AABB bounds;
+        Vec3D centroid;
+    };
+
+    HostBVH bvh;
+    std::vector<Entry> entries;
+
+    entries.reserve(snapshot.primitives.size());
+
+    for (std::size_t i = 0; i < snapshot.primitives.size(); ++i)
+    {
+        AABB bounds;
+
+        if (!computePrimitiveBounds(snapshot.primitives[i], bounds))
+        {
+            bvh.unbounded.push_back(static_cast<int>(i));
+            continue;
+        }
+
+        entries.push_back(Entry{static_cast<int>(i), bounds, bounds.centroid()});
+    }
+
+    if (entries.size() < 8)
+    {
+        bvh.unbounded.clear();
+        return bvh;
+    }
+
+    bvh.indices.reserve(entries.size());
+    bvh.nodes.reserve(entries.size() * 2);
+
+    auto buildNode = [&](auto &self, std::size_t start, std::size_t end) -> int {
+        const int nodeIndex = static_cast<int>(bvh.nodes.size());
+
+        bvh.nodes.emplace_back();
+
+        AABB bounds;
+
+        for (std::size_t i = start; i < end; ++i)
+            bounds.expand(entries[i].bounds);
+
+        Cuda::BVHNode node{};
+        node.min = toDevice(bounds.min);
+        node.max = toDevice(bounds.max);
+        node.left = -1;
+        node.right = -1;
+        node.start = 0;
+        node.count = 0;
+        node.leaf = 0;
+
+        if (end - start <= 4)
+        {
+            node.leaf = 1;
+            node.start = static_cast<int>(bvh.indices.size());
+            node.count = static_cast<int>(end - start);
+
+            for (std::size_t i = start; i < end; ++i)
+                bvh.indices.push_back(entries[i].index);
+            bvh.nodes[static_cast<std::size_t>(nodeIndex)] = node;
+            return nodeIndex;
+        }
+
+        const Vec3D extent = bounds.extent();
+        int axis = 0;
+
+        if (extent.getY() > extent.getX())
+            axis = 1;
+        if (extent.getZ() > (axis == 0 ? extent.getX() : extent.getY()))
+            axis = 2;
+
+        const std::size_t middle = (start + end) / 2;
+
+        std::sort(entries.begin() + static_cast<std::ptrdiff_t>(start),
+                  entries.begin() + static_cast<std::ptrdiff_t>(end),
+                  [axis](const Entry &left, const Entry &right) {
+                      return left.centroid[axis] < right.centroid[axis];
+                  });
+
+        node.left = self(self, start, middle);
+        node.right = self(self, middle, end);
+        bvh.nodes[static_cast<std::size_t>(nodeIndex)] = node;
+        return nodeIndex;
+    };
+
+    buildNode(buildNode, 0, entries.size());
+    return bvh;
+}
+
 int checkedCount(std::size_t count, const char *name)
 {
     if (count > static_cast<std::size_t>(std::numeric_limits<int>::max()))
@@ -190,13 +296,18 @@ class CudaRenderSession
     explicit CudaRenderSession(const SceneSnapshot &snapshot)
         : _width(snapshot.camera.imageWidth), _height(snapshot.camera.imageHeight),
           _primitives(convertPrimitives(snapshot)), _materials(convertMaterials(snapshot)),
-          _lights(convertLights(snapshot)), _devicePrimitives(_primitives.size()),
+          _lights(convertLights(snapshot)), _bvh(buildBVH(snapshot)), _devicePrimitives(_primitives.size()),
           _deviceMaterials(_materials.size()), _deviceLights(_lights.size()),
-          _deviceAccumulation(pixelCount(_width, _height)), _deviceOutput(pixelCount(_width, _height) * 4u)
+          _deviceNodes(_bvh.nodes.size()), _deviceIndices(_bvh.indices.size()),
+          _deviceUnbounded(_bvh.unbounded.size()), _deviceAccumulation(pixelCount(_width, _height)),
+          _deviceOutput(pixelCount(_width, _height) * 4u)
     {
         _devicePrimitives.upload(_primitives);
         _deviceMaterials.upload(_materials);
         _deviceLights.upload(_lights);
+        _deviceNodes.upload(_bvh.nodes);
+        _deviceIndices.upload(_bvh.indices);
+        _deviceUnbounded.upload(_bvh.unbounded);
 
         _view.primitives = _devicePrimitives.get();
         _view.primitiveCount = checkedCount(_primitives.size(), "primitives");
@@ -204,6 +315,12 @@ class CudaRenderSession
         _view.materialCount = checkedCount(_materials.size(), "materials");
         _view.lights = _deviceLights.get();
         _view.lightCount = checkedCount(_lights.size(), "lights");
+        _view.nodes = _deviceNodes.get();
+        _view.nodeCount = checkedCount(_bvh.nodes.size(), "BVH nodes");
+        _view.primitiveIndices = _deviceIndices.get();
+        _view.primitiveIndexCount = checkedCount(_bvh.indices.size(), "BVH primitive indices");
+        _view.unboundedIndices = _deviceUnbounded.get();
+        _view.unboundedCount = checkedCount(_bvh.unbounded.size(), "unbounded primitives");
         _view.camera = toDevice(snapshot.camera);
 
         checkCuda(cudaStreamCreateWithFlags(&_stream, cudaStreamNonBlocking), "cudaStreamCreate");
@@ -231,6 +348,10 @@ class CudaRenderSession
     {
         if (_batchInFlight && _event != nullptr)
             cudaEventSynchronize(_event);
+
+        if (_hostPixelsPinned)
+            cudaHostUnregister(_hostPixels.data());
+
         if (_event != nullptr)
             cudaEventDestroy(_event);
         if (_stream != nullptr)
@@ -309,16 +430,36 @@ class CudaRenderSession
         finishBatch();
     }
 
-    std::vector<uint32_t> copyImage(void)
+    const std::vector<uint32_t> &copyImage(void)
     {
         finishBatch();
 
-        std::vector<uint32_t> pixels(pixelCount(_width, _height));
+        const std::size_t count = pixelCount(_width, _height);
 
-        checkCuda(cudaMemcpy(pixels.data(), _deviceOutput.get(), pixels.size() * sizeof(uint32_t),
-                             cudaMemcpyDeviceToHost),
-                  "cudaMemcpy");
-        return pixels;
+        if (_hostPixels.size() != count)
+        {
+            if (_hostPixelsPinned)
+            {
+                cudaHostUnregister(_hostPixels.data());
+                _hostPixelsPinned = false;
+            }
+
+            _hostPixels.resize(count);
+
+            // Pinned host memory makes the device-to-host readback faster. If
+            // registration is unavailable, the pageable vector still works.
+            if (cudaHostRegister(_hostPixels.data(), _hostPixels.size() * sizeof(uint32_t),
+                                 cudaHostRegisterDefault) == cudaSuccess)
+                _hostPixelsPinned = true;
+            else
+                cudaGetLastError();
+        }
+
+        checkCuda(cudaMemcpyAsync(_hostPixels.data(), _deviceOutput.get(), _hostPixels.size() * sizeof(uint32_t),
+                                  cudaMemcpyDeviceToHost, _stream),
+                  "cudaMemcpyAsync");
+        checkCuda(cudaStreamSynchronize(_stream), "cudaStreamSynchronize");
+        return _hostPixels;
     }
 
   private:
@@ -327,11 +468,17 @@ class CudaRenderSession
     std::vector<Cuda::Primitive> _primitives;
     std::vector<Cuda::Material> _materials;
     std::vector<Cuda::Light> _lights;
+    HostBVH _bvh;
     DeviceBuffer<Cuda::Primitive> _devicePrimitives;
     DeviceBuffer<Cuda::Material> _deviceMaterials;
     DeviceBuffer<Cuda::Light> _deviceLights;
+    DeviceBuffer<Cuda::BVHNode> _deviceNodes;
+    DeviceBuffer<int> _deviceIndices;
+    DeviceBuffer<int> _deviceUnbounded;
     DeviceBuffer<float4> _deviceAccumulation;
     DeviceBuffer<unsigned char> _deviceOutput;
+    std::vector<uint32_t> _hostPixels;
+    bool _hostPixelsPinned = false;
     Cuda::SceneView _view;
     cudaStream_t _stream = nullptr;
     cudaEvent_t _event = nullptr;
@@ -372,6 +519,27 @@ bool CUDARenderer::isAvailable(std::string &reason) const
         reason = "no CUDA device found";
         return false;
     }
+
+    cudaDeviceProp properties{};
+    const cudaError_t propertiesStatus = cudaGetDeviceProperties(&properties, 0);
+
+    if (propertiesStatus != cudaSuccess)
+    {
+        reason = cudaGetErrorString(propertiesStatus);
+        return false;
+    }
+
+    const int capability = properties.major * 10 + properties.minor;
+
+    if (capability < RAYTRACER_CUDA_MIN_CC)
+    {
+        reason = "GPU compute capability " + std::to_string(properties.major) + "." +
+                 std::to_string(properties.minor) + " is below the renderer minimum " +
+                 std::to_string(RAYTRACER_CUDA_MIN_CC / 10) + "." +
+                 std::to_string(RAYTRACER_CUDA_MIN_CC % 10);
+        return false;
+    }
+
     return true;
 }
 
@@ -423,13 +591,16 @@ void CUDARenderer::run(const RenderContext &context)
             }
             std::clog << std::endl;
 
-            const std::vector<uint32_t> pixels = session->copyImage();
+            const std::vector<uint32_t> &pixels = session->copyImage();
 
             writeOutput(context, session->width(), session->height(), pixels);
             return;
         }
 
         constexpr int batchSize = 1;
+        // Cap progressive uploads at roughly 100 frames. Copying a full 8K
+        // image after every sample would dominate the render time.
+        const int displayInterval = std::max(1, totalSamples / 100);
         int start = 0;
 
         while (start < totalSamples)
@@ -494,15 +665,18 @@ void CUDARenderer::run(const RenderContext &context)
 
             start += count;
 
-            std::vector<uint32_t> pixels = session->copyImage();
+            if (start == 1 || start % displayInterval == 0 || start >= totalSamples)
+            {
+                const std::vector<uint32_t> &pixels = session->copyImage();
 
-            context.gui->setImage(session->width(), session->height(), pixels);
-            context.gui->display();
+                context.gui->setImage(session->width(), session->height(), pixels);
+                context.gui->display();
+            }
         }
 
         if (!context.options.outputPath.empty())
         {
-            const std::vector<uint32_t> pixels = session->copyImage();
+            const std::vector<uint32_t> &pixels = session->copyImage();
 
             writePPMFile(context.options.outputPath, session->width(), session->height(), pixels);
         }

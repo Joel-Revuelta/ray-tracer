@@ -22,10 +22,14 @@ CustomMaterial::~CustomMaterial(void)
 {
 }
 
-extern "C" std::shared_ptr<IMaterial> create(const double ambientReflCoeff, const double diffuseReflCoeff,
-                                             const double specularReflCoeff, const Color3D &diffuseColor,
-                                             const double emissionPower, const Color3D &emissionColor,
-                                             const IMaterial::MaterialType type)
+std::shared_ptr<IMaterial> CustomMaterial::clone(void) const
+{
+    return std::make_shared<CustomMaterial>(*this);
+}
+
+extern "C" std::shared_ptr<IMaterial> create(double ambientReflCoeff, double diffuseReflCoeff,
+                                             double specularReflCoeff, Color3D diffuseColor, double emissionPower,
+                                             Color3D emissionColor, IMaterial::MaterialType type)
 {
     return std::make_shared<CustomMaterial>(ambientReflCoeff, diffuseReflCoeff, specularReflCoeff, diffuseColor,
                                             emissionPower, emissionColor, type);

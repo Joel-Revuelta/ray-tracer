@@ -20,7 +20,12 @@ EmissiveMaterial::~EmissiveMaterial(void)
 {
 }
 
-extern "C" std::shared_ptr<IMaterial> create(const Color3D &color, const double intensity, const Color3D &emissionColor)
+std::shared_ptr<IMaterial> EmissiveMaterial::clone(void) const
+{
+    return std::make_shared<EmissiveMaterial>(*this);
+}
+
+extern "C" std::shared_ptr<IMaterial> create(Color3D color, double intensity, Color3D emissionColor)
 {
     return std::make_shared<EmissiveMaterial>(color, intensity, emissionColor);
 }

@@ -101,14 +101,22 @@ the renderer does not need to `dynamic_cast` concrete plugin classes.
 
 The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 
-- Multithreaded: the image is split into horizontal bands, one worker per band.
+- Multithreaded: the image is split into horizontal bands and rendered by a
+  persistent worker pool, one worker per band.
+- Hot vector math is header-inlined, and the renderer uses a CPU BVH for bounded
+  primitives; planes and other unbounded primitives are still tested linearly.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
 - Uses the same 15-bounce path tracing, material and light logic as the CUDA
-  renderer.
+  renderer. Path throughput is attenuated by diffuse/metallic surface colour,
+  diffuse bounces use cosine-weighted hemisphere sampling, and direct lighting
+  includes Blinn-Phong specular highlights.
 - Supports `--sfml` and the shared `CameraController` controls.
+- In SFML mode, window events are polled while workers trace a frame. A camera
+  event aborts the current frame and restarts with the new pose, so heavy CPU
+  frames do not freeze the window.
 - Writes binary `P6` PPM through the shared PPM helper.
-- CPU sampling uses a thread-local random generator, so noise patterns can vary
-  between runs.
+- CPU sampling uses the same per-pixel/sample PCG seed as CUDA, so renders are
+  deterministic and the two renderers converge to the same image.
 
 The CPU renderer is the reference implementation for visual behavior and is
 useful for debugging. Use CUDA for high-resolution or high-sample final renders.
@@ -129,18 +137,23 @@ uses the same `SceneSnapshot` data path.
   `-DRAYTRACER_ENABLE_CUDA=OFF`.
 - **Target:** `raytracer_renderer_cuda`, written to
   `plugins/raytracer_renderer_cuda.so`.
-- **Architecture:** currently compiled for `sm_89` (RTX 4070 Laptop / Ada).
-  Change `CUDA_ARCHITECTURES` in `CMakeLists.txt` for other GPUs.
+- **Acceleration:** uploads a device BVH for bounded primitives; planes and other
+  unbounded primitives are tested linearly.
+- **Architecture:** compiled for `89` by default (RTX 4070 Laptop / Ada). Set
+  `-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 - **Runtime:** the plugin links `CUDA::cudart_static`, so it does not require a
   separate CUDA runtime library path at run time.
 - **Availability:** `isAvailable()` returns false with the driver error when
-  `cudaGetDeviceCount()` fails or reports no devices.
+  `cudaGetDeviceCount()` fails or reports no devices, and when the device
+  compute capability is below the architecture selected at build time.
 - **GUI:** the CUDA plugin supports `--sfml` and the shared `CameraController`
   controls (`WASD` movement, `Q`/`E` vertical, arrows or `I`/`J`/`K`/`L` look,
   `+`/`-` zoom, `R` reset, `X`/`C` locks). Rendering uses one-sample batches,
   but the host polls window events continuously while each GPU kernel is in
   flight. Camera movement is recorded during the kernel and the render restarts
   as soon as that sample completes, so heavy scenes do not freeze the window.
+  Progressive texture uploads are capped at roughly 100 updates for large
+  sample counts. Frame readback uses registered host memory when available.
 - **Output:** uses the shared PPM helper and supports stdout, files, and
   unwritable-output errors like the CPU renderer. PPM output is binary `P6`,
   which keeps 8K images around 100 MB instead of several hundred MB of ASCII.
@@ -174,9 +187,8 @@ Infinity Mirror is the most expensive because of its nested metallic
 reflections.
 
 The CUDA kernel uses a seeded PCG sampler. CPU and CUDA renders share the same
-scene, materials, lights, intersections and bounce rules; at equal sample counts
-their averages and large-scale structure match closely, with independent noise
-patterns.
+scene, materials, lights, intersections, bounce rules and per-pixel/sample
+seeds; at equal sample counts their images converge closely.
 
 Tested with CUDA 13.4, GCC 15.2, NVIDIA driver 595.99.02 and an RTX 4070 Laptop
 (`sm_89`).
@@ -185,9 +197,9 @@ Tested with CUDA 13.4, GCC 15.2, NVIDIA driver 595.99.02 and an RTX 4070 Laptop
 
 | Symptom | Resolution |
 | --- | --- |
-| `cannot open shared object file: ./plugins/...` | Run `./raytracer` from the repository root and rebuild the plugins. |
+| `cannot open shared object file: ./plugins/...` | Run from the repository root, install the bundle, or set `RAYTRACER_PLUGIN_DIR` to the plugin directory. |
 | `Renderer 'cuda' is unavailable` | CUDA was not built, the driver is missing, or no device was found. Check `--list-renderers`. |
-| CUDA kernel image error | The plugin is compiled for `sm_89`; change `CUDA_ARCHITECTURES` in `CMakeLists.txt` and rebuild. |
+| CUDA kernel image error | The plugin is compiled for a newer GPU than this machine; reconfigure with `-DRAYTRACER_CUDA_ARCH=<cc>` and rebuild. |
 | SFML window appears unresponsive | The CUDA renderer polls events while the GPU kernel is running. Use `--cli` for 8K; if the problem persists, check the display/SFML installation. |
 | PPM will not open | Output is binary `P6`; use Pillow or ImageMagick. |
 | 8K render is slow | Infinity Mirror is reflection-heavy; lower `FRAMES` or render a simpler scene for quick tests. |

@@ -12,6 +12,7 @@
 #include "Cylinder.hpp"
 #include "Light.hpp"
 #include "Plane.hpp"
+#include "PointLight.hpp"
 #include "Primitive.hpp"
 #include "Scene.hpp"
 #include "Sphere.hpp"
@@ -27,15 +28,15 @@ class Translation : public ITransformation
     Translation(const Vec3D &translation);
     ~Translation();
 
-    void doTransformation(ITransformable &obj) override;
-    void doTransformationScene(ITransformable &obj) override;
-    void doTransformationPrimitive(ITransformable &obj) override;
-    void doTransformationLight(ITransformable &obj) override;
+    void doTransformation(ITransformable &obj) const override;
+    void doTransformationScene(ITransformable &obj) const override;
+    void doTransformationPrimitive(ITransformable &obj) const override;
+    void doTransformationLight(ITransformable &obj) const override;
 
-    void doTranslationSphere(Sphere &sphere);
-    void doTranslationPlane(Plane &plane);
-    void doTranslationCylinder(Cylinder &cylinder);
-    void doTranslationCone(Cone &cone);
+    void doTranslationSphere(Sphere &sphere) const;
+    void doTranslationPlane(Plane &plane) const;
+    void doTranslationCylinder(Cylinder &cylinder) const;
+    void doTranslationCone(Cone &cone) const;
 
   protected:
   private:

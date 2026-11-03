@@ -17,6 +17,7 @@ class MetallicMaterial : public AMaterial
   public:
     MetallicMaterial(const Color3D &color);
     ~MetallicMaterial(void);
+    std::shared_ptr<IMaterial> clone(void) const override;
 };
 } // namespace RayTracer
 
