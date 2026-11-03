@@ -33,6 +33,16 @@ float AMaterial::getEmissionPower(void) const
     return _emissionPower;
 }
 
+void AMaterial::setTexture(const std::shared_ptr<const Texture> &texture)
+{
+    _texture = texture;
+}
+
+std::shared_ptr<const Texture> AMaterial::getTexture(void) const
+{
+    return _texture;
+}
+
 Color3D AMaterial::getEmissionColor(void) const
 {
     return _emissionColor * getEmissionPower();

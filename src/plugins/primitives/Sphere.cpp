@@ -6,6 +6,8 @@
 */
 
 #include <Sphere.hpp>
+#include "Utils.hpp"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 
@@ -85,6 +87,12 @@ bool Sphere::hit(const Ray &ray, HitPayload &payload, size_t i) const
         normal = -normal;
 
     payload.setHitNormal(vec3DNormalize(normal));
+
+    const Vec3D local = (payload.getHitPosition() - getCenter()) / getRadius();
+    const float u = 0.5f + std::atan2(local.getZ(), local.getX()) / (2.0f * static_cast<float>(Utils::PI));
+    const float v = std::acos(std::clamp(local.getY(), -1.0f, 1.0f)) / static_cast<float>(Utils::PI);
+
+    payload.setUV(u, v);
     payload.setHitIndex(i);
     return true;
 }

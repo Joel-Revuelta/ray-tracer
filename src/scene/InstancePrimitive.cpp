@@ -66,6 +66,7 @@ bool InstancePrimitive::hit(const Ray &ray, HitPayload &payload, size_t i) const
     payload.setHitPosition(ray.at(worldDistance));
     payload.setHitNormal(vec3DNormalize(normal));
     payload.setShadingNormal(vec3DNormalize(shadingNormal));
+    payload.setUV(localPayload.getU(), localPayload.getV());
     payload.setHitIndex(static_cast<int>(i));
     return true;
 }

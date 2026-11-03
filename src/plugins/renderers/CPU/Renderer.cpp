@@ -6,6 +6,7 @@
 */
 
 #include "plugins/renderers/CPU/Renderer.hpp"
+#include "render/Texture.hpp"
 #include "Utils.hpp"
 #include "render/Brdf.hpp"
 #include "plugins/renderers/PPM.hpp"
@@ -550,7 +551,7 @@ void Renderer::manageEvent(char evt)
  * @return The direction of the next ray to be traced.
  */
 Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed,
-                                         Color3D &throughput)
+                                         Color3D &throughput, const Color3D &surfaceColor)
 {
     Vec3D rayDirection;
     const auto &material =
@@ -568,8 +569,8 @@ Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payloa
         const Vec3D viewDirection = vec3DNormalize(ray.getOrigin() - payload.getHitPosition());
         Color3D weight;
 
-        if (!sampleMetallic(viewDirection, payload.getShadingNormal(), material->getDiffuseColor(),
-                            material->getRoughness(), seed, rayDirection, weight))
+        if (!sampleMetallic(viewDirection, payload.getShadingNormal(), surfaceColor, material->getRoughness(), seed,
+                            rayDirection, weight))
             return Vec3D(0.0f);
 
         throughput *= weight;
@@ -693,6 +694,10 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             const auto &primitive = primitives[payload.getHitIndex()];
             const auto &material = materials.at(primitive->getMaterialIndex());
             const IMaterial::MaterialType materialType = material->getType();
+            Color3D surfaceColor = material->getDiffuseColor();
+
+            if (const std::shared_ptr<const Texture> texture = material->getTexture())
+                surfaceColor *= texture->sample(payload.getU(), payload.getV());
 
             if (materialType == IMaterial::DIELECTRIC)
             {
@@ -722,7 +727,7 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                 if (vec3DIsNearZero(nextDirection))
                     break;
 
-                throughput *= material->getDiffuseColor();
+                throughput *= surfaceColor;
 
                 if (throughput.lengthSquared() < 1e-6f)
                     break;
@@ -752,7 +757,7 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                 // phongLighting /= brightReduction;
 
                 // Multiply the Phong components by the object's color (accumulate object color)
-                Color3D phongColor = phongLighting * material->getDiffuseColor();
+                Color3D phongColor = phongLighting * surfaceColor;
 
                 // Accumulate the Phong color, attenuated by the path throughput.
                 accumulatedColor += throughput * phongColor;
@@ -767,14 +772,14 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             // paths apply their Fresnel/GGX weight inside the sampler.
             if (materialType == IMaterial::DIFFUSE)
             {
-                throughput *= material->getDiffuseColor();
+                throughput *= surfaceColor;
 
                 if (throughput.lengthSquared() < 1e-6f)
                     break;
             }
 
             // Handle set direction and origin for the next ray
-            const Vec3D nextDirection = computeNextRayDirection(ray, payload, sampler, throughput);
+            const Vec3D nextDirection = computeNextRayDirection(ray, payload, sampler, throughput, surfaceColor);
 
             if (throughput.lengthSquared() < 1e-6f)
                 break;

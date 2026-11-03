@@ -6,6 +6,8 @@
 */
 
 #include "Cylinder.hpp"
+#include "Utils.hpp"
+#include <algorithm>
 #include <cmath>
 
 using namespace RayTracer;
@@ -169,6 +171,15 @@ bool Cylinder::hit(const Ray &ray, HitPayload &payload, size_t i) const
     payload.setHitDistance(bestDistance);
     payload.setHitPosition(ray.at(bestDistance));
     payload.setHitNormal(vec3DNormalize(bestNormal));
+
+    const Vec3D hitPosition = ray.at(bestDistance);
+    const Vec3D relative = hitPosition - _center;
+    const float heightAtHit = vec3DDot(relative, axis);
+    const Vec3D radial = relative - axis * heightAtHit;
+    const float u = 0.5f + std::atan2(radial.getZ(), radial.getX()) / (2.0f * static_cast<float>(Utils::PI));
+    const float v = std::clamp(heightAtHit / static_cast<float>(_height), 0.0f, 1.0f);
+
+    payload.setUV(u, v);
     payload.setHitIndex(i);
     return true;
 }

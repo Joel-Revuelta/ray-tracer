@@ -79,6 +79,7 @@ struct Material
     float specularReflection;
     float ior;
     float roughness;
+    int textureIndex;
 };
 
 struct Light
@@ -144,6 +145,12 @@ struct Triangle
     Vec3 n0;
     Vec3 n1;
     Vec3 n2;
+    float tu0;
+    float tv0;
+    float tu1;
+    float tv1;
+    float tu2;
+    float tv2;
 };
 
 struct MeshRange
@@ -154,6 +161,13 @@ struct MeshRange
     int nodeCount;
     int indexStart;
     int indexCount;
+};
+
+struct TextureRange
+{
+    int start;
+    int width;
+    int height;
 };
 
 struct SceneView
@@ -178,6 +192,10 @@ struct SceneView
     int meshIndexCount;
     const MeshRange *meshRanges;
     int meshCount;
+    const Vec3 *texels;
+    int texelCount;
+    const TextureRange *textures;
+    int textureCount;
     Camera camera;
     Background background;
     PostProcess postProcess;

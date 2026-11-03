@@ -6,6 +6,8 @@
 */
 
 #include "Cone.hpp"
+#include "Utils.hpp"
+#include <algorithm>
 #include <cmath>
 
 using namespace RayTracer;
@@ -148,6 +150,14 @@ bool Cone::intersect(const Ray &ray, HitPayload &payload, size_t i, bool baseAbo
     payload.setHitDistance(bestDistance);
     payload.setHitPosition(ray.at(bestDistance));
     payload.setHitNormal(vec3DNormalize(bestNormal));
+
+    const Vec3D hitPosition = ray.at(bestDistance);
+    const float relativeY = hitPosition.getY() - _center.getY();
+    const float u = 0.5f + std::atan2(hitPosition.getZ() - _center.getZ(), hitPosition.getX() - _center.getX()) /
+                                (2.0f * static_cast<float>(Utils::PI));
+    const float v = std::clamp((baseAbove ? relativeY : -relativeY) / static_cast<float>(_height), 0.0f, 1.0f);
+
+    payload.setUV(u, v);
     payload.setHitIndex(i);
     return true;
 }

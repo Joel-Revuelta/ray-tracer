@@ -45,6 +45,12 @@ void HitPayload::setHitPosition(const Point3D &hitPosition)
     _hitPosition = hitPosition;
 }
 
+void HitPayload::setUV(const float &u, const float &v)
+{
+    _u = u;
+    _v = v;
+}
+
 int HitPayload::getHitIndex(void) const
 {
     return _objectIndex;
@@ -68,4 +74,14 @@ float HitPayload::getHitDistance(void) const
 Point3D HitPayload::getHitPosition(void) const
 {
     return _hitPosition;
+}
+
+float HitPayload::getU(void) const
+{
+    return _u;
+}
+
+float HitPayload::getV(void) const
+{
+    return _v;
 }

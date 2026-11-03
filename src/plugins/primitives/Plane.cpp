@@ -50,10 +50,13 @@ bool Plane::hit(const Ray &ray, HitPayload &payload, size_t i) const
 
     if (distance >= 0.0f && distance < payload.getHitDistance())
     {
+        const Vec3D hitPosition = ray.at(distance);
+
         payload.setHitDistance(distance);
-        payload.setHitPosition(ray.at(distance));
+        payload.setHitPosition(hitPosition);
         Vec3D adjustedNormal = denominator > 0 ? -getNormal() : getNormal();
         payload.setHitNormal(adjustedNormal);
+        payload.setUV(hitPosition.getX(), hitPosition.getZ());
         payload.setHitIndex(i);
         return true;
     }

@@ -25,6 +25,7 @@ namespace RayTracer
 {
 
 class MeshAsset;
+class Texture;
 
 class Parser
 {
@@ -64,14 +65,16 @@ class Parser
     std::shared_ptr<Camera> getParsedCamera(void) const;
 
   private:
-    std::string resolveMeshPath(const std::string &path) const;
+    std::string resolveAssetPath(const std::string &path) const;
     std::shared_ptr<const MeshAsset> loadMesh(const std::string &path);
+    std::shared_ptr<const Texture> loadTexture(const std::string &path);
 
     Factory _factory;
     std::shared_ptr<Camera> _camera;
     libconfig::Config _config;
     std::string _sceneDirectory = ".";
     std::unordered_map<std::string, std::shared_ptr<const MeshAsset>> _meshCache;
+    std::unordered_map<std::string, std::shared_ptr<const Texture>> _textureCache;
     int _sceneNestingDepth = 0;
 };
 

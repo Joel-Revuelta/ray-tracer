@@ -22,6 +22,7 @@ namespace RayTracer
 
 class Camera;
 class Scene;
+class Texture;
 
 struct MaterialData
 {
@@ -33,6 +34,7 @@ struct MaterialData
     float specularReflection = 0.0f;
     float ior = 1.5f;
     float roughness = 0.0f;
+    int textureIndex = -1;
 };
 
 struct CameraData
@@ -62,6 +64,7 @@ struct SceneSnapshot
     std::vector<MaterialData> materials;
     std::vector<LightData> lights;
     std::vector<std::shared_ptr<const MeshAsset>> meshes;
+    std::vector<std::shared_ptr<const Texture>> textures;
     Background background;
 };
 

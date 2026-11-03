@@ -66,6 +66,7 @@ letterboxes it to preserve aspect ratio.
 | `meshes.cfg` | Instanced, smooth-shaded OBJ icospheres and a torus with shared geometry |
 | `depth_of_field.cfg` | Five spheres at increasing depths with a focused middle plane |
 | `soft_shadows.cfg` | Two sphere area lights over a floor and three spheres |
+| `textures.cfg` | Checker PPM textures on a plane, primitives and a mesh |
 
 ## Material showcase renders
 

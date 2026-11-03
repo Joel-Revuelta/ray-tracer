@@ -27,6 +27,12 @@ struct Triangle
     Vec3D n0;
     Vec3D n1;
     Vec3D n2;
+    float tu0 = 0.0f;
+    float tv0 = 0.0f;
+    float tu1 = 0.0f;
+    float tv1 = 0.0f;
+    float tu2 = 0.0f;
+    float tv2 = 0.0f;
 };
 
 /**

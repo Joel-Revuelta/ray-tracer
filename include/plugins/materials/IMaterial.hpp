@@ -14,6 +14,8 @@
 namespace RayTracer
 {
 
+class Texture;
+
 class IMaterial
 {
   public:
@@ -48,6 +50,18 @@ class IMaterial
     virtual float getRoughness(void) const
     {
         return 0.0f;
+    }
+
+    // Optional albedo texture, sampled at the hit UV. Materials without a
+    // texture return nullptr and use their diffuse colour directly.
+    virtual void setTexture(const std::shared_ptr<const Texture> &texture)
+    {
+        (void)texture;
+    }
+
+    virtual std::shared_ptr<const Texture> getTexture(void) const
+    {
+        return nullptr;
     }
 
     // Returns an independent copy for scene composition. Materials that do not

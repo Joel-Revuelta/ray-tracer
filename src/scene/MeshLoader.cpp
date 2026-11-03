@@ -22,11 +22,19 @@ namespace
 constexpr std::size_t MAX_TRIANGLES = 4000000;
 constexpr float DEGENERATE_EPSILON = 1e-12f;
 
+struct UV
+{
+    float u = 0.0f;
+    float v = 0.0f;
+};
+
 struct FaceVertex
 {
     std::size_t position = 0;
     std::size_t normal = 0;
+    std::size_t texture = 0;
     bool hasNormal = false;
+    bool hasTexture = false;
 };
 
 [[noreturn]] void fail(const std::string &path, std::size_t line, const std::string &message)
@@ -55,8 +63,8 @@ std::size_t resolveIndex(const std::string &token, std::size_t count, const std:
     return static_cast<std::size_t>(resolved);
 }
 
-FaceVertex parseFaceVertex(const std::string &token, std::size_t vertexCount, std::size_t normalCount,
-                           const std::string &path, std::size_t line)
+FaceVertex parseFaceVertex(const std::string &token, std::size_t vertexCount, std::size_t textureCount,
+                           std::size_t normalCount, const std::string &path, std::size_t line)
 {
     const std::size_t firstSlash = token.find('/');
     const std::string positionToken = firstSlash == std::string::npos ? token : token.substr(0, firstSlash);
@@ -71,12 +79,28 @@ FaceVertex parseFaceVertex(const std::string &token, std::size_t vertexCount, st
     const std::size_t secondSlash = token.find('/', firstSlash + 1);
 
     if (secondSlash == std::string::npos)
+    {
+        const std::string textureToken = token.substr(firstSlash + 1);
+
+        if (!textureToken.empty())
+        {
+            vertex.texture = resolveIndex(textureToken, textureCount, "texture", path, line);
+            vertex.hasTexture = true;
+        }
         return vertex;
+    }
 
     if (token.find('/', secondSlash + 1) != std::string::npos)
         fail(path, line, "invalid face token '" + token + "'");
 
+    const std::string textureToken = token.substr(firstSlash + 1, secondSlash - firstSlash - 1);
     const std::string normalToken = token.substr(secondSlash + 1);
+
+    if (!textureToken.empty())
+    {
+        vertex.texture = resolveIndex(textureToken, textureCount, "texture", path, line);
+        vertex.hasTexture = true;
+    }
 
     if (normalToken.empty())
         fail(path, line, "empty normal index in face token '" + token + "'");
@@ -87,14 +111,15 @@ FaceVertex parseFaceVertex(const std::string &token, std::size_t vertexCount, st
 }
 
 bool addTriangle(MeshAsset &asset, const Vec3D &v0, const Vec3D &v1, const Vec3D &v2, const Vec3D &n0,
-                 const Vec3D &n1, const Vec3D &n2)
+                 const Vec3D &n1, const Vec3D &n2, const UV &uv0, const UV &uv1, const UV &uv2)
 {
     const Vec3D faceNormal = vec3DCross(v1 - v0, v2 - v0);
 
     if (!std::isfinite(faceNormal.lengthSquared()) || faceNormal.lengthSquared() < DEGENERATE_EPSILON)
         return false;
 
-    asset.triangles.push_back(Triangle{v0, v1, v2, n0, n1, n2});
+    asset.triangles.push_back(
+        Triangle{v0, v1, v2, n0, n1, n2, uv0.u, uv0.v, uv1.u, uv1.v, uv2.u, uv2.v});
     return true;
 }
 } // namespace
@@ -108,6 +133,7 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
 
     auto asset = std::make_shared<MeshAsset>();
     std::vector<Vec3D> vertices;
+    std::vector<UV> textureCoords;
     std::vector<Vec3D> normals;
     std::vector<FaceVertex> face;
     std::string line;
@@ -144,6 +170,18 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
             continue;
         }
 
+        if (tag == "vt")
+        {
+            double u = 0.0;
+            double v = 0.0;
+
+            if (!(stream >> u >> v) || !std::isfinite(u) || !std::isfinite(v))
+                fail(path, lineNumber, "invalid texture coordinate");
+
+            textureCoords.push_back(UV{static_cast<float>(u), static_cast<float>(v)});
+            continue;
+        }
+
         if (tag == "vn")
         {
             double x = 0.0;
@@ -170,7 +208,8 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
         std::string token;
 
         while (stream >> token)
-            face.push_back(parseFaceVertex(token, vertices.size(), normals.size(), path, lineNumber));
+            face.push_back(
+                parseFaceVertex(token, vertices.size(), textureCoords.size(), normals.size(), path, lineNumber));
 
         if (face.size() < 3)
             fail(path, lineNumber, "face must have at least three vertices");
@@ -191,8 +230,11 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
             const Vec3D n0 = a.hasNormal ? normals[a.normal] : faceNormal;
             const Vec3D n1 = b.hasNormal ? normals[b.normal] : faceNormal;
             const Vec3D n2 = c.hasNormal ? normals[c.normal] : faceNormal;
+            const UV uv0 = a.hasTexture ? textureCoords[a.texture] : UV{};
+            const UV uv1 = b.hasTexture ? textureCoords[b.texture] : UV{};
+            const UV uv2 = c.hasTexture ? textureCoords[c.texture] : UV{};
 
-            addTriangle(*asset, v0, v1, v2, n0, n1, n2);
+            addTriangle(*asset, v0, v1, v2, n0, n1, n2, uv0, uv1, uv2);
         }
     }
 

@@ -8,6 +8,7 @@
 #include "plugins/renderers/SceneSnapshot.hpp"
 #include "Camera.hpp"
 #include "Scene.hpp"
+#include "render/Texture.hpp"
 #include <cstdint>
 #include <unordered_map>
 
@@ -31,6 +32,8 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
     snapshot.camera.focalDistance = static_cast<float>(camera.getFocalDistance());
     snapshot.background = scene.getBackground();
 
+    std::unordered_map<const Texture *, int> textureIndices;
+
     for (const auto &material : scene.getMaterials())
     {
         MaterialData data;
@@ -43,6 +46,20 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
         data.specularReflection = material->getSpecularReflectionCoefficient();
         data.ior = material->getIndexOfRefraction();
         data.roughness = material->getRoughness();
+
+        const std::shared_ptr<const Texture> texture = material->getTexture();
+
+        if (texture)
+        {
+            const auto inserted =
+                textureIndices.emplace(texture.get(), static_cast<int>(snapshot.textures.size()));
+
+            if (inserted.second)
+                snapshot.textures.push_back(texture);
+
+            data.textureIndex = inserted.first->second;
+        }
+
         snapshot.materials.push_back(data);
     }
 

@@ -104,7 +104,8 @@ class Renderer
     Color4D getPixelColor(uint32_t seed, int x, int y);
     Color3D computeLightContribution(const HitPayload &payload, const IMaterial &material,
                                      const LightSample &sample, bool ambient, const Ray &ray);
-    Vec3D computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed, Color3D &throughput);
+    Vec3D computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed, Color3D &throughput,
+                                  const Color3D &surfaceColor);
     HitPayload shotRay(const Ray &ray);
     HitPayload missHit(void);
     void manageEvent(char evt);

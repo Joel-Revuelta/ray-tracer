@@ -28,12 +28,15 @@ class HitPayload
     void setShadingNormal(const Vec3D &shadingNormal);
     void setHitDistance(const float &_sceneDistance);
     void setHitPosition(const Point3D &_scenePosition);
+    void setUV(const float &u, const float &v);
 
     int getHitIndex(void) const;
     Vec3D getHitNormal(void) const;
     Vec3D getShadingNormal(void) const;
     float getHitDistance(void) const;
     Point3D getHitPosition(void) const;
+    float getU(void) const;
+    float getV(void) const;
 
   private:
     // The index of the object that was hit. Used to retrieve the material of the object.
@@ -52,6 +55,10 @@ class HitPayload
 
     // The position of the hit point.
     Point3D _hitPosition;
+
+    // Local surface texture coordinates.
+    float _u = 0.0f;
+    float _v = 0.0f;
 };
 
 inline std::ostream &operator<<(std::ostream &os, const RayTracer::HitPayload &hitPayload)

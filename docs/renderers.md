@@ -111,6 +111,9 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 - OBJ vertex normals are interpolated with barycentric coordinates for smooth
   shading; geometric normals remain responsible for ray offsets and
   dielectrics.
+- Material albedo textures are sampled bilinearly with repeat wrapping at the
+  hit UV. UVs come from analytic primitive mappings or interpolated OBJ `vt`
+  data.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
 - Uses the same 15-bounce path tracing, material and light logic as the CUDA
   renderer. Path throughput is attenuated by diffuse/metallic surface colour,
@@ -167,6 +170,9 @@ uses the same `SceneSnapshot` data path.
 - **Area lights:** sphere lights consume two random values per shading query,
   sample a point on the sphere, and trace a shadow ray. The CPU and CUDA loops
   must use the same light order and sampling order for parity.
+- **Textures:** unique PPM textures are uploaded once as global `Vec3` texels
+  with a `TextureRange` per texture. Materials store a texture index and the
+  device samples bilinearly with repeat wrapping.
 - **Architecture:** compiled for `89` by default (RTX 4070 Laptop / Ada). Set
   `-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 - **Runtime:** the plugin links `CUDA::cudart_static`, so it does not require a

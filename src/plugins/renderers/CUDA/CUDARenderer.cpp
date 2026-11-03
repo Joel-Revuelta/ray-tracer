@@ -11,6 +11,7 @@
 #include "plugins/renderers/PPM.hpp"
 #include "plugins/renderers/SceneSnapshot.hpp"
 #include "render/PostProcess.hpp"
+#include "render/Texture.hpp"
 #include "scene/BVHBuilder.hpp"
 #include "scene/Transform.hpp"
 #include <algorithm>
@@ -175,6 +176,7 @@ std::vector<Cuda::Material> convertMaterials(const SceneSnapshot &snapshot)
         converted.specularReflection = material.specularReflection;
         converted.ior = material.ior;
         converted.roughness = material.roughness;
+        converted.textureIndex = material.textureIndex;
         materials.push_back(converted);
     }
     return materials;
@@ -218,6 +220,12 @@ struct HostMeshes
     std::vector<Cuda::MeshRange> ranges;
 };
 
+struct HostTextures
+{
+    std::vector<Cuda::Vec3> texels;
+    std::vector<Cuda::TextureRange> ranges;
+};
+
 HostBVH buildBVH(const SceneSnapshot &snapshot)
 {
     const BVHBuildResult result = RayTracer::buildBVH(snapshot.primitives);
@@ -259,6 +267,31 @@ int checkedCount(std::size_t count, const char *name)
     return static_cast<int>(count);
 }
 
+HostTextures convertTextures(const SceneSnapshot &snapshot)
+{
+    HostTextures textures;
+    textures.ranges.reserve(snapshot.textures.size());
+
+    for (const std::shared_ptr<const Texture> &texture : snapshot.textures)
+    {
+        Cuda::TextureRange range{};
+
+        range.start = checkedCount(textures.texels.size(), "texture texels");
+        range.width = texture ? texture->getWidth() : 0;
+        range.height = texture ? texture->getHeight() : 0;
+
+        if (texture)
+        {
+            for (const Color3D &color : texture->getPixels())
+                textures.texels.push_back(toDevice(color));
+        }
+
+        textures.ranges.push_back(range);
+    }
+
+    return textures;
+}
+
 HostMeshes convertMeshes(const SceneSnapshot &snapshot)
 {
     HostMeshes meshes;
@@ -279,9 +312,10 @@ HostMeshes convertMeshes(const SceneSnapshot &snapshot)
             range.indexCount = checkedCount(asset->bvh.indices.size(), "mesh BVH indices");
 
             for (const Triangle &triangle : asset->triangles)
-                meshes.triangles.push_back(Cuda::Triangle{toDevice(triangle.v0), toDevice(triangle.v1),
-                                                          toDevice(triangle.v2), toDevice(triangle.n0),
-                                                          toDevice(triangle.n1), toDevice(triangle.n2)});
+                meshes.triangles.push_back(
+                    Cuda::Triangle{toDevice(triangle.v0), toDevice(triangle.v1), toDevice(triangle.v2),
+                                   toDevice(triangle.n0), toDevice(triangle.n1), toDevice(triangle.n2), triangle.tu0,
+                                   triangle.tv0, triangle.tu1, triangle.tv1, triangle.tu2, triangle.tv2});
 
             for (const BVHNode &source : asset->bvh.nodes)
             {
@@ -321,12 +355,13 @@ class CudaRenderSession
         : _width(snapshot.camera.imageWidth), _height(snapshot.camera.imageHeight),
           _primitives(convertPrimitives(snapshot)), _materials(convertMaterials(snapshot)),
           _lights(convertLights(snapshot)), _bvh(buildBVH(snapshot)), _meshes(convertMeshes(snapshot)),
-          _devicePrimitives(_primitives.size()), _deviceMaterials(_materials.size()),
-          _deviceLights(_lights.size()), _deviceNodes(_bvh.nodes.size()), _deviceIndices(_bvh.indices.size()),
-          _deviceUnbounded(_bvh.unbounded.size()), _deviceMeshTriangles(_meshes.triangles.size()),
-          _deviceMeshNodes(_meshes.nodes.size()), _deviceMeshIndices(_meshes.indices.size()),
-          _deviceMeshRanges(_meshes.ranges.size()), _deviceAccumulation(pixelCount(_width, _height)),
-          _deviceOutput(pixelCount(_width, _height) * 4u)
+          _textures(convertTextures(snapshot)), _devicePrimitives(_primitives.size()),
+          _deviceMaterials(_materials.size()), _deviceLights(_lights.size()), _deviceNodes(_bvh.nodes.size()),
+          _deviceIndices(_bvh.indices.size()), _deviceUnbounded(_bvh.unbounded.size()),
+          _deviceMeshTriangles(_meshes.triangles.size()), _deviceMeshNodes(_meshes.nodes.size()),
+          _deviceMeshIndices(_meshes.indices.size()), _deviceMeshRanges(_meshes.ranges.size()),
+          _deviceTexels(_textures.texels.size()), _deviceTextureRanges(_textures.ranges.size()),
+          _deviceAccumulation(pixelCount(_width, _height)), _deviceOutput(pixelCount(_width, _height) * 4u)
     {
         _devicePrimitives.upload(_primitives);
         _deviceMaterials.upload(_materials);
@@ -338,6 +373,8 @@ class CudaRenderSession
         _deviceMeshNodes.upload(_meshes.nodes);
         _deviceMeshIndices.upload(_meshes.indices);
         _deviceMeshRanges.upload(_meshes.ranges);
+        _deviceTexels.upload(_textures.texels);
+        _deviceTextureRanges.upload(_textures.ranges);
 
         _view.primitives = _devicePrimitives.get();
         _view.primitiveCount = checkedCount(_primitives.size(), "primitives");
@@ -359,6 +396,10 @@ class CudaRenderSession
         _view.meshIndexCount = checkedCount(_meshes.indices.size(), "mesh BVH indices");
         _view.meshRanges = _deviceMeshRanges.get();
         _view.meshCount = checkedCount(_meshes.ranges.size(), "meshes");
+        _view.texels = _deviceTexels.get();
+        _view.texelCount = checkedCount(_textures.texels.size(), "texture texels");
+        _view.textures = _deviceTextureRanges.get();
+        _view.textureCount = checkedCount(_textures.ranges.size(), "textures");
         _view.camera = toDevice(snapshot.camera);
         _view.background = toDeviceBackground(snapshot.background);
         _view.postProcess = toDevice(postProcess);
@@ -528,6 +569,7 @@ class CudaRenderSession
     std::vector<Cuda::Light> _lights;
     HostBVH _bvh;
     HostMeshes _meshes;
+    HostTextures _textures;
     DeviceBuffer<Cuda::Primitive> _devicePrimitives;
     DeviceBuffer<Cuda::Material> _deviceMaterials;
     DeviceBuffer<Cuda::Light> _deviceLights;
@@ -538,6 +580,8 @@ class CudaRenderSession
     DeviceBuffer<Cuda::BVHNode> _deviceMeshNodes;
     DeviceBuffer<int> _deviceMeshIndices;
     DeviceBuffer<Cuda::MeshRange> _deviceMeshRanges;
+    DeviceBuffer<Cuda::Vec3> _deviceTexels;
+    DeviceBuffer<Cuda::TextureRange> _deviceTextureRanges;
     DeviceBuffer<float4> _deviceAccumulation;
     DeviceBuffer<unsigned char> _deviceOutput;
     std::vector<uint32_t> _hostPixels;

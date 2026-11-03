@@ -29,6 +29,8 @@ class AMaterial : public IMaterial
     float getDiffuseReflectionCoefficient(void) const override;
     float getSpecularReflectionCoefficient(void) const override;
     float getEmissionPower(void) const override;
+    void setTexture(const std::shared_ptr<const Texture> &texture) override;
+    std::shared_ptr<const Texture> getTexture(void) const override;
 
     void setType(const MaterialType &type) override;
     void setDiffuseColor(const Color3D &diffuseColor) override;
@@ -59,6 +61,8 @@ class AMaterial : public IMaterial
     float _ambientReflectionCoefficient;
     float _diffuseReflectionCoefficient;
     float _specularReflectionCoefficient;
+
+    std::shared_ptr<const Texture> _texture;
 };
 
 } // namespace RayTracer

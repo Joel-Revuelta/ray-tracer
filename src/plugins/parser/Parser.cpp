@@ -8,6 +8,7 @@
 #include "Parser.hpp"
 #include "InstancePrimitive.hpp"
 #include "MeshLoader.hpp"
+#include "render/Texture.hpp"
 #include "Transform.hpp"
 #include <filesystem>
 #include <iostream>
@@ -242,6 +243,14 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
         {
             throw std::runtime_error("Unknown material type: " + type);
         }
+
+        if (setting.exists("texture"))
+        {
+            const std::string texturePath = resolveAssetPath(setting.lookup("texture"));
+
+            material->setTexture(loadTexture(texturePath));
+        }
+
         sceneBuilder.addMaterial(material);
     }
 }
@@ -551,7 +560,7 @@ std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
     return applyTransform(cone, coneSetting);
 }
 
-std::string Parser::resolveMeshPath(const std::string &path) const
+std::string Parser::resolveAssetPath(const std::string &path) const
 {
     const std::filesystem::path candidate(path);
 
@@ -559,6 +568,19 @@ std::string Parser::resolveMeshPath(const std::string &path) const
         return candidate.lexically_normal().string();
 
     return (std::filesystem::path(_sceneDirectory) / candidate).lexically_normal().string();
+}
+
+std::shared_ptr<const Texture> Parser::loadTexture(const std::string &path)
+{
+    const auto cached = _textureCache.find(path);
+
+    if (cached != _textureCache.end())
+        return cached->second;
+
+    std::shared_ptr<const Texture> texture = loadPPMTexture(path);
+
+    _textureCache.emplace(path, texture);
+    return texture;
 }
 
 std::shared_ptr<const MeshAsset> Parser::loadMesh(const std::string &path)
@@ -583,7 +605,7 @@ std::shared_ptr<const MeshAsset> Parser::loadMesh(const std::string &path)
  */
 std::shared_ptr<IPrimitive> Parser::parseMesh(libconfig::Setting &meshSetting)
 {
-    const std::string path = resolveMeshPath(meshSetting.lookup("path"));
+    const std::string path = resolveAssetPath(meshSetting.lookup("path"));
     const std::shared_ptr<const MeshAsset> asset = loadMesh(path);
 
     std::shared_ptr<IPrimitive> mesh =

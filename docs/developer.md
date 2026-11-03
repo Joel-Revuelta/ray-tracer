@@ -193,15 +193,40 @@ and indices into global buffers once, offsets the node/index references per
 mesh, and stores a `MeshRange` per asset. `Cuda::Primitive::meshIndex` selects
 the range; device traversal is scene BVH → mesh BVH → Möller–Trumbore.
 
-`Triangle` stores three positions and three vertex normals. The OBJ loader
-fills them from `vn` data and falls back to the face normal when a face has no
-normal. `HitPayload` carries both a geometric and a shading normal:
-`setHitNormal()` also seeds the shading normal, and smooth meshes override it
-with `setShadingNormal()`. `InstancePrimitive` transforms both normals with the
-inverse-transpose. Renderers use the shading normal for diffuse/metallic
-sampling and lighting, and the geometric normal for ray offsets, termination
-checks and dielectric reflection/refraction. CUDA propagates both normals
-through the intersection chain (`bestNormal`, `bestShadingNormal`).
+`Triangle` stores three positions, three vertex normals and three UV pairs. The
+OBJ loader fills them from `vn`/`vt` data and falls back to the face normal and
+zero UVs when missing. `HitPayload` carries both a geometric and a shading
+normal: `setHitNormal()` also seeds the shading normal, and smooth meshes
+override it with `setShadingNormal()`. `InstancePrimitive` transforms both
+normals with the inverse-transpose. Renderers use the shading normal for
+diffuse/metallic sampling and lighting, and the geometric normal for ray
+offsets, termination checks and dielectric reflection/refraction. CUDA
+propagates both normals through the intersection chain (`bestNormal`,
+`bestShadingNormal`).
+
+### Textures and UVs
+
+`include/render/Texture.hpp` provides an 8-bit RGB `Texture` with bilinear,
+repeat-wrapped sampling and a `P6`/`P3` PPM loader. The parser caches textures
+by resolved path and attaches them to materials through
+`IMaterial::setTexture()`; `AMaterial` stores the shared pointer.
+
+Primitives set local UVs in `HitPayload`:
+
+- spheres use longitude/latitude,
+- planes use local X/Z,
+- cylinders use angle/normalized height,
+- cones use angle/normalized apex-to-base height,
+- meshes interpolate OBJ `vt` values with the triangle barycentrics.
+
+`InstancePrimitive` leaves UVs unchanged because they are already local.
+
+Both renderers compute one `surfaceColor = diffuseColor * texture.sample(u, v)`
+per hit and use it for direct lighting, metallic sampling and diffuse
+throughput. A missing texture keeps the old constant-colour path. For CUDA,
+`SceneSnapshot` deduplicates textures and `CudaRenderSession` uploads a compact
+global `Vec3` texel buffer plus one `TextureRange` per texture; `Cuda::Material`
+stores an index and the device samples with the same bilinear repeat mapping.
 
 ### Renderer interface
 
@@ -466,6 +491,14 @@ Soft-shadow check:
 ./raytracer --path scenes/soft_shadows.cfg --cli --renderer cpu \
   --width 320 --height 180 --frames 32 --output /tmp/soft.ppm
 bash tests/deterministic_soft_shadow.sh ./raytracer . build
+```
+
+Texture check:
+
+```bash
+./raytracer --path scenes/textures.cfg --cli --renderer cpu \
+  --width 320 --height 180 --frames 16 --output /tmp/textures.ppm
+bash tests/deterministic_texture.sh ./raytracer . build
 ```
 
 See [performance.md](performance.md) for the benchmark scripts and reference

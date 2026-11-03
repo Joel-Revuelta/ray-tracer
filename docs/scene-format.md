@@ -173,6 +173,42 @@ name = {
 `color` tints the transmitted path. Dielectrics use Fresnel reflection,
 refraction, and total internal reflection instead of diffuse lighting.
 
+### Textures
+
+Any material can reference an albedo texture:
+
+```libconfig
+name = {
+    type = "diffuse";
+    ambientReflection = 0.25;
+    diffuseReflection = 0.90;
+    color = { r = 1.0; g = 1.0; b = 1.0; };
+    texture = "textures/checker.ppm";
+};
+```
+
+- Paths resolve relative to the scene file, like meshes.
+- Supported format: binary `P6` or ASCII `P3` PPM. `P6` files must use an
+  8-bit maximum value.
+- Sampling is bilinear with repeat wrapping.
+- The sampled texel multiplies the material's `color`; a white tint leaves the
+  texture unchanged.
+- Textures currently affect albedo only. Emission, roughness and normal maps
+  are not supported.
+
+UV conventions:
+
+| Primitive | `u` | `v` |
+| --- | --- | --- |
+| Sphere | longitude, wrapping | `0` at +Y, `1` at -Y |
+| Plane | local X | local Z |
+| Cylinder | angle around the axis | normalized height |
+| Cone | angle around the Y axis | normalized apex-to-base height |
+| Mesh | OBJ `vt` values, interpolated per triangle |
+
+`scenes/textures.cfg` demonstrates a checker texture on a plane, sphere,
+cylinder, cone and mesh.
+
 ## Primitives
 
 All primitives require a `material` index.
@@ -490,6 +526,7 @@ The parser rejects:
 - transform scale components equal to zero or non-invertible transforms,
 - unreadable or malformed OBJ files, out-of-range mesh position/normal indices,
   zero-length normals, or empty meshes,
+- unreadable or malformed PPM textures,
 - non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,
 - a negative camera lens radius or a non-positive focus distance,
