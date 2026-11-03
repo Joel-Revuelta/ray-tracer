@@ -12,6 +12,7 @@
 #include "HitPayload.hpp"
 #include "Point3D.hpp"
 #include "Transformable.hpp"
+#include "plugins/renderers/LightData.hpp"
 
 namespace RayTracer
 {
@@ -26,6 +27,13 @@ class ILight : public ITransformable
     virtual void doTransformation(const ITransformation &t) = 0;
     virtual Color3D calculateLighting(const HitPayload &payload) const = 0;
     virtual bool isPointInShadow(const HitPayload &payload, const Scene &scene) const = 0;
+
+    // Fills a renderer-neutral description of the light.
+    virtual bool getData(LightData &data) const
+    {
+        (void)data;
+        return false;
+    }
 };
 
 } // namespace RayTracer

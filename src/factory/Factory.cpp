@@ -25,7 +25,9 @@ Factory::Factory(void)
             {"FlatColorMaterial", "raytracer_material_flat.so"},
             {"CustomMaterial", "raytracer_material_custom.so"},
             {"DiffuseMaterial", "raytracer_material_diffuse.so"},
-            {"MetallicMaterial", "raytracer_material_metallic.so"}})
+            {"MetallicMaterial", "raytracer_material_metallic.so"},
+            {"RendererCPU", "raytracer_renderer_cpu.so"},
+            {"RendererCUDA", "raytracer_renderer_cuda.so"}})
 {
 }
 

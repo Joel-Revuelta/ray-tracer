@@ -11,7 +11,6 @@
 #include "GUI.hpp"
 #include "IMaterial.hpp"
 #include "Point3D.hpp"
-#include "Renderer.hpp"
 #include "SceneBuilder.hpp"
 #include "Vec3D.hpp"
 

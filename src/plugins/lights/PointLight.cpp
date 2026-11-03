@@ -38,6 +38,18 @@ void PointLight::doTransformation(const ITransformation &t)
     return;
 }
 
+bool PointLight::getData(LightData &data) const
+{
+    data.type = LightType::POINT;
+    data.position = _position;
+    data.color = _color;
+    data.intensity = _intensity;
+    data.attenuationConstant = _attenuationConstant;
+    data.attenuationLinear = _attenuationLinear;
+    data.attenuationQuadratic = _attenuationQuadratic;
+    return true;
+}
+
 Color3D PointLight::calculateLighting(const HitPayload &payload) const
 {
     // Compute light direction and distance

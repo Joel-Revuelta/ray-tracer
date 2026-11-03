@@ -32,6 +32,15 @@ void DirectionalLight::doTransformation(const ITransformation &t)
     return;
 }
 
+bool DirectionalLight::getData(LightData &data) const
+{
+    data.type = LightType::DIRECTIONAL;
+    data.direction = _direction;
+    data.color = _color;
+    data.intensity = _intensity;
+    return true;
+}
+
 /**
  * Calculates the lighting contribution from the directional light source.
  *

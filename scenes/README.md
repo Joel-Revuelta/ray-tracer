@@ -23,6 +23,8 @@ Useful options:
 - `--output out.ppm` — write the rendered image as a PPM.
 - `--width/--height` — render resolution, SFML window size and PPM size
   (default 960x540).
+- `--renderer cpu|cuda` — choose the renderer plugin (default `cpu`).
+- `--list-renderers` — list the available renderer plugins and their status.
 - `--help` — print usage and exit.
 
 While the window is open: `WASD`/`QE` move the camera, `R` resets it,
@@ -46,15 +48,34 @@ Resizing the window stretches the rendered image to the new size.
 
 `neon_district`, `crystal_garden`, `chrome_singularity` and `solar_bloom` are
 composed for 16:9. `scenes/render_hd.sh` renders them at `1920x1080` with 140
-frames by default and writes the PPM files to `screenshots/hd/`:
+frames by default. CPU images go to `screenshots/hd/`; non-CPU renderers go to
+`screenshots/hd-<renderer>/` unless `OUT_DIR` is set explicitly.
 
 ```bash
 ./scenes/render_hd.sh
 FRAMES=240 ./scenes/render_hd.sh solar_bloom
+RENDERER=cuda FRAMES=240 ./scenes/render_hd.sh solar_bloom
 ```
 
-Set `WIDTH`, `HEIGHT`, `FRAMES` or `OUT_DIR` in the environment to override
-the defaults.
+Set `WIDTH`, `HEIGHT`, `FRAMES`, `RENDERER` or `OUT_DIR` in the environment to
+override the defaults.
+
+## Renderers
+
+Rendering is provided by plugins. The default `cpu` renderer is the
+multithreaded CPU path tracer. `cuda` is the GPU renderer; it is available when
+the project is built with CUDA support. CUDA renders the same scene, lighting
+and camera controls as the CPU renderer and is much faster.
+
+```bash
+./raytracer --path scenes/showcase.cfg --cli --renderer cpu
+./raytracer --path scenes/showcase.cfg --cli --renderer cuda
+./raytracer --list-renderers
+```
+
+The CUDA versions of the four hero scenes are in `screenshots/hd-cuda/`
+(rendered with 1000 frames); the CPU versions remain in `screenshots/hd/`.
+CUDA is fast enough that `FRAMES=1000` is practical for very clean 1080p stills.
 
 ## Scene format
 

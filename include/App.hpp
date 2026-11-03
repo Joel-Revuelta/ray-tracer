@@ -10,8 +10,9 @@
 
 #include "Factory.hpp"
 #include "Parser.hpp"
-#include "Renderer.hpp"
 #include <getopt.h>
+#include <memory>
+#include <string>
 
 enum Interface
 {
@@ -32,9 +33,9 @@ class App
 
   private:
     std::unique_ptr<Parser> _parser;
-    std::unique_ptr<Renderer> _renderer;
     std::string _filepath;
     std::string _output;
+    std::string _rendererName;
     Interface _interface;
     int _width;
     int _height;

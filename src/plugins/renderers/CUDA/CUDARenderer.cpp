@@ -1,0 +1,436 @@
+/*
+** EPITECH PROJECT, 2024
+** raytracer
+** File description:
+** CUDARenderer
+*/
+
+#include "plugins/renderers/CUDA/CUDARenderer.hpp"
+#include "plugins/renderers/CameraController.hpp"
+#include "plugins/renderers/CUDA/CudaKernels.hpp"
+#include "plugins/renderers/PPM.hpp"
+#include "plugins/renderers/SceneSnapshot.hpp"
+#include <algorithm>
+#include <chrono>
+#include <cuda_runtime.h>
+#include <cstddef>
+#include <cstdint>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+
+using namespace RayTracer;
+
+static_assert(static_cast<int>(PrimitiveType::SPHERE) == Cuda::PRIMITIVE_SPHERE, "primitive enum mismatch");
+static_assert(static_cast<int>(PrimitiveType::PLANE) == Cuda::PRIMITIVE_PLANE, "primitive enum mismatch");
+static_assert(static_cast<int>(PrimitiveType::CYLINDER) == Cuda::PRIMITIVE_CYLINDER, "primitive enum mismatch");
+static_assert(static_cast<int>(PrimitiveType::CONE) == Cuda::PRIMITIVE_CONE, "primitive enum mismatch");
+static_assert(static_cast<int>(IMaterial::DIFFUSE) == Cuda::MATERIAL_DIFFUSE, "material enum mismatch");
+static_assert(static_cast<int>(IMaterial::FLAT_COLOR) == Cuda::MATERIAL_FLAT_COLOR, "material enum mismatch");
+static_assert(static_cast<int>(IMaterial::EMISSIVE) == Cuda::MATERIAL_EMISSIVE, "material enum mismatch");
+static_assert(static_cast<int>(IMaterial::METALLIC) == Cuda::MATERIAL_METALLIC, "material enum mismatch");
+static_assert(static_cast<int>(IMaterial::DIELECTRIC) == Cuda::MATERIAL_DIELECTRIC, "material enum mismatch");
+static_assert(static_cast<int>(LightType::AMBIENT) == Cuda::LIGHT_AMBIENT, "light enum mismatch");
+static_assert(static_cast<int>(LightType::DIRECTIONAL) == Cuda::LIGHT_DIRECTIONAL, "light enum mismatch");
+static_assert(static_cast<int>(LightType::POINT) == Cuda::LIGHT_POINT, "light enum mismatch");
+
+namespace
+{
+void checkCuda(cudaError_t status, const char *operation)
+{
+    if (status == cudaSuccess)
+        return;
+
+    throw std::runtime_error(std::string("CUDA ") + operation + " failed: " + cudaGetErrorString(status));
+}
+
+template <typename T> class DeviceBuffer
+{
+  public:
+    explicit DeviceBuffer(std::size_t count) : _count(count)
+    {
+        if (_count == 0)
+            return;
+        checkCuda(cudaMalloc(reinterpret_cast<void **>(&_data), _count * sizeof(T)), "cudaMalloc");
+    }
+
+    ~DeviceBuffer(void)
+    {
+        if (_data != nullptr)
+            cudaFree(_data);
+    }
+
+    DeviceBuffer(const DeviceBuffer &) = delete;
+    DeviceBuffer &operator=(const DeviceBuffer &) = delete;
+
+    T *get(void) const
+    {
+        return _data;
+    }
+
+    void upload(const std::vector<T> &values)
+    {
+        if (values.size() != _count)
+            throw std::runtime_error("CUDA buffer size mismatch");
+
+        if (_count == 0)
+            return;
+        checkCuda(cudaMemcpy(_data, values.data(), _count * sizeof(T), cudaMemcpyHostToDevice), "cudaMemcpy");
+    }
+
+  private:
+    T *_data = nullptr;
+    std::size_t _count;
+};
+
+Cuda::Vec3 toDevice(const Vec3D &value)
+{
+    return Cuda::Vec3{value.getX(), value.getY(), value.getZ()};
+}
+
+Cuda::Camera toDevice(const CameraData &camera)
+{
+    Cuda::Camera result;
+
+    result.lookFrom = toDevice(camera.lookFrom);
+    result.initialPixelPos = toDevice(camera.initialPixelPos);
+    result.pixelWidthDistance = toDevice(camera.pixelWidthDistance);
+    result.pixelHeightDistance = toDevice(camera.pixelHeightDistance);
+    result.width = camera.imageWidth;
+    result.height = camera.imageHeight;
+    return result;
+}
+
+std::vector<Cuda::Primitive> convertPrimitives(const SceneSnapshot &snapshot)
+{
+    std::vector<Cuda::Primitive> primitives;
+
+    primitives.reserve(snapshot.primitives.size());
+    for (const PrimitiveData &primitive : snapshot.primitives)
+    {
+        Cuda::Primitive converted;
+
+        converted.type = static_cast<int>(primitive.type);
+        converted.materialIndex = primitive.materialIndex;
+        converted.center = toDevice(primitive.center);
+        converted.point = toDevice(primitive.point);
+        converted.normal = toDevice(primitive.normal);
+        converted.axis = toDevice(primitive.axis);
+        converted.radius = primitive.radius;
+        converted.height = primitive.height;
+        converted.coneBaseAbove = primitive.coneBaseAbove ? 1 : 0;
+        primitives.push_back(converted);
+    }
+    return primitives;
+}
+
+std::vector<Cuda::Material> convertMaterials(const SceneSnapshot &snapshot)
+{
+    std::vector<Cuda::Material> materials;
+
+    materials.reserve(snapshot.materials.size());
+    for (const MaterialData &material : snapshot.materials)
+    {
+        Cuda::Material converted;
+
+        converted.type = static_cast<int>(material.type);
+        converted.diffuseColor = toDevice(material.diffuseColor);
+        converted.emissionColor = toDevice(material.emissionColor);
+        converted.ambientReflection = material.ambientReflection;
+        converted.diffuseReflection = material.diffuseReflection;
+        converted.specularReflection = material.specularReflection;
+        materials.push_back(converted);
+    }
+    return materials;
+}
+
+std::vector<Cuda::Light> convertLights(const SceneSnapshot &snapshot)
+{
+    std::vector<Cuda::Light> lights;
+
+    lights.reserve(snapshot.lights.size());
+    for (const LightData &light : snapshot.lights)
+    {
+        Cuda::Light converted;
+
+        converted.type = static_cast<int>(light.type);
+        converted.color = toDevice(light.color);
+        converted.position = toDevice(light.position);
+        converted.direction = toDevice(light.direction);
+        converted.intensity = light.intensity;
+        converted.attenuationConstant = light.attenuationConstant;
+        converted.attenuationLinear = light.attenuationLinear;
+        converted.attenuationQuadratic = light.attenuationQuadratic;
+        lights.push_back(converted);
+    }
+    return lights;
+}
+
+int checkedCount(std::size_t count, const char *name)
+{
+    if (count > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        throw std::runtime_error(std::string("Too many ") + name + " for the CUDA renderer");
+    return static_cast<int>(count);
+}
+
+std::size_t pixelCount(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+        throw std::invalid_argument("CUDA renderer received invalid image dimensions");
+    return static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+}
+
+class CudaRenderSession
+{
+  public:
+    explicit CudaRenderSession(const SceneSnapshot &snapshot)
+        : _width(snapshot.camera.imageWidth), _height(snapshot.camera.imageHeight),
+          _primitives(convertPrimitives(snapshot)), _materials(convertMaterials(snapshot)),
+          _lights(convertLights(snapshot)), _devicePrimitives(_primitives.size()),
+          _deviceMaterials(_materials.size()), _deviceLights(_lights.size()),
+          _deviceAccumulation(pixelCount(_width, _height)), _deviceOutput(pixelCount(_width, _height) * 4u)
+    {
+        _devicePrimitives.upload(_primitives);
+        _deviceMaterials.upload(_materials);
+        _deviceLights.upload(_lights);
+
+        _view.primitives = _devicePrimitives.get();
+        _view.primitiveCount = checkedCount(_primitives.size(), "primitives");
+        _view.materials = _deviceMaterials.get();
+        _view.materialCount = checkedCount(_materials.size(), "materials");
+        _view.lights = _deviceLights.get();
+        _view.lightCount = checkedCount(_lights.size(), "lights");
+        _view.camera = toDevice(snapshot.camera);
+
+        checkCuda(cudaMemset(_deviceAccumulation.get(), 0,
+                             static_cast<std::size_t>(_width) * static_cast<std::size_t>(_height) * sizeof(float4)),
+                  "cudaMemset");
+    }
+
+    int width(void) const
+    {
+        return _width;
+    }
+
+    int height(void) const
+    {
+        return _height;
+    }
+
+    void renderBatch(int sampleStart, int sampleCount)
+    {
+        if (sampleCount <= 0)
+            return;
+
+        Cuda::launchRender(_view, sampleStart, sampleCount, _deviceAccumulation.get(), _deviceOutput.get());
+        checkCuda(cudaGetLastError(), "kernel launch");
+        checkCuda(cudaDeviceSynchronize(), "synchronize");
+    }
+
+    std::vector<uint32_t> copyImage(void)
+    {
+        std::vector<uint32_t> pixels(pixelCount(_width, _height));
+
+        checkCuda(cudaMemcpy(pixels.data(), _deviceOutput.get(), pixels.size() * sizeof(uint32_t),
+                             cudaMemcpyDeviceToHost),
+                  "cudaMemcpy");
+        return pixels;
+    }
+
+  private:
+    int _width;
+    int _height;
+    std::vector<Cuda::Primitive> _primitives;
+    std::vector<Cuda::Material> _materials;
+    std::vector<Cuda::Light> _lights;
+    DeviceBuffer<Cuda::Primitive> _devicePrimitives;
+    DeviceBuffer<Cuda::Material> _deviceMaterials;
+    DeviceBuffer<Cuda::Light> _deviceLights;
+    DeviceBuffer<float4> _deviceAccumulation;
+    DeviceBuffer<unsigned char> _deviceOutput;
+    Cuda::SceneView _view;
+};
+
+void writeOutput(const RenderContext &context, int width, int height, const std::vector<uint32_t> &pixels)
+{
+    if (!context.options.outputPath.empty())
+        writePPMFile(context.options.outputPath, width, height, pixels);
+    else if (!context.gui)
+        writePPM(std::cout, width, height, pixels);
+}
+} // namespace
+
+std::string CUDARenderer::getName(void) const
+{
+    return "cuda";
+}
+
+std::string CUDARenderer::getDescription(void) const
+{
+    return "CUDA GPU renderer";
+}
+
+bool CUDARenderer::isAvailable(std::string &reason) const
+{
+    int deviceCount = 0;
+    const cudaError_t status = cudaGetDeviceCount(&deviceCount);
+
+    if (status != cudaSuccess)
+    {
+        reason = cudaGetErrorString(status);
+        return false;
+    }
+    if (deviceCount <= 0)
+    {
+        reason = "no CUDA device found";
+        return false;
+    }
+    return true;
+}
+
+void CUDARenderer::run(const RenderContext &context)
+{
+    if (!context.scene || !context.camera)
+        throw std::invalid_argument("CUDA renderer requires a scene and camera");
+    if (context.options.frames <= 0)
+        throw std::invalid_argument("CUDA renderer requires at least one sample");
+
+    if (context.camera->getImageWidth() != context.options.width ||
+        context.camera->getImageHeight() != context.options.height)
+    {
+        context.camera->initialize(context.options.width, context.options.height, context.camera->getLookAt(),
+                                   context.camera->getLookFrom(), context.camera->getVerticalFovDegree());
+    }
+
+    std::string unavailableReason;
+
+    if (!isAvailable(unavailableReason))
+        throw std::runtime_error("CUDA renderer unavailable: " + unavailableReason);
+
+    CameraController controller;
+    std::unique_ptr<CudaRenderSession> session;
+
+    auto renderAll = [&](bool guiMode) {
+        session = std::make_unique<CudaRenderSession>(buildSceneSnapshot(*context.scene, *context.camera));
+
+        const int totalSamples = context.options.frames;
+
+        if (!guiMode)
+        {
+            constexpr int batchSize = 16;
+
+            for (int start = 0; start < totalSamples; start += batchSize)
+            {
+                const int count = std::min(batchSize, totalSamples - start);
+
+                session->renderBatch(start, count);
+                std::clog << "\rRendering image with CUDA: " << (100 * (start + count) / totalSamples) << "% "
+                          << std::flush;
+            }
+            std::clog << std::endl;
+
+            const std::vector<uint32_t> pixels = session->copyImage();
+
+            writeOutput(context, session->width(), session->height(), pixels);
+            return;
+        }
+
+        constexpr int batchSize = 4;
+        int start = 0;
+
+        while (start < totalSamples)
+        {
+            bool cameraChanged = false;
+            char event;
+
+            // Drain the event queue before every batch. This keeps the window
+            // responsive while the GPU is rendering.
+            while ((event = context.gui->getEvent()) != 0)
+            {
+                if (controller.handleEvent(event, *context.camera))
+                    cameraChanged = true;
+            }
+
+            if (!context.gui->isOpen())
+                return;
+
+            if (cameraChanged)
+            {
+                std::clog << "\rCamera moved; restarting CUDA render." << std::endl;
+                session = std::make_unique<CudaRenderSession>(buildSceneSnapshot(*context.scene, *context.camera));
+                start = 0;
+                continue;
+            }
+
+            const int count = std::min(batchSize, totalSamples - start);
+
+            session->renderBatch(start, count);
+            start += count;
+
+            std::vector<uint32_t> pixels = session->copyImage();
+
+            context.gui->setImage(session->width(), session->height(), pixels);
+            context.gui->display();
+        }
+
+        if (!context.options.outputPath.empty())
+        {
+            const std::vector<uint32_t> pixels = session->copyImage();
+
+            writePPMFile(context.options.outputPath, session->width(), session->height(), pixels);
+        }
+    };
+
+    std::clog << "Rendering image with CUDA." << std::endl;
+
+    if (!context.gui)
+    {
+        renderAll(false);
+        std::clog << "Done.                                             " << std::endl;
+        return;
+    }
+
+    renderAll(true);
+
+    if (!context.gui->isOpen())
+        return;
+
+    std::clog << "Done.                                             " << std::endl;
+
+    while (context.gui->isOpen())
+    {
+        bool cameraChanged = false;
+        char event;
+
+        while ((event = context.gui->getEvent()) != 0)
+        {
+            if (controller.handleEvent(event, *context.camera))
+                cameraChanged = true;
+        }
+
+        if (!context.gui->isOpen())
+            break;
+
+        if (cameraChanged)
+        {
+            std::clog << "Rendering image with CUDA." << std::endl;
+            renderAll(true);
+            if (context.gui->isOpen())
+                std::clog << "Done.                                             " << std::endl;
+        }
+        else
+        {
+            context.gui->display();
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
+    }
+}
+
+extern "C" std::shared_ptr<RayTracer::IRenderer> create(void)
+{
+    return std::make_shared<RayTracer::CUDARenderer>();
+}

@@ -25,6 +25,15 @@ void Plane::doTransformation(const ITransformation &t)
     (void)t;
 }
 
+bool Plane::getData(PrimitiveData &data) const
+{
+    data.type = PrimitiveType::PLANE;
+    data.materialIndex = _materialIndex;
+    data.point = _point;
+    data.normal = _normal;
+    return true;
+}
+
 bool Plane::hit(const Ray &ray, HitPayload &payload, size_t i) const
 {
     float denominator = vec3DDot(getNormal(), ray.getDirection());

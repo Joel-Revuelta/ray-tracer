@@ -20,6 +20,7 @@ class Plane : public IPrimitive
 
     void doTransformation(const ITransformation &t) override;
     bool hit(const Ray &ray, HitPayload &payload, size_t i) const override;
+    bool getData(PrimitiveData &data) const override;
 
     void setNormal(const Vec3D &normal);
     void setPoint(const Point3D &point);

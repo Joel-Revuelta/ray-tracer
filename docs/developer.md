@@ -34,6 +34,11 @@ To configure your development environment, follow these steps:
    make
    ```
 
+The CUDA renderer plugin is built automatically when a CUDA toolkit is found.
+Disable it with `cmake -DRAYTRACER_ENABLE_CUDA=OFF ..`. See
+[renderers.md](renderers.md) for the renderer plugin architecture and CUDA
+requirements.
+
 ## Coding Conventions
 
 Before committing any changes, it's crucial to maintain code quality and consistency. Run the **pre-commit.sh** script, which performs formatting and cppcheck checks, among other tasks. If you're unfamiliar with these tools, refer to the documentation [here](https://github.com/ItsZcx/pre-commit-hooks). Make sure Docker is installed, as the script utilizes a Docker container.

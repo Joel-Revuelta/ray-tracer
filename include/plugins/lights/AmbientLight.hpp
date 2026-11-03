@@ -24,6 +24,7 @@ class AmbientLight : public ILight
     void doTransformation(const ITransformation &t) override;
     Color3D calculateLighting(const HitPayload &payload) const override;
     bool isPointInShadow(const HitPayload &payload, const Scene &scene) const override;
+    bool getData(LightData &data) const override;
 
     Color3D getColor(void) const;
     float getIntensity(void) const;

@@ -6,18 +6,22 @@
 */
 
 #include "App.hpp"
+#include "plugins/renderers/IRenderer.hpp"
+#include "plugins/renderers/RendererRegistry.hpp"
 #include <cerrno>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <string>
 
 using namespace RayTracer;
 
 namespace
 {
-const char *const USAGE = "Usage: ./raytracer --path <scene.cfg> --cli|--sfml [--width W] [--height H] [--frames N] "
-                          "[--output out.ppm]";
+const char *const USAGE =
+    "Usage: ./raytracer --path <scene.cfg> --cli|--sfml [--renderer cpu|cuda] [--width W] [--height H] "
+    "[--frames N] [--output out.ppm] [--list-renderers]";
 
 void printUsage(std::ostream &stream)
 {
@@ -39,6 +43,42 @@ int parsePositiveInt(const char *value, const char *name)
 
     return static_cast<int>(parsed);
 }
+
+void printRendererNames(std::ostream &stream)
+{
+    stream << "Available renderers:";
+    for (const RendererEntry &entry : rendererEntries())
+        stream << " " << entry.name;
+    stream << std::endl;
+}
+
+void listRenderers(void)
+{
+    Factory factory;
+
+    std::cout << "Available renderers:" << std::endl;
+    for (const RendererEntry &entry : rendererEntries())
+    {
+        std::cout << "  " << entry.name << " - " << entry.description;
+
+        try
+        {
+            std::shared_ptr<IRenderer> renderer = factory.create<IRenderer>(entry.factoryKey);
+            std::string reason;
+
+            if (renderer->isAvailable(reason))
+                std::cout << " [available]";
+            else
+                std::cout << " [unavailable: " << reason << "]";
+        }
+        catch (const std::exception &error)
+        {
+            std::cout << " [unavailable: " << error.what() << "]";
+        }
+
+        std::cout << std::endl;
+    }
+}
 } // namespace
 
 /**
@@ -51,8 +91,8 @@ int parsePositiveInt(const char *value, const char *name)
  * @param av The input arguments.
  */
 App::App(int ac, char **av)
-    : _parser(std::make_unique<Parser>()), _renderer(std::make_unique<Renderer>()), _filepath(""),
-      _output(""), _interface(Interface::NONE), _width(960), _height(540), _frames(10)
+    : _parser(std::make_unique<Parser>()), _filepath(""), _output(""), _rendererName("cpu"),
+      _interface(Interface::NONE), _width(960), _height(540), _frames(10)
 {
     int opt;
 
@@ -64,6 +104,8 @@ App::App(int ac, char **av)
                                       {"frames", required_argument, NULL, 6},
                                       {"output", required_argument, NULL, 7},
                                       {"help", 0, NULL, 8},
+                                      {"renderer", required_argument, NULL, 9},
+                                      {"list-renderers", 0, NULL, 10},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -94,9 +136,15 @@ App::App(int ac, char **av)
         case 7:
             _output = optarg;
             break;
-        case 'h':
         case 8:
+        case 'h':
             printUsage(std::cout);
+            std::exit(EXIT_SUCCESS);
+        case 9:
+            _rendererName = optarg;
+            break;
+        case 10:
+            listRenderers();
             std::exit(EXIT_SUCCESS);
         case '?':
         default:
@@ -114,7 +162,7 @@ App::~App(void)
 /**
  * Run the application.
  * Start by parsing the scene and the camera.
- * Then render the scene.
+ * Then render the scene with the selected renderer plugin.
  * If the interface is set to CLI, output the result in a PPM file.
  * If the interface is set to GUI, output the result using SFML.
  * If the interface or the path is not set, exit the program.
@@ -154,20 +202,46 @@ void App::run(void)
         camera->initialize(_width, _height, camera->getLookAt(), camera->getLookFrom(),
                            camera->getVerticalFovDegree());
 
-        if (_interface == Interface::CLI)
+        const RendererEntry *rendererEntry = findRenderer(_rendererName);
+        if (!rendererEntry)
         {
-            std::unique_ptr<Renderer> renderer =
-                std::make_unique<Renderer>(_frames, scene, camera, nullptr, _output);
-
-            renderer->run();
+            std::cerr << "Unknown renderer: " << _rendererName << std::endl;
+            printRendererNames(std::cerr);
+            std::exit(EXIT_FAILURE);
         }
-        else if (_interface == Interface::GUI)
+
+        std::shared_ptr<IRenderer> renderer;
+        try
         {
-            std::shared_ptr<IGUI> sfml = factory.create<IGUI>("SFML", _width, _height);
-            std::unique_ptr<Renderer> renderer = std::make_unique<Renderer>(_frames, scene, camera, sfml, _output);
-
-            renderer->run();
+            renderer = factory.create<IRenderer>(rendererEntry->factoryKey);
         }
+        catch (const std::exception &error)
+        {
+            std::cerr << "Renderer '" << rendererEntry->name << "' is unavailable: " << error.what() << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+
+        std::string unavailableReason;
+
+        if (!renderer->isAvailable(unavailableReason))
+        {
+            std::cerr << "Renderer '" << rendererEntry->name << "' is unavailable: " << unavailableReason << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+
+        RenderContext context;
+
+        context.scene = scene;
+        context.camera = camera;
+        context.options.width = _width;
+        context.options.height = _height;
+        context.options.frames = _frames;
+        context.options.outputPath = _output;
+
+        if (_interface == Interface::GUI)
+            context.gui = factory.create<IGUI>("SFML", _width, _height);
+
+        renderer->run(context);
     }
     catch (const std::exception &e)
     {

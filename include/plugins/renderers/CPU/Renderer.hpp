@@ -17,14 +17,14 @@
 #include "Ray.hpp"
 #include "Scene.hpp"
 #include "Vec3D.hpp"
+#include "plugins/renderers/CameraController.hpp"
 #include <atomic>
 #include <cstddef>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <sys/types.h>
-#include <unordered_map>
 #include <vector>
-#include <fstream>
 
 namespace RayTracer
 {
@@ -75,6 +75,7 @@ class Renderer
     std::shared_ptr<Camera> _camera;
 
     std::shared_ptr<IGUI> _gui;
+    CameraController _cameraController;
 
     std::atomic<bool> _reset{false};
     std::atomic<bool> _stop{false};

@@ -20,6 +20,7 @@ class Cylinder : public IPrimitive
 
     void doTransformation(const ITransformation &t) override;
     bool hit(const Ray &ray, HitPayload &payload, size_t i) const override;
+    bool getData(PrimitiveData &data) const override;
     uint getMaterialIndex(void) const override;
     void setMaterialIndex(const uint &index) override;
 

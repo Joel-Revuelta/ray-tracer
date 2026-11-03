@@ -30,6 +30,17 @@ void Cone::doTransformation(const ITransformation &t)
     (void)t;
 }
 
+bool Cone::getData(PrimitiveData &data) const
+{
+    data.type = PrimitiveType::CONE;
+    data.materialIndex = _materialIndex;
+    data.center = _center;
+    data.radius = _radius;
+    data.height = _height;
+    data.coneBaseAbove = _rotation;
+    return true;
+}
+
 bool Cone::hit(const Ray &ray, HitPayload &payload, size_t i) const
 {
     return intersect(ray, payload, i, _rotation);

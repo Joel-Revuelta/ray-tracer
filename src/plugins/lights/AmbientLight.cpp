@@ -28,6 +28,14 @@ void AmbientLight::doTransformation(const ITransformation &t)
     return;
 }
 
+bool AmbientLight::getData(LightData &data) const
+{
+    data.type = LightType::AMBIENT;
+    data.color = _color;
+    data.intensity = _intensity;
+    return true;
+}
+
 /**
  * Calculates the lighting contribution of the ambient light.
  *

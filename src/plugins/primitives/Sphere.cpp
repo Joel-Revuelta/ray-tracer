@@ -25,6 +25,15 @@ void Sphere::doTransformation(const ITransformation &t)
     (void)t;
 }
 
+bool Sphere::getData(PrimitiveData &data) const
+{
+    data.type = PrimitiveType::SPHERE;
+    data.materialIndex = _materialIndex;
+    data.center = _center;
+    data.radius = _radius;
+    return true;
+}
+
 bool Sphere::hit(const Ray &ray, HitPayload &payload, size_t i) const
 {
     const Vec3D direction = ray.getDirection();

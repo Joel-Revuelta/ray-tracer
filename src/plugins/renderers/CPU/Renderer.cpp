@@ -5,8 +5,9 @@
 ** Renderer.cpp
 */
 
-#include "Renderer.hpp"
+#include "plugins/renderers/CPU/Renderer.hpp"
 #include "Utils.hpp"
+#include "plugins/renderers/PPM.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <thread>
@@ -135,14 +136,8 @@ void Renderer::render(void)
             break;
     }
     if (_outStream)
-    {
-        *_outStream << "P3" << std::endl
-                    << getCamera()->getImageWidth() << " " << getCamera()->getImageHeight() << "\n255" << std::endl;
-        for (size_t i = 0; i < _imageData.size(); ++i)
-            *_outStream << Utils::convertTo255(Utils::convertFromRGBA(_imageData[i])) << std::endl;
-        if (!_outStream->good())
-            throw std::runtime_error("Failed to write the rendered image");
-    }
+        writePPM(*_outStream, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
+
     std::clog << "\rDone.                                             ";
     _rayDirections.clear();
 }
@@ -210,44 +205,11 @@ void Renderer::renderFrame(void)
 
 void Renderer::manageEvent(char evt)
 {
-    if (!evt)
-        return;
-
-    static bool lockLookAt = false;
-    static bool lockLookFrom = false;
-    // key, lookFrom, lookAt
-    const std::unordered_map<char, std::pair<Vec3D, Vec3D>> keyMap = {
-        {'w', {Vec3D(0, 0, 1), Vec3D(0, 0, 1)}}, {'s', {Vec3D(0, 0, -1), Vec3D(0, 0, -1)}},
-        {'a', {Vec3D(1, 0, 0), Vec3D(1, 0, 0)}}, {'d', {Vec3D(-1, 0, 0), Vec3D(-1, 0, 0)}},
-        {'q', {Vec3D(0, 1, 0), Vec3D(0, 1, 0)}}, {'e', {Vec3D(0, -1, 0), Vec3D(0, -1, 0)}},
-        {'r', {Vec3D(0, 0, 0), Vec3D(0, 0, 0)}},
-    };
-
-    if (keyMap.find(evt) != keyMap.end())
+    if (_cameraController.handleEvent(evt, *getCamera()))
     {
-        auto move = keyMap.at(evt);
-        auto newLookFrom = lockLookFrom ? getCamera()->getLookFrom() : getCamera()->getLookFrom() + move.first;
-        auto newLookAt = lockLookAt ? getCamera()->getLookAt() : getCamera()->getLookAt() + move.second;
-
-        try
-        {
-            getCamera()->initialize(getCamera()->getImageWidth(), getCamera()->getImageHeight(), newLookAt, newLookFrom,
-                                    getCamera()->getVerticalFovDegree());
-        }
-        catch (const std::invalid_argument &)
-        {
-            // Ignore a movement that would put the camera exactly on its
-            // look-at point.
-            return;
-        }
-
         setFrameIteration(0);
         _reset = true;
     }
-    if (evt == 'x')
-        lockLookAt = !lockLookAt;
-    if (evt == 'c')
-        lockLookFrom = !lockLookFrom;
 }
 
 /**

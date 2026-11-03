@@ -22,6 +22,7 @@ class Sphere : public IPrimitive
 
     void doTransformation(const ITransformation &t) override;
     bool hit(const Ray &ray, HitPayload &payload, size_t i) const override;
+    bool getData(PrimitiveData &data) const override;
 
     void setRadius(const float radius);
     void setCenter(const Point3D center);

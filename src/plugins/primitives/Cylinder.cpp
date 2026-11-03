@@ -30,6 +30,17 @@ void Cylinder::doTransformation(const ITransformation &t)
     (void)t;
 }
 
+bool Cylinder::getData(PrimitiveData &data) const
+{
+    data.type = PrimitiveType::CYLINDER;
+    data.materialIndex = _materialIndex;
+    data.center = _center;
+    data.radius = _radius;
+    data.height = _height;
+    data.axis = _axis;
+    return true;
+}
+
 //! INFINIT
 // bool Cylinder::hit(const Ray &ray, HitPayload &payload, size_t i) const
 // {
