@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 
 using namespace RayTracer;
 
@@ -46,6 +47,15 @@ Camera::~Camera(void)
  */
 void Camera::initialize(int imageWidth, int imageHeight, Point3D lookAt, Point3D lookFrom, float verticalFovDegree)
 {
+    if (imageWidth <= 0 || imageHeight <= 0)
+        throw std::invalid_argument("Camera image dimensions must be positive");
+    if (!std::isfinite(verticalFovDegree) || verticalFovDegree <= 0.0f || verticalFovDegree >= 180.0f)
+        throw std::invalid_argument("Camera field of view must be strictly between 0 and 180 degrees");
+
+    const Vec3D viewForward = lookFrom - lookAt;
+    if (!std::isfinite(viewForward.lengthSquared()) || viewForward.lengthSquared() < 1e-12f)
+        throw std::invalid_argument("Camera position and look-at point must differ");
+
     // Set constructor values for the camera.
     setImageWidth(imageWidth);
     setImageHeight(imageHeight);
@@ -55,8 +65,23 @@ void Camera::initialize(int imageWidth, int imageHeight, Point3D lookAt, Point3D
     setFocalDistance((lookFrom - lookAt).length());
     setAspectRatio(aspectRatioCompute());
 
-    // Set default orientation, ooking horizontally.
+    // Set default orientation, looking horizontally. If the camera looks
+    // straight up or down, the default up vector is parallel to the view
+    // direction, so fall back to another axis.
     setCamOrientation(Vec3D(0, 1, 0));
+    Vec3D forward = vec3DNormalize(viewForward);
+    Vec3D right = vec3DCross(getCamOrientation(), forward);
+
+    if (right.lengthSquared() < 1e-12f)
+    {
+        setCamOrientation(Vec3D(0, 0, 1));
+        right = vec3DCross(getCamOrientation(), forward);
+    }
+    if (right.lengthSquared() < 1e-12f)
+    {
+        setCamOrientation(Vec3D(1, 0, 0));
+        right = vec3DCross(getCamOrientation(), forward);
+    }
 
     float verticalFovRadians = Utils::numericDegreesToRadians<float>(getVerticalFovDegree());
     float fovHeight = tan(verticalFovRadians / 2);
@@ -66,8 +91,8 @@ void Camera::initialize(int imageWidth, int imageHeight, Point3D lookAt, Point3D
     setViewportWidth(viewportWidthCompute());
 
     // Compute the camera view vectors.
-    setCamViewForward(vec3DNormalize(lookFrom - lookAt));
-    setCamViewRight(vec3DNormalize(vec3DCross(getCamOrientation(), getCamViewForward())));
+    setCamViewForward(forward);
+    setCamViewRight(vec3DNormalize(right));
     setCamViewUp(vec3DCross(getCamViewForward(), getCamViewRight()));
 
     // Compute vectors across the viewport.

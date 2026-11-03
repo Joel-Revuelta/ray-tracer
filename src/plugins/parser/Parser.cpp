@@ -11,6 +11,35 @@
 
 using namespace RayTracer;
 
+namespace
+{
+void requireFinite(double value, const std::string &name)
+{
+    if (!std::isfinite(value))
+        throw std::runtime_error(name + " must be finite");
+}
+
+void requirePositive(double value, const std::string &name)
+{
+    requireFinite(value, name);
+    if (value <= 0.0)
+        throw std::runtime_error(name + " must be greater than zero");
+}
+
+void requireNonNegative(double value, const std::string &name)
+{
+    requireFinite(value, name);
+    if (value < 0.0)
+        throw std::runtime_error(name + " must not be negative");
+}
+
+void requireNonZeroVector(const Vec3D &vector, const std::string &name)
+{
+    if (!std::isfinite(vector.lengthSquared()) || vector.lengthSquared() < 1e-12f)
+        throw std::runtime_error(name + " must be a non-zero vector");
+}
+} // namespace
+
 Parser::Parser(void)
 {
 }
@@ -122,9 +151,13 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
                                                   double(setting.lookup("intensity")),
                                                   parseColor(setting.lookup("emissionColor")));
         }
-        else if (type == "metallic")
+        else if (type == "metallic" || type == "metalic")
         {
             material = _factory.create<IMaterial>("MetallicMaterial", parseColor(setting.lookup("color")));
+        }
+        else if (type == "dielectric")
+        {
+            throw std::runtime_error("Material type 'dielectric' is not implemented");
         }
         else if (type == "flatColor")
         {
@@ -185,9 +218,14 @@ void Parser::parseLights(SceneBuilder &sceneBuilder, const libconfig::Setting &l
  */
 std::shared_ptr<ILight> Parser::parseDirectionalLight(const libconfig::Setting &directionalSetting)
 {
-    std::shared_ptr<ILight> light = _factory.create<ILight>("DirectionalLight", parsePoint(directionalSetting.lookup("position")),
-                                                            parseColor(directionalSetting.lookup("color")),
-                                                            double(directionalSetting.lookup("intensity")));
+    const Vec3D direction = parsePoint(directionalSetting.lookup("position"));
+    const double intensity = directionalSetting.lookup("intensity");
+
+    requireNonZeroVector(direction, "Directional light direction");
+    requireNonNegative(intensity, "Directional light intensity");
+
+    std::shared_ptr<ILight> light =
+        _factory.create<ILight>("DirectionalLight", direction, parseColor(directionalSetting.lookup("color")), intensity);
 
     return light;
 }
@@ -201,10 +239,19 @@ std::shared_ptr<ILight> Parser::parseDirectionalLight(const libconfig::Setting &
  */
 std::shared_ptr<ILight> Parser::parsePointLight(const libconfig::Setting &pointSetting)
 {
+    const double intensity = pointSetting.lookup("intensity");
+    const double attenuationConstant = pointSetting.lookup("attenuation.constant");
+    const double attenuationLinear = pointSetting.lookup("attenuation.linear");
+    const double attenuationQuadratic = pointSetting.lookup("attenuation.quadratic");
+
+    requireNonNegative(intensity, "Point light intensity");
+    requirePositive(attenuationConstant, "Point light attenuation constant");
+    requireNonNegative(attenuationLinear, "Point light attenuation linear");
+    requireNonNegative(attenuationQuadratic, "Point light attenuation quadratic");
+
     std::shared_ptr<ILight> light = _factory.create<ILight>(
-        "PointLight", parsePoint(pointSetting.lookup("position")), parseColor(pointSetting.lookup("color")),
-        double(pointSetting.lookup("intensity")), double(pointSetting.lookup("attenuation.constant")),
-        double(pointSetting.lookup("attenuation.linear")), double(pointSetting.lookup("attenuation.quadratic")));
+        "PointLight", parsePoint(pointSetting.lookup("position")), parseColor(pointSetting.lookup("color")), intensity,
+        attenuationConstant, attenuationLinear, attenuationQuadratic);
 
     return light;
 }
@@ -218,8 +265,12 @@ std::shared_ptr<ILight> Parser::parsePointLight(const libconfig::Setting &pointS
  */
 std::shared_ptr<ILight> Parser::parseAmbientLight(const libconfig::Setting &ambientSetting)
 {
-    std::shared_ptr<ILight> light = _factory.create<ILight>("AmbientLight", parseColor(ambientSetting.lookup("color")),
-                                                            double(ambientSetting.lookup("intensity")));
+    const double intensity = ambientSetting.lookup("intensity");
+
+    requireNonNegative(intensity, "Ambient light intensity");
+
+    std::shared_ptr<ILight> light =
+        _factory.create<ILight>("AmbientLight", parseColor(ambientSetting.lookup("color")), intensity);
 
     return light;
 }
@@ -299,9 +350,13 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
  */
 std::shared_ptr<IPrimitive> Parser::parseSphere(libconfig::Setting &sphereSetting)
 {
-    std::shared_ptr<IPrimitive> sphere = _factory.create<IPrimitive>("Sphere", double(sphereSetting.lookup("r")),
-                                                                     parsePoint(sphereSetting.lookup("position")),
-                                                                     uint(sphereSetting.lookup("material")));
+    const double radius = sphereSetting.lookup("r");
+
+    requirePositive(radius, "Sphere radius");
+
+    std::shared_ptr<IPrimitive> sphere =
+        _factory.create<IPrimitive>("Sphere", radius, parsePoint(sphereSetting.lookup("position")),
+                                    uint(sphereSetting.lookup("material")));
 
     return sphere;
 }
@@ -315,9 +370,13 @@ std::shared_ptr<IPrimitive> Parser::parseSphere(libconfig::Setting &sphereSettin
  */
 std::shared_ptr<IPrimitive> Parser::parsePlane(libconfig::Setting &planeSetting)
 {
+    const Vec3D normal = parseVector(planeSetting.lookup("normal"));
+
+    requireNonZeroVector(normal, "Plane normal");
+
     std::shared_ptr<IPrimitive> plane =
-        _factory.create<IPrimitive>("Plane", parseVector(planeSetting.lookup("normal")),
-                                    parsePoint(planeSetting.lookup("position")), uint(planeSetting.lookup("material")));
+        _factory.create<IPrimitive>("Plane", normal, parsePoint(planeSetting.lookup("position")),
+                                    uint(planeSetting.lookup("material")));
 
     return plane;
 }
@@ -331,13 +390,15 @@ std::shared_ptr<IPrimitive> Parser::parsePlane(libconfig::Setting &planeSetting)
  */
 std::shared_ptr<IPrimitive> Parser::parseCylinder(libconfig::Setting &cylinderSetting)
 {
-    std::shared_ptr<IPrimitive> cylinder = _factory.create<IPrimitive>(
-        "Cylinder",
-        double(cylinderSetting.lookup("r")),
-        parsePoint(cylinderSetting.lookup("center")),
-        double(cylinderSetting.lookup("height")),
-        uint(cylinderSetting.lookup("material"))
-    );
+    const double radius = cylinderSetting.lookup("r");
+    const double height = cylinderSetting.lookup("height");
+
+    requirePositive(radius, "Cylinder radius");
+    requirePositive(height, "Cylinder height");
+
+    std::shared_ptr<IPrimitive> cylinder =
+        _factory.create<IPrimitive>("Cylinder", radius, parsePoint(cylinderSetting.lookup("center")), height,
+                                    uint(cylinderSetting.lookup("material")));
 
     return cylinder;
 }
@@ -351,13 +412,15 @@ std::shared_ptr<IPrimitive> Parser::parseCylinder(libconfig::Setting &cylinderSe
  */
 std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
 {
-    std::shared_ptr<IPrimitive> cone = _factory.create<IPrimitive>(
-        "Cone",
-        double(coneSetting.lookup("r")),
-        parseVector(coneSetting.lookup("center")),
-        double(coneSetting.lookup("h")),
-        uint(coneSetting.lookup("material"))
-    );
+    const double radius = coneSetting.lookup("r");
+    const double height = coneSetting.lookup("h");
+
+    requirePositive(radius, "Cone radius");
+    requirePositive(height, "Cone height");
+
+    std::shared_ptr<IPrimitive> cone =
+        _factory.create<IPrimitive>("Cone", radius, parseVector(coneSetting.lookup("center")), height,
+                                    uint(coneSetting.lookup("material")));
 
     return cone;
 }

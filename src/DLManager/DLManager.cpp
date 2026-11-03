@@ -9,7 +9,7 @@
 
 using namespace RayTracer;
 
-DLManager::DLManager(void)
+DLManager::DLManager(void) : currentHandle(nullptr)
 {
 }
 
@@ -18,9 +18,15 @@ DLManager::DLManager(const char *libraryPath) : currentHandle(nullptr), _libPath
     openLib(_libPath);
 }
 
-DLManager::~DLManager(void)
+DLManager::~DLManager(void) noexcept
 {
-    closeLib();
+    try
+    {
+        closeLib();
+    }
+    catch (...)
+    {
+    }
 }
 
 /**
@@ -45,7 +51,8 @@ void DLManager::openLib(const std::string &libraryPath)
     currentHandle = dlopen((prePath + libraryPath).c_str(), RTLD_LAZY);
     if (currentHandle == NULL)
     {
-        throw std::runtime_error(dlerror());
+        const char *error = dlerror();
+        throw std::runtime_error(error != nullptr ? error : "Failed to open dynamic library");
     }
     _libPath = libraryPath;
     handles.insert(std::make_pair(_libPath, currentHandle));
@@ -59,16 +66,15 @@ void DLManager::openLib(const std::string &libraryPath)
  */
 void DLManager::closeLib(void)
 {
-    if (currentHandle)
+    for (const auto &entry : handles)
     {
-        if (dlclose(currentHandle) != 0)
-            throw std::runtime_error(dlerror());
-
-        auto it = handles.find(_libPath);
-        if (it != handles.end())
-            handles.erase(it);
-        currentHandle = nullptr;
+        if (entry.second != nullptr)
+            dlclose(entry.second);
     }
+
+    handles.clear();
+    currentHandle = nullptr;
+    _libPath.clear();
 }
 
 /**

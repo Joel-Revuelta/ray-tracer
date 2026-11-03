@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <sys/types.h>
 #include <unordered_map>
 #include <vector>
@@ -77,7 +76,6 @@ class Renderer
 
     std::shared_ptr<IGUI> _gui;
 
-    std::mutex _mutexEvents;
     std::atomic<bool> _reset{false};
     std::atomic<bool> _stop{false};
 

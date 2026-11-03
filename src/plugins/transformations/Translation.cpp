@@ -47,6 +47,8 @@ void Translation::doTransformationPrimitive(ITransformable &obj)
         doTranslationPlane(*dynamic_cast<Plane *>(primitive));
     else if (dynamic_cast<Cylinder *>(primitive))
         doTranslationCylinder(*dynamic_cast<Cylinder *>(primitive));
+    else if (dynamic_cast<Cone *>(primitive))
+        doTranslationCone(*dynamic_cast<Cone *>(primitive));
 }
 
 void Translation::doTranslationSphere(Sphere &sphere)
@@ -62,6 +64,11 @@ void Translation::doTranslationPlane(Plane &plane)
 void Translation::doTranslationCylinder(Cylinder &cylinder)
 {
     cylinder.setCenter(cylinder.getCenter() + _translation);
+}
+
+void Translation::doTranslationCone(Cone &cone)
+{
+    cone.setCenter(cone.getCenter() + _translation);
 }
 
 void Translation::doTransformationLight(ITransformable &obj)

@@ -113,7 +113,12 @@ inline Vec3D vec3DCross(const Vec3D &u, const Vec3D &v)
  */
 inline Vec3D vec3DNormalize(const Vec3D &v)
 {
-    return v / v.length();
+    const float lengthSquared = v.lengthSquared();
+
+    if (!std::isfinite(lengthSquared) || lengthSquared < 1e-12f)
+        return Vec3D(0.0f);
+
+    return v / std::sqrt(lengthSquared);
 }
 
 /**
@@ -141,7 +146,9 @@ inline Vec3D vec3DRandomOnUnitSphere(void)
     while (true)
     {
         Vec3D v = vec3DRandom(-1, 1);
-        if (v.lengthSquared() >= 1)
+        const float lengthSquared = v.lengthSquared();
+
+        if (lengthSquared >= 1.0f || lengthSquared < 1e-12f)
             continue;
         return v;
     }
@@ -165,7 +172,7 @@ inline Vec3D vec3DRandomSphereUnit(void)
  */
 inline Vec3D vec3DRandomOnHemisphere(const Vec3D &surfaceNormal)
 {
-    Vec3D onUnitSphere = vec3DRandomOnUnitSphere();
+    const Vec3D onUnitSphere = vec3DRandomSphereUnit();
 
     // Ray inside the hemisphere
     if (vec3DDot(onUnitSphere, surfaceNormal) > 0.0)

@@ -59,7 +59,7 @@ const Primitives &Scene::getPrimitives(void) const
 
 uint Scene::getMaterialIndex(void) const
 {
-    return 0;
+    return _materialIndex;
 }
 
 void Scene::setMaterialIndex(const uint &index)

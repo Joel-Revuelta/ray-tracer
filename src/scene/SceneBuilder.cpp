@@ -20,6 +20,12 @@ SceneBuilder::~SceneBuilder(void)
 {
 }
 
+void SceneBuilder::ensureScene(void)
+{
+    if (!_scene)
+        _scene = std::make_shared<Scene>();
+}
+
 /**
  * @brief Adds a light to _scene.
  *
@@ -29,11 +35,19 @@ SceneBuilder::~SceneBuilder(void)
  */
 void SceneBuilder::addLight(std::shared_ptr<ILight> light)
 {
+    if (!light)
+        return;
+
+    ensureScene();
     _scene->addLight(light);
 }
 
 void SceneBuilder::addMaterial(std::shared_ptr<IMaterial> material)
 {
+    if (!material)
+        return;
+
+    ensureScene();
     _scene->addMaterial(material);
 }
 
@@ -46,6 +60,10 @@ void SceneBuilder::addMaterial(std::shared_ptr<IMaterial> material)
  */
 void SceneBuilder::addPrimitive(std::shared_ptr<IPrimitive> primitive)
 {
+    if (!primitive)
+        return;
+
+    ensureScene();
     _scene->addPrimitive(primitive);
 }
 
@@ -60,6 +78,8 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
 {
     if (!sceneToAdd)
         return;
+
+    ensureScene();
 
     // Materials of a nested scene are appended to the parent scene, so every
     // primitive coming from that scene has to shift its material index.
@@ -85,6 +105,8 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
  */
 std::shared_ptr<Scene> SceneBuilder::build(void)
 {
+    ensureScene();
+
     const Materials &materials = _scene->getMaterials();
 
     for (const auto &primitive : _scene->getPrimitives())
@@ -100,5 +122,5 @@ std::shared_ptr<Scene> SceneBuilder::build(void)
  */
 void SceneBuilder::clear(void)
 {
-    _scene.reset();
+    _scene = std::make_shared<Scene>();
 }

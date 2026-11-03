@@ -8,6 +8,7 @@
 #include "Renderer.hpp"
 #include "Utils.hpp"
 #include <algorithm>
+#include <stdexcept>
 #include <thread>
 
 using namespace RayTracer;
@@ -23,9 +24,14 @@ Renderer::Renderer(int raysPerPixel, std::shared_ptr<Scene> scene, std::shared_p
     : _frameIterations(raysPerPixel), _frameIterationsScale(1.0 / _frameIterations), _scene(scene), _camera(camera),
       _gui(gui)
 {
+    if (raysPerPixel <= 0)
+        throw std::invalid_argument("Frame iterations must be positive");
+
     if (!outFile.empty())
     {
         _fileStream.open(outFile, std::ios::out);
+        if (!_fileStream.is_open())
+            throw std::runtime_error("Cannot open output file: " + outFile);
         _outStream = &_fileStream;
     }
     else if (!gui)
@@ -103,6 +109,24 @@ void Renderer::render(void)
 
     while (_frameIteration <= _frameIterations)
     {
+        // Process GUI input only on the render thread, while no worker thread
+        // is reading the camera.
+        if (_gui)
+        {
+            manageEvent(_gui->getEvent());
+            if (!_gui->isOpen())
+            {
+                _stop = true;
+                break;
+            }
+            if (_reset)
+            {
+                initialize();
+                setFrameIteration(1);
+                _reset = false;
+            }
+        }
+
         std::clog << "\rRendering image. Percentage done: " << (float)(_frameIteration - 1) / _frameIterations * 100
                   << "% ";
         renderFrame();
@@ -116,6 +140,8 @@ void Renderer::render(void)
                     << getCamera()->getImageWidth() << " " << getCamera()->getImageHeight() << "\n255" << std::endl;
         for (size_t i = 0; i < _imageData.size(); ++i)
             *_outStream << Utils::convertTo255(Utils::convertFromRGBA(_imageData[i])) << std::endl;
+        if (!_outStream->good())
+            throw std::runtime_error("Failed to write the rendered image");
     }
     std::clog << "\rDone.                                             ";
     _rayDirections.clear();
@@ -154,17 +180,6 @@ void Renderer::renderFrame(void)
                 accumulatedColor4D /= (float)_frameIteration;
                 accumulatedColor4D.clampColor(0.0f, 1.0f);
                 _imageData[x + y * getCamera()->getImageWidth()] = Utils::convertToRGBA(accumulatedColor4D);
-                if (_gui && _mutexEvents.try_lock())
-                {
-                    manageEvent(_gui->getEvent());
-                    if (!_gui->isOpen())
-                    {
-                        _stop = true;
-                        _mutexEvents.unlock();
-                        return;
-                    }
-                    _mutexEvents.unlock();
-                }
             }
         }
     };
@@ -186,11 +201,6 @@ void Renderer::renderFrame(void)
 
     if (_stop)
         return;
-    if (_reset)
-    {
-        initialize();
-        _reset = false;
-    }
     if (_gui)
     {
         _gui->setImage(getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
@@ -218,8 +228,19 @@ void Renderer::manageEvent(char evt)
         auto move = keyMap.at(evt);
         auto newLookFrom = lockLookFrom ? getCamera()->getLookFrom() : getCamera()->getLookFrom() + move.first;
         auto newLookAt = lockLookAt ? getCamera()->getLookAt() : getCamera()->getLookAt() + move.second;
-        getCamera()->initialize(getCamera()->getImageWidth(), getCamera()->getImageHeight(), newLookAt, newLookFrom,
-                                getCamera()->getVerticalFovDegree());
+
+        try
+        {
+            getCamera()->initialize(getCamera()->getImageWidth(), getCamera()->getImageHeight(), newLookAt, newLookFrom,
+                                    getCamera()->getVerticalFovDegree());
+        }
+        catch (const std::invalid_argument &)
+        {
+            // Ignore a movement that would put the camera exactly on its
+            // look-at point.
+            return;
+        }
+
         setFrameIteration(0);
         _reset = true;
     }
@@ -306,7 +327,6 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
 {
     Ray ray;
     int bounces = 15;
-    Vec3D nextDirection(0.0f);
     Color3D accumulatedColor(0.0f);
     // float brightReduction = 1.5;
 
@@ -356,13 +376,22 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                 accumulatedColor += phongColor;
             }
 
-            // If the material is emissive, break the loop (it does not bounce)
-            if (material->getType() == IMaterial::EMISSIVE)
+            // Emissive, flat and unimplemented dielectric materials do not
+            // bounce.
+            if (material->getType() == IMaterial::EMISSIVE || material->getType() == IMaterial::FLAT_COLOR ||
+                material->getType() == IMaterial::DIELECTRIC)
                 break;
 
             // Handle set direction and origin for the next ray
-            ray.setDirection(computeNextRayDirection(ray, payload));
-            ray.setOrigin(payload.getHitPosition() + ray.getDirection() * Ray::EPSILON);
+            const Vec3D nextDirection = computeNextRayDirection(ray, payload);
+
+            // A zero or inward-facing direction would trace a degenerate ray
+            // forever, so stop instead.
+            if (vec3DIsNearZero(nextDirection) || vec3DDot(nextDirection, payload.getHitNormal()) <= 0.0f)
+                break;
+
+            ray.setDirection(nextDirection);
+            ray.setOrigin(payload.getHitPosition() + payload.getHitNormal() * Ray::EPSILON);
         }
         else
         {

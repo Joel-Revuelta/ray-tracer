@@ -12,7 +12,7 @@
 using namespace RayTracer;
 
 Plane::Plane(const Vec3D &normal, const Point3D &point, uint _materialIndex)
-    : _normal(normal), _point(point), _materialIndex(_materialIndex)
+    : _normal(vec3DNormalize(normal)), _point(point), _materialIndex(_materialIndex)
 {
 }
 
@@ -48,7 +48,7 @@ bool Plane::hit(const Ray &ray, HitPayload &payload, size_t i) const
 
 void Plane::setNormal(const Vec3D &normal)
 {
-    _normal = normal;
+    _normal = vec3DNormalize(normal);
 }
 
 void Plane::setPoint(const Point3D &point)

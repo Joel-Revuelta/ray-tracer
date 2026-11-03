@@ -32,6 +32,8 @@ class SceneBuilder
     void addScene(std::shared_ptr<Scene> sceneToAdd);
 
   private:
+    void ensureScene(void);
+
     std::shared_ptr<Scene> _scene;
 };
 

@@ -18,7 +18,7 @@ constexpr float AXIS_EPSILON = 1e-6f;
 Cylinder::Cylinder(const float radius, const Vec3D &center, const float height, const uint materialIndex)
     : _radius(radius), _center(center), _height(height), _materialIndex(materialIndex)
 {
-    setAxis(Vec3D(0, 90, 0));
+    setAxis(Vec3D(0, 1, 0));
 }
 
 Cylinder::~Cylinder()
@@ -71,6 +71,9 @@ void Cylinder::doTransformation(const ITransformation &t)
 
 bool Cylinder::hit(const Ray &ray, HitPayload &payload, size_t i) const
 {
+    if (_radius <= 0.0 || _height <= 0.0)
+        return false;
+
     const Vec3D axis = vec3DNormalize(_axis);
     const Vec3D origin = ray.getOrigin();
     const Vec3D direction = ray.getDirection();
@@ -196,13 +199,12 @@ void Cylinder::setMaterialIndex(const uint &index)
 
 void Cylinder::setAxis(const Vec3D &axis)
 {
-    const Vec3D snapped(std::round(std::sin(axis.getX())), std::round(std::sin(axis.getY())),
-                        std::round(std::sin(axis.getZ())));
+    const float lengthSquared = axis.lengthSquared();
 
-    if (snapped.lengthSquared() < AXIS_EPSILON)
+    if (!std::isfinite(lengthSquared) || lengthSquared < AXIS_EPSILON)
         _axis = Vec3D(0.0f, 1.0f, 0.0f);
     else
-        _axis = vec3DNormalize(snapped);
+        _axis = vec3DNormalize(axis);
 }
 
 Vec3D Cylinder::getAxis(void) const

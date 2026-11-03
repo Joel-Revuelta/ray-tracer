@@ -18,7 +18,7 @@ namespace RayTracer
 class IGUI
 {
   public:
-    ~IGUI() = default;
+    virtual ~IGUI() = default;
 
     virtual void loadPPM(const std::string &path) = 0;
     virtual void setImage(const std::size_t &width, const std::size_t &height, std::vector<uint32_t> &pixels) = 0;

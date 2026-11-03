@@ -42,6 +42,9 @@ bool Cone::rotation(const Ray &ray, HitPayload &payload, size_t i) const
 
 bool Cone::intersect(const Ray &ray, HitPayload &payload, size_t i, bool baseAbove) const
 {
+    if (_radius <= 0.0 || _height <= 0.0)
+        return false;
+
     const Vec3D origin = ray.getOrigin();
     const Vec3D direction = ray.getDirection();
     const Vec3D originToCenter = origin - _center;

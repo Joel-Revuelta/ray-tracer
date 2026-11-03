@@ -6,6 +6,7 @@
 */
 
 #include "SFML.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <iostream>
@@ -24,11 +25,10 @@ SFML::SFML(const std::size_t &width, const std::size_t &height)
 }
 
 SFML::SFML(const std::size_t &width, const std::size_t &height, const Pixels &pixels)
-    : _width(width), _height(height), _pixels(pixels),
+    : _width(width), _height(height),
       _window(sf::VideoMode({static_cast<unsigned int>(width), static_cast<unsigned int>(height)}), "Raytracer")
 {
-    _pixels.resize(_height, std::vector<Color4D>(_width));
-    textureUpdate();
+    setPixels(pixels);
 }
 
 SFML::SFML(const std::string &path) : _width(0), _height(0), _window()
@@ -87,12 +87,30 @@ void SFML::setSize(const std::size_t &width, const std::size_t &height)
 
 void SFML::setPixels(const Pixels &pixels)
 {
-    _pixels = pixels;
+    _pixels.resize(_height);
+
+    for (std::size_t y = 0; y < _height; ++y)
+    {
+        _pixels[y].resize(_width);
+
+        if (y >= pixels.size())
+            continue;
+
+        const std::size_t copyWidth = std::min(_width, pixels[y].size());
+        std::copy_n(pixels[y].begin(), copyWidth, _pixels[y].begin());
+    }
+
     textureUpdate();
 }
 
 void SFML::setImage(const std::size_t &width, const std::size_t &height, std::vector<uint32_t> &pixels)
 {
+    if (width == 0 || height == 0 || pixels.size() < width * height)
+    {
+        std::cerr << "Invalid image data" << std::endl;
+        return;
+    }
+
     std::uint8_t *ptr = reinterpret_cast<std::uint8_t *>(pixels.data());
 
     // std::cerr << (int)vec8[0] << " " << (int)vec8[1] << " " << (int)vec8[2] << " " << (int)vec8[3] << std::endl;
@@ -110,7 +128,7 @@ void SFML::setImage(const std::size_t &width, const std::size_t &height, std::ve
 
 void SFML::setPixel(const std::size_t &x, const std::size_t &y, const Color4D &color)
 {
-    if (x >= _width || y >= _height)
+    if (y >= _pixels.size() || x >= _pixels[y].size())
         return;
 
     _pixels[y][x] = color;
@@ -175,9 +193,9 @@ void SFML::textureUpdate()
 {
     sf::Image image({static_cast<unsigned int>(_width), static_cast<unsigned int>(_height)});
 
-    for (std::size_t y = 0; !_pixels.empty() && y < _height; ++y)
+    for (std::size_t y = 0; y < _height && y < _pixels.size(); ++y)
     {
-        for (std::size_t x = 0; x < _width; ++x)
+        for (std::size_t x = 0; x < _width && x < _pixels[y].size(); ++x)
         {
             Color4D color = _pixels[y][x];
             image.setPixel({static_cast<unsigned int>(x), static_cast<unsigned int>(y)},

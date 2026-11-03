@@ -11,8 +11,11 @@
 #include <dlfcn.h>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
+#include <string>
 #include <unistd.h>
 #include <unordered_map>
+#include <utility>
 
 namespace RayTracer
 {
@@ -21,7 +24,7 @@ class DLManager
   public:
     DLManager(void);
     DLManager(const char *libraryPath);
-    ~DLManager(void);
+    ~DLManager(void) noexcept;
 
     void closeLib(void);
     void openLib(const std::string &libraryPath);
@@ -43,9 +46,16 @@ class DLManager
 
         if (!currentHandle)
             throw std::runtime_error("Tried to get class without opening a library.");
+
+        dlerror();
         classInit = reinterpret_cast<tmp>(dlsym(currentHandle, classInitID));
+
+        const char *error = dlerror();
+        if (error != nullptr)
+            throw std::runtime_error(error);
         if (!classInit)
-            throw std::runtime_error((dlerror()));
+            throw std::runtime_error(std::string("Symbol not found: ") + classInitID);
+
         return classInit(std::forward<Args>(args)...);
     }
 

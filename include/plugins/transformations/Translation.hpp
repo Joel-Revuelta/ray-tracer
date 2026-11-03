@@ -8,6 +8,7 @@
 #ifndef TRANSLATION_HPP_
 #define TRANSLATION_HPP_
 
+#include "Cone.hpp"
 #include "Cylinder.hpp"
 #include "Light.hpp"
 #include "Plane.hpp"
@@ -34,6 +35,7 @@ class Translation : public ITransformation
     void doTranslationSphere(Sphere &sphere);
     void doTranslationPlane(Plane &plane);
     void doTranslationCylinder(Cylinder &cylinder);
+    void doTranslationCone(Cone &cone);
 
   protected:
   private:
