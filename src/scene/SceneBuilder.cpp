@@ -106,6 +106,7 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd)
             copy = primitive;
 
         copy->setMaterialIndex(copy->getMaterialIndex() + materialOffset);
+        copy->shiftMaterialIndices(materialOffset);
         _scene->addPrimitive(copy);
     }
     for (const auto &light : sceneToAdd->getLights())

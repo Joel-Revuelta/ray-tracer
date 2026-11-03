@@ -58,6 +58,8 @@ struct Primitive
     int type;
     unsigned int materialIndex;
     int meshIndex;
+    int meshMaterialMapStart;
+    int meshMaterialMapCount;
     Vec3 center;
     Vec3 point;
     Vec3 normal;
@@ -151,6 +153,7 @@ struct Triangle
     float tv1;
     float tu2;
     float tv2;
+    int materialGroup;
 };
 
 struct MeshRange
@@ -196,6 +199,8 @@ struct SceneView
     int texelCount;
     const TextureRange *textures;
     int textureCount;
+    const int *meshMaterialMaps;
+    int meshMaterialMapCount;
     Camera camera;
     Background background;
     PostProcess postProcess;

@@ -228,6 +228,30 @@ throughput. A missing texture keeps the old constant-colour path. For CUDA,
 global `Vec3` texel buffer plus one `TextureRange` per texture; `Cuda::Material`
 stores an index and the device samples with the same bilinear repeat mapping.
 
+### OBJ material groups
+
+The OBJ loader records `usemtl` names in `MeshAsset::materialNames` and stores
+a `materialGroup` index on every triangle. `-1` means the face had no preceding
+`usemtl`.
+
+Each mesh scene entry maps group names to scene material indices through
+`materialGroups`. `MeshPrimitive` resolves that map once into a per-instance
+`vector<int>` aligned with the asset's group list; unmatched groups stay `-1`
+and use the primitive's fallback material. The resolved map is shared with the
+CUDA snapshot and uploaded as a flat `int` array with per-primitive ranges.
+
+`HitPayload` carries a material override (`-1` by default). Mesh triangles set
+it when a group resolves, and `InstancePrimitive` forwards it. The CPU renderer
+uses the override when present, otherwise the primitive material.
+
+CUDA propagates `bestMaterialIndex` through the intersection chain.
+`intersectTriangle` reports the hit triangle's group, and `intersectMesh`
+resolves it through the primitive's uploaded range. `traceSample` then selects
+the override or the primitive fallback.
+
+`SceneBuilder::addScene` shifts both primitive material indices and mesh group
+maps when nested scenes are merged, so nested group indices remain valid.
+
 ### Renderer interface
 
 Renderers implement `RayTracer::IRenderer` from

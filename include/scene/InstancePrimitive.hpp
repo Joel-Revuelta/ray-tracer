@@ -30,6 +30,8 @@ class InstancePrimitive : public IPrimitive
     std::shared_ptr<IPrimitive> clone(void) const override;
     bool getData(PrimitiveData &data) const override;
     std::shared_ptr<const MeshAsset> getMeshAsset(void) const override;
+    std::shared_ptr<const std::vector<int>> getMeshMaterialMap(void) const override;
+    void shiftMaterialIndices(uint offset) override;
 
     uint getMaterialIndex(void) const override;
     void setMaterialIndex(const uint &index) override;

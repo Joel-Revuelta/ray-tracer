@@ -297,7 +297,11 @@ primitives:
         },
         {
             material = 1;
-            path = "models/icosphere.obj";
+            path = "models/multi_material.obj";
+            materialGroups = {
+                red = 2;
+                glass = 3;
+            };
             transform = {
                 translate = { x = 2.0; y = 0.5; z = 0.0; };
                 rotate = { x = 0.0; y = 35.0; z = 0.0; };
@@ -309,14 +313,19 @@ primitives:
 
 - `path` is required and resolves relative to the scene file's directory.
   Absolute paths are also accepted.
-- `material` is required, like every other primitive.
+- `material` is required and is the fallback for faces without a mapped group.
+- `materialGroups` optionally maps OBJ `usemtl` names to zero-based material
+  indices. Indices must exist in the current scene.
+- Groups that are not listed, and faces before the first `usemtl`, use the
+  mesh's `material` fallback.
 - `transform` is optional and follows the same rules as
   [Transforms](#transforms).
 - Repeating the same resolved path shares one immutable mesh asset. Each entry
-  still gets its own material and transform, which is how instancing works.
-- The loader supports `v` positions, `vn` vertex normals and `f` faces.
-  Polygons are fan triangulated and negative indices are supported. `vt`,
-  groups, objects, comments and `usemtl` are ignored.
+  still gets its own material fallback, group map and transform.
+- The loader supports `v` positions, `vt` texture coordinates, `vn` vertex
+  normals, `f` faces and `usemtl` groups. Polygons are fan triangulated and
+  negative indices are supported. `mtllib`, MTL contents, objects and comments
+  are ignored.
 - Face tokens may use `v`, `v/vt`, `v//vn` or `v/vt/vn`. A face without normals
   falls back to the geometric face normal.
 - When `vn` data is present, normals are interpolated across the triangle for
@@ -329,7 +338,8 @@ primitives:
   the internal triangle limit.
 
 The sample assets live in `scenes/models/`; `scenes/meshes.cfg` demonstrates
-shared geometry and per-instance transforms.
+shared geometry and per-instance transforms, and `scenes/obj_materials.cfg`
+demonstrates per-face `usemtl` material groups with a fallback.
 
 ### Transforms
 
@@ -524,8 +534,9 @@ The parser rejects:
 - negative background intensity,
 - metallic roughness outside `[0, 1]`,
 - transform scale components equal to zero or non-invertible transforms,
-- unreadable or malformed OBJ files, out-of-range mesh position/normal indices,
-  zero-length normals, or empty meshes,
+- unreadable or malformed OBJ files, out-of-range mesh position/normal/texture
+  indices, empty `usemtl` names, zero-length normals, or empty meshes,
+- material-group indices outside the current scene's material list,
 - unreadable or malformed PPM textures,
 - non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,

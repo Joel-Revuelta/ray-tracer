@@ -67,6 +67,7 @@ bool InstancePrimitive::hit(const Ray &ray, HitPayload &payload, size_t i) const
     payload.setHitNormal(vec3DNormalize(normal));
     payload.setShadingNormal(vec3DNormalize(shadingNormal));
     payload.setUV(localPayload.getU(), localPayload.getV());
+    payload.setMaterialIndex(localPayload.getMaterialIndex());
     payload.setHitIndex(static_cast<int>(i));
     return true;
 }
@@ -93,6 +94,17 @@ bool InstancePrimitive::getData(PrimitiveData &data) const
 std::shared_ptr<const MeshAsset> InstancePrimitive::getMeshAsset(void) const
 {
     return _child ? _child->getMeshAsset() : nullptr;
+}
+
+std::shared_ptr<const std::vector<int>> InstancePrimitive::getMeshMaterialMap(void) const
+{
+    return _child ? _child->getMeshMaterialMap() : nullptr;
+}
+
+void InstancePrimitive::shiftMaterialIndices(uint offset)
+{
+    if (_child)
+        _child->shiftMaterialIndices(offset);
 }
 
 uint InstancePrimitive::getMaterialIndex(void) const

@@ -24,6 +24,7 @@ class HitPayload
     ~HitPayload(void);
 
     void setHitIndex(const int &objectIndex);
+    void setMaterialIndex(const int &materialIndex);
     void setHitNormal(const Vec3D &_sceneNormal);
     void setShadingNormal(const Vec3D &shadingNormal);
     void setHitDistance(const float &_sceneDistance);
@@ -31,6 +32,7 @@ class HitPayload
     void setUV(const float &u, const float &v);
 
     int getHitIndex(void) const;
+    int getMaterialIndex(void) const;
     Vec3D getHitNormal(void) const;
     Vec3D getShadingNormal(void) const;
     float getHitDistance(void) const;
@@ -41,6 +43,9 @@ class HitPayload
   private:
     // The index of the object that was hit. Used to retrieve the material of the object.
     int _objectIndex;
+
+    // Per-hit material override, or -1 to use the primitive's material.
+    int _materialIndex;
 
     // The geometric normal of the hit point, used for ray offsets and
     // dielectric behavior.

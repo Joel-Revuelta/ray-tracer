@@ -6,6 +6,7 @@
 */
 
 #include "MeshLoader.hpp"
+#include <cctype>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -13,6 +14,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace RayTracer;
@@ -111,7 +113,8 @@ FaceVertex parseFaceVertex(const std::string &token, std::size_t vertexCount, st
 }
 
 bool addTriangle(MeshAsset &asset, const Vec3D &v0, const Vec3D &v1, const Vec3D &v2, const Vec3D &n0,
-                 const Vec3D &n1, const Vec3D &n2, const UV &uv0, const UV &uv1, const UV &uv2)
+                 const Vec3D &n1, const Vec3D &n2, const UV &uv0, const UV &uv1, const UV &uv2,
+                 int materialGroup)
 {
     const Vec3D faceNormal = vec3DCross(v1 - v0, v2 - v0);
 
@@ -119,7 +122,7 @@ bool addTriangle(MeshAsset &asset, const Vec3D &v0, const Vec3D &v1, const Vec3D
         return false;
 
     asset.triangles.push_back(
-        Triangle{v0, v1, v2, n0, n1, n2, uv0.u, uv0.v, uv1.u, uv1.v, uv2.u, uv2.v});
+        Triangle{v0, v1, v2, n0, n1, n2, uv0.u, uv0.v, uv1.u, uv1.v, uv2.u, uv2.v, materialGroup});
     return true;
 }
 } // namespace
@@ -136,6 +139,8 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
     std::vector<UV> textureCoords;
     std::vector<Vec3D> normals;
     std::vector<FaceVertex> face;
+    std::unordered_map<std::string, int> materialGroupIds;
+    int currentMaterialGroup = -1;
     std::string line;
     std::size_t lineNumber = 0;
 
@@ -167,6 +172,31 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
                 fail(path, lineNumber, "invalid vertex");
 
             vertices.emplace_back(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+            continue;
+        }
+
+        if (tag == "usemtl")
+        {
+            std::string materialName;
+
+            std::getline(stream >> std::ws, materialName);
+
+            while (!materialName.empty() && std::isspace(static_cast<unsigned char>(materialName.back())))
+                materialName.pop_back();
+
+            if (materialName.empty())
+                fail(path, lineNumber, "empty usemtl name");
+
+            const auto existing = materialGroupIds.find(materialName);
+
+            if (existing != materialGroupIds.end())
+                currentMaterialGroup = existing->second;
+            else
+            {
+                currentMaterialGroup = static_cast<int>(asset->materialNames.size());
+                asset->materialNames.push_back(materialName);
+                materialGroupIds.emplace(materialName, currentMaterialGroup);
+            }
             continue;
         }
 
@@ -234,7 +264,7 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
             const UV uv1 = b.hasTexture ? textureCoords[b.texture] : UV{};
             const UV uv2 = c.hasTexture ? textureCoords[c.texture] : UV{};
 
-            addTriangle(*asset, v0, v1, v2, n0, n1, n2, uv0, uv1, uv2);
+            addTriangle(*asset, v0, v1, v2, n0, n1, n2, uv0, uv1, uv2, currentMaterialGroup);
         }
     }
 

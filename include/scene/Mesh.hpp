@@ -11,6 +11,7 @@
 #include "AABB.hpp"
 #include "BVHBuilder.hpp"
 #include "Vec3D.hpp"
+#include <string>
 #include <vector>
 
 namespace RayTracer
@@ -33,6 +34,7 @@ struct Triangle
     float tv1 = 0.0f;
     float tu2 = 0.0f;
     float tv2 = 0.0f;
+    int materialGroup = -1;
 };
 
 /**
@@ -42,6 +44,7 @@ struct Triangle
 struct MeshAsset
 {
     std::vector<Triangle> triangles;
+    std::vector<std::string> materialNames;
     AABB bounds;
     BVHBuildResult bvh;
 };

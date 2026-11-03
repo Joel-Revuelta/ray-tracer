@@ -65,6 +65,7 @@ struct SceneSnapshot
     std::vector<LightData> lights;
     std::vector<std::shared_ptr<const MeshAsset>> meshes;
     std::vector<std::shared_ptr<const Texture>> textures;
+    std::vector<int> meshMaterialMaps;
     Background background;
 };
 

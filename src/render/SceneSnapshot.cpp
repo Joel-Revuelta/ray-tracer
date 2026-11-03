@@ -94,6 +94,16 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
 
                 data.meshIndex = inserted.first->second;
             }
+
+            const std::shared_ptr<const std::vector<int>> materialMap = primitive->getMeshMaterialMap();
+
+            if (materialMap && !materialMap->empty())
+            {
+                data.meshMaterialMapStart = static_cast<int>(snapshot.meshMaterialMaps.size());
+                data.meshMaterialMapCount = static_cast<int>(materialMap->size());
+                snapshot.meshMaterialMaps.insert(snapshot.meshMaterialMaps.end(), materialMap->begin(),
+                                                 materialMap->end());
+            }
         }
 
         snapshot.primitives.push_back(data);

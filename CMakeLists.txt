@@ -478,6 +478,23 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_texture.ppm
 )
 add_test(
+    NAME obj_materials_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/obj_materials.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/obj_materials_smoke.ppm
+)
+add_test(
+    NAME deterministic_obj_materials_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_obj_materials.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_invalid_material_group
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_material_group.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_material_group.ppm
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -494,11 +511,13 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     dof_smoke deterministic_dof_render dof_cli_override
     soft_shadow_smoke deterministic_soft_shadow_render
     texture_smoke deterministic_texture_render
+    obj_materials_smoke deterministic_obj_materials_render
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_transform parser_rejects_invalid_obj
     parser_rejects_invalid_lens parser_rejects_invalid_focus
-    parser_rejects_invalid_area_light parser_rejects_invalid_texture PROPERTIES
+    parser_rejects_invalid_area_light parser_rejects_invalid_texture
+    parser_rejects_invalid_material_group PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )

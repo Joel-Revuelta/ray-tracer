@@ -11,9 +11,30 @@
 
 using namespace RayTracer;
 
-MeshPrimitive::MeshPrimitive(std::shared_ptr<const MeshAsset> asset, uint materialIndex)
+MeshPrimitive::MeshPrimitive(std::shared_ptr<const MeshAsset> asset, uint materialIndex,
+                             std::vector<std::pair<std::string, uint>> materialGroups)
     : _asset(std::move(asset)), _materialIndex(materialIndex)
 {
+    std::vector<int> resolved;
+
+    if (_asset)
+    {
+        resolved.assign(_asset->materialNames.size(), -1);
+
+        for (const auto &group : materialGroups)
+        {
+            for (std::size_t i = 0; i < _asset->materialNames.size(); ++i)
+            {
+                if (_asset->materialNames[i] == group.first)
+                {
+                    resolved[i] = static_cast<int>(group.second);
+                    break;
+                }
+            }
+        }
+    }
+
+    _materialMap = std::make_shared<const std::vector<int>>(std::move(resolved));
 }
 
 void MeshPrimitive::doTransformation(const ITransformation &t)
@@ -63,11 +84,18 @@ bool MeshPrimitive::hitTriangle(const Triangle &triangle, const Ray &ray, HitPay
     if (vec3DDot(shadingNormal, ray.getDirection()) > 0.0f)
         shadingNormal = -shadingNormal;
 
+    int materialIndex = -1;
+
+    if (_materialMap && triangle.materialGroup >= 0 &&
+        static_cast<std::size_t>(triangle.materialGroup) < _materialMap->size())
+        materialIndex = (*_materialMap)[static_cast<std::size_t>(triangle.materialGroup)];
+
     payload.setHitDistance(distance);
     payload.setHitPosition(ray.at(distance));
     payload.setHitNormal(vec3DNormalize(geometricNormal));
     payload.setShadingNormal(vec3DNormalize(shadingNormal));
     payload.setUV(textureU, textureV);
+    payload.setMaterialIndex(materialIndex);
     payload.setHitIndex(static_cast<int>(i));
     return true;
 }
@@ -135,7 +163,31 @@ bool MeshPrimitive::hit(const Ray &ray, HitPayload &payload, size_t i) const
 
 std::shared_ptr<IPrimitive> MeshPrimitive::clone(void) const
 {
-    return std::make_shared<MeshPrimitive>(_asset, _materialIndex);
+    std::shared_ptr<MeshPrimitive> copy = std::make_shared<MeshPrimitive>(_asset, _materialIndex);
+
+    copy->_materialMap = _materialMap;
+    return copy;
+}
+
+std::shared_ptr<const std::vector<int>> MeshPrimitive::getMeshMaterialMap(void) const
+{
+    return _materialMap;
+}
+
+void MeshPrimitive::shiftMaterialIndices(uint offset)
+{
+    if (!_materialMap)
+        return;
+
+    std::vector<int> shifted = *_materialMap;
+
+    for (int &materialIndex : shifted)
+    {
+        if (materialIndex >= 0)
+            materialIndex += static_cast<int>(offset);
+    }
+
+    _materialMap = std::make_shared<const std::vector<int>>(std::move(shifted));
 }
 
 bool MeshPrimitive::getData(PrimitiveData &data) const

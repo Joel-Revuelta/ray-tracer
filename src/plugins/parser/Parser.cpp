@@ -80,6 +80,27 @@ class NestingGuard
   private:
     int &_depth;
 };
+
+class MaterialCountGuard
+{
+  public:
+    explicit MaterialCountGuard(uint &count) : _count(count), _saved(count)
+    {
+        _count = 0;
+    }
+
+    ~MaterialCountGuard(void)
+    {
+        _count = _saved;
+    }
+
+    MaterialCountGuard(const MaterialCountGuard &) = delete;
+    MaterialCountGuard &operator=(const MaterialCountGuard &) = delete;
+
+  private:
+    uint &_count;
+    uint _saved;
+};
 } // namespace
 
 Parser::Parser(void)
@@ -103,6 +124,7 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
 {
     SceneBuilder sceneBuilder;
     _camera.reset();
+    _materialCount = 0;
 
     try
     {
@@ -252,6 +274,7 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
         }
 
         sceneBuilder.addMaterial(material);
+        ++_materialCount;
     }
 }
 
@@ -457,6 +480,7 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
         throw std::runtime_error("Scene nesting is too deep (maximum depth is 32)");
 
     NestingGuard nestingGuard(_sceneNestingDepth);
+    MaterialCountGuard materialCountGuard(_materialCount);
     SceneBuilder sceneBuilder;
 
     // Materials must be registered before primitives, because a nested scene
@@ -607,9 +631,27 @@ std::shared_ptr<IPrimitive> Parser::parseMesh(libconfig::Setting &meshSetting)
 {
     const std::string path = resolveAssetPath(meshSetting.lookup("path"));
     const std::shared_ptr<const MeshAsset> asset = loadMesh(path);
+    std::vector<std::pair<std::string, uint>> materialGroups;
+
+    if (meshSetting.exists("materialGroups"))
+    {
+        const libconfig::Setting &groupSetting = meshSetting.lookup("materialGroups");
+
+        for (int i = 0; i < groupSetting.getLength(); ++i)
+        {
+            const libconfig::Setting &group = groupSetting[i];
+            const std::string name = group.getName();
+            const int materialIndex = static_cast<int>(group);
+
+            if (materialIndex < 0 || static_cast<uint>(materialIndex) >= _materialCount)
+                throw std::runtime_error("Material group '" + name + "' references an invalid material index");
+
+            materialGroups.emplace_back(name, static_cast<uint>(materialIndex));
+        }
+    }
 
     std::shared_ptr<IPrimitive> mesh =
-        _factory.create<IPrimitive>("Mesh", asset, parseMaterialIndex(meshSetting));
+        _factory.create<IPrimitive>("Mesh", asset, parseMaterialIndex(meshSetting), materialGroups);
 
     return applyTransform(mesh, meshSetting);
 }

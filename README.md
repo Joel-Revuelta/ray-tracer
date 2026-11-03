@@ -37,9 +37,11 @@ full-HD and 8K still renders.
   renderers, with the same attenuation controls as point lights.
 - **Textures** — PPM albedo maps with UVs on meshes and analytic primitives,
   bilinear filtering and repeat wrapping on CPU and CUDA.
+- **OBJ materials** — `usemtl` face groups mapped to scene materials, with a
+  per-mesh fallback for unmapped groups.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 24 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures and 8K hero renders.
+- **Included scenes** — 25 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ materials and 8K hero renders.
 
 ## Requirements
 
@@ -262,6 +264,7 @@ architecture and CUDA build details.
 | `depth_of_field.cfg` | Spheres at several depths with a focused middle plane. |
 | `soft_shadows.cfg` | Two sphere area lights over a floor and three spheres. |
 | `textures.cfg` | Checker PPM textures on a plane, primitives and a mesh. |
+| `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback. |
 
 ### HD hero scenes
 

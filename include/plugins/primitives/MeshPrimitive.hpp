@@ -11,6 +11,9 @@
 #include "Mesh.hpp"
 #include "Primitive.hpp"
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace RayTracer
 {
@@ -22,13 +25,16 @@ namespace RayTracer
 class MeshPrimitive : public IPrimitive
 {
   public:
-    MeshPrimitive(std::shared_ptr<const MeshAsset> asset, uint materialIndex);
+    MeshPrimitive(std::shared_ptr<const MeshAsset> asset, uint materialIndex,
+                  std::vector<std::pair<std::string, uint>> materialGroups = {});
 
     void doTransformation(const ITransformation &t) override;
     bool hit(const Ray &ray, HitPayload &payload, size_t i) const override;
     std::shared_ptr<IPrimitive> clone(void) const override;
     bool getData(PrimitiveData &data) const override;
     std::shared_ptr<const MeshAsset> getMeshAsset(void) const override;
+    std::shared_ptr<const std::vector<int>> getMeshMaterialMap(void) const override;
+    void shiftMaterialIndices(uint offset) override;
 
     uint getMaterialIndex(void) const override;
     void setMaterialIndex(const uint &index) override;
@@ -39,6 +45,7 @@ class MeshPrimitive : public IPrimitive
 
     std::shared_ptr<const MeshAsset> _asset;
     uint _materialIndex;
+    std::shared_ptr<const std::vector<int>> _materialMap;
 };
 
 } // namespace RayTracer

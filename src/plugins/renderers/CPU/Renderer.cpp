@@ -692,7 +692,12 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
         if (payload.getHitDistance() != std::numeric_limits<float>::infinity())
         {
             const auto &primitive = primitives[payload.getHitIndex()];
-            const auto &material = materials.at(primitive->getMaterialIndex());
+            const int materialOverride = payload.getMaterialIndex();
+            const uint materialIndex =
+                materialOverride >= 0 && static_cast<std::size_t>(materialOverride) < materials.size()
+                    ? static_cast<uint>(materialOverride)
+                    : primitive->getMaterialIndex();
+            const auto &material = materials.at(materialIndex);
             const IMaterial::MaterialType materialType = material->getType();
             Color3D surfaceColor = material->getDiffuseColor();
 

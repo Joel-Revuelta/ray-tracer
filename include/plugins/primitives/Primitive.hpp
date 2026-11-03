@@ -13,6 +13,7 @@
 #include "Transformable.hpp"
 #include "plugins/renderers/PrimitiveData.hpp"
 #include <memory>
+#include <vector>
 
 namespace RayTracer
 {
@@ -46,6 +47,20 @@ class IPrimitive : public ITransformable
     virtual std::shared_ptr<const MeshAsset> getMeshAsset(void) const
     {
         return nullptr;
+    }
+
+    // Resolved OBJ material groups for mesh primitives, aligned with
+    // MeshAsset::materialNames. -1 entries fall back to the primitive
+    // material. Non-mesh primitives return nullptr.
+    virtual std::shared_ptr<const std::vector<int>> getMeshMaterialMap(void) const
+    {
+        return nullptr;
+    }
+
+    // Shifts material indices when a nested scene is merged into a parent.
+    virtual void shiftMaterialIndices(uint offset)
+    {
+        (void)offset;
     }
 
     virtual uint getMaterialIndex(void) const = 0;

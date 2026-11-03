@@ -75,6 +75,7 @@ class Parser
     std::string _sceneDirectory = ".";
     std::unordered_map<std::string, std::shared_ptr<const MeshAsset>> _meshCache;
     std::unordered_map<std::string, std::shared_ptr<const Texture>> _textureCache;
+    uint _materialCount = 0;
     int _sceneNestingDepth = 0;
 };
 

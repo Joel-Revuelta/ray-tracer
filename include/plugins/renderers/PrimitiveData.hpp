@@ -44,6 +44,8 @@ struct PrimitiveData
     float height = 0.0f;
     bool coneBaseAbove = false;
     std::uint32_t meshIndex = 0;
+    int meshMaterialMapStart = 0;
+    int meshMaterialMapCount = 0;
     Vec3D localMin;
     Vec3D localMax;
     TransformData transform;

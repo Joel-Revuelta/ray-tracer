@@ -67,6 +67,7 @@ letterboxes it to preserve aspect ratio.
 | `depth_of_field.cfg` | Five spheres at increasing depths with a focused middle plane |
 | `soft_shadows.cfg` | Two sphere area lights over a floor and three spheres |
 | `textures.cfg` | Checker PPM textures on a plane, primitives and a mesh |
+| `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback |
 
 ## Material showcase renders
 
