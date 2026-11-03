@@ -4,6 +4,22 @@ Renderers are runtime plugins. The executable only parses arguments, builds the
 scene and selects a renderer; the rendering implementation lives in a shared
 library under `plugins/`.
 
+See [../README.md](../README.md) for build and usage instructions,
+[cli.md](cli.md) for renderer selection from the command line, and
+[scene-format.md](scene-format.md) for the scene configuration format.
+
+## Selecting a renderer
+
+```bash
+./raytracer --list-renderers
+./raytracer --path scenes/showcase.cfg --cli --renderer cpu
+./raytracer --path scenes/showcase.cfg --cli --renderer cuda
+```
+
+The default is `cpu`. Renderer names are case-insensitive. `--list-renderers`
+loads each renderer plugin and reports whether it is available, including the
+reason when it is not.
+
 ## Architecture
 
 - `raytracer_core` is a shared library containing the camera, scene graph,
@@ -81,6 +97,22 @@ SceneSnapshot snapshot = buildSceneSnapshot(*scene, *camera);
 and camera data. Primitives and lights expose `getData()` for this purpose, so
 the renderer does not need to `dynamic_cast` concrete plugin classes.
 
+## CPU renderer
+
+The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
+
+- Multithreaded: the image is split into horizontal bands, one worker per band.
+- Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
+- Uses the same 15-bounce path tracing, material and light logic as the CUDA
+  renderer.
+- Supports `--sfml` and the shared `CameraController` controls.
+- Writes binary `P6` PPM through the shared PPM helper.
+- CPU sampling uses a thread-local random generator, so noise patterns can vary
+  between runs.
+
+The CPU renderer is the reference implementation for visual behavior and is
+useful for debugging. Use CUDA for high-resolution or high-sample final renders.
+
 ## CUDA renderer
 
 The CUDA renderer mirrors the CPU lighting, intersection and bounce rules and
@@ -125,6 +157,20 @@ two seconds with CUDA, versus roughly ten minutes with the CPU renderer. A
 1000-frame CUDA render of the same scene takes about three seconds, so high
 sample counts are practical for final stills.
 
+The 8K ultra scenes (`hypernova_cathedral`, `infinity_mirror`,
+`crystal_superbloom`, `solar_eclipse`) were rendered at `7680x4320`, 2048 samples
+per pixel on the same machine:
+
+| Scene | CUDA time |
+| --- | ---: |
+| Hypernova Cathedral | 4m 29s |
+| Infinity Mirror | 24m 02s |
+| Crystal Superbloom | 4m 22s |
+| Solar Eclipse | 3m 30s |
+
+Infinity Mirror is the most expensive because of its nested metallic
+reflections.
+
 The CUDA kernel uses a seeded PCG sampler. CPU and CUDA renders share the same
 scene, materials, lights, intersections and bounce rules; at equal sample counts
 their averages and large-scale structure match closely, with independent noise
@@ -132,4 +178,22 @@ patterns.
 
 Tested with CUDA 13.4, GCC 15.2, NVIDIA driver 595.99.02 and an RTX 4070 Laptop
 (`sm_89`).
+
+## Troubleshooting
+
+| Symptom | Resolution |
+| --- | --- |
+| `cannot open shared object file: ./plugins/...` | Run `./raytracer` from the repository root and rebuild the plugins. |
+| `Renderer 'cuda' is unavailable` | CUDA was not built, the driver is missing, or no device was found. Check `--list-renderers`. |
+| CUDA kernel image error | The plugin is compiled for `sm_89`; change `CUDA_ARCHITECTURES` in `CMakeLists.txt` and rebuild. |
+| SFML window appears unresponsive | The CUDA renderer pumps events between sample batches. Use `--cli` for 8K; if the problem persists, check the display/SFML installation. |
+| PPM will not open | Output is binary `P6`; use Pillow or ImageMagick. |
+| 8K render is slow | Infinity Mirror is reflection-heavy; lower `FRAMES` or render a simpler scene for quick tests. |
+
+## Further reading
+
+- [../README.md](../README.md) — project overview and quick start.
+- [cli.md](cli.md) — complete command-line reference.
+- [scene-format.md](scene-format.md) — scene configuration reference.
+- [developer.md](developer.md) — repository architecture and contribution guide.
 

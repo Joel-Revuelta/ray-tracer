@@ -1,6 +1,12 @@
 # Raytracer test scenes
 
-Each file is a complete scene for the parser. Run one interactively with:
+Each file is a complete scene for the parser. See
+[../README.md](../README.md) for building and running the project,
+[../docs/cli.md](../docs/cli.md) for the complete command-line reference, and
+[../docs/scene-format.md](../docs/scene-format.md) for the full scene
+configuration reference.
+
+Run one interactively with:
 
 ```bash
 ./raytracer --path scenes/<name>.cfg --sfml
@@ -20,7 +26,7 @@ Useful options:
   `--output` is given.
 - `--frames N` — samples per pixel (higher = cleaner, slower; default 10).
   Use 30+ for quick previews and 100+ for final stills.
-- `--output out.ppm` — write the rendered image as a PPM.
+- `--output out.ppm` — write the rendered image as a binary P6 PPM.
 - `--width/--height` — render resolution, SFML window size and PPM size
   (default 960x540).
 - `--renderer cpu|cuda` — choose the renderer plugin (default `cpu`).
@@ -101,6 +107,9 @@ The CUDA versions of the four hero scenes are in `screenshots/hd-cuda/`
 CUDA is fast enough that `FRAMES=1000` is practical for very clean 1080p stills.
 
 ## Scene format
+
+The full reference is in [../docs/scene-format.md](../docs/scene-format.md).
+The short version:
 
 - **Materials** (`materials`): `diffuse` (`ambientReflection`, `diffuseReflection`,
   `color`), `metallic` (`color`), `emissive` (`intensity`, `color`,
