@@ -30,6 +30,7 @@ class SceneBuilder
     void addMaterial(std::shared_ptr<IMaterial> material);
     void addPrimitive(std::shared_ptr<IPrimitive> primitive);
     void addScene(std::shared_ptr<Scene> sceneToAdd);
+    void setBackground(const Background &background);
 
   private:
     void ensureScene(void);

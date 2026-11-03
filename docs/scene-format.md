@@ -63,6 +63,26 @@ camera:
 - The render resolution is set by the CLI (`--width`/`--height`), not by the
   scene file.
 
+## Background
+
+An optional gradient background is returned when a camera or bounce ray misses
+all geometry:
+
+```libconfig
+background:
+{
+    zenith = { r = 0.02; g = 0.04; b = 0.12; };
+    horizon = { r = 0.15; g = 0.20; b = 0.38; };
+    ground = { r = 0.01; g = 0.01; b = 0.03; };
+    intensity = 1.0;
+};
+```
+
+- `zenith`, `horizon`, and `ground` define the vertical gradient.
+- `intensity` must be non-negative and defaults to `1.0`.
+- If the block is omitted, the background is black.
+- Backgrounds are top-level only; nested scenes inherit the parent background.
+
 ## Materials
 
 Materials are declared in order and referenced by their zero-based index in the
@@ -319,6 +339,7 @@ The parser rejects:
 - negative intensities and negative linear/quadratic attenuation,
 - negative diffuse material reflection coefficients or emissive intensity,
 - non-positive dielectric IOR,
+- negative background intensity,
 - non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,
 - a camera position equal to its look-at point,

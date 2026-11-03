@@ -98,6 +98,8 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
         parseMaterials(sceneBuilder, _config.lookup("materials"));
         parsePrimitives(sceneBuilder, _config.lookup("primitives"));
         parseLights(sceneBuilder, _config.lookup("lights"));
+        if (_config.exists("background"))
+            sceneBuilder.setBackground(parseBackground(_config.lookup("background")));
         return sceneBuilder.build();
     }
     catch (const libconfig::SettingNotFoundException &e)
@@ -513,6 +515,26 @@ Color3D Parser::parseColor(const libconfig::Setting &colorSetting)
     requireFinite(g, "Color green");
     requireFinite(b, "Color blue");
     return Color3D(r, g, b);
+}
+
+Background Parser::parseBackground(const libconfig::Setting &backgroundSetting)
+{
+    Background background;
+
+    background.enabled = true;
+    background.zenith = parseColor(backgroundSetting.lookup("zenith"));
+    background.horizon = parseColor(backgroundSetting.lookup("horizon"));
+    background.ground = parseColor(backgroundSetting.lookup("ground"));
+
+    if (backgroundSetting.exists("intensity"))
+    {
+        const double intensity = backgroundSetting.lookup("intensity");
+
+        requireNonNegative(intensity, "Background intensity");
+        background.intensity = static_cast<float>(intensity);
+    }
+
+    return background;
 }
 
 std::shared_ptr<Camera> Parser::getParsedCamera(void) const

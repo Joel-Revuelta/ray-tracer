@@ -254,3 +254,13 @@ const Materials &Scene::getMaterials(void) const
 {
     return _materials;
 }
+
+const Background &Scene::getBackground(void) const
+{
+    return _background;
+}
+
+void Scene::setBackground(const Background &background)
+{
+    _background = background;
+}

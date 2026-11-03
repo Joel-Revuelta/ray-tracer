@@ -95,6 +95,22 @@ struct Camera
     int height;
 };
 
+struct PostProcess
+{
+    float exposure;
+    int toneMapping;
+    int srgb;
+};
+
+struct Background
+{
+    Vec3 zenith;
+    Vec3 horizon;
+    Vec3 ground;
+    float intensity;
+    int enabled;
+};
+
 struct BVHNode
 {
     Vec3 min;
@@ -121,6 +137,8 @@ struct SceneView
     const int *unboundedIndices;
     int unboundedCount;
     Camera camera;
+    Background background;
+    PostProcess postProcess;
 };
 
 } // namespace Cuda

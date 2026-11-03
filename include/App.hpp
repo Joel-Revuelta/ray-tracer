@@ -10,6 +10,7 @@
 
 #include "Factory.hpp"
 #include "Parser.hpp"
+#include "render/PostProcess.hpp"
 #include <getopt.h>
 #include <memory>
 #include <string>
@@ -37,6 +38,7 @@ class App
     std::string _output;
     std::string _rendererName;
     std::string _guiName;
+    PostProcessSettings _postProcess;
     Interface _interface;
     int _width;
     int _height;

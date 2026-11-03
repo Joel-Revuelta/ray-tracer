@@ -12,6 +12,7 @@
 #include "IMaterial.hpp"
 #include "Light.hpp"
 #include "Primitive.hpp"
+#include "Background.hpp"
 #include "BVH.hpp"
 #include <cstddef>
 #include <limits>
@@ -44,6 +45,8 @@ class Scene : public IPrimitive
     const Lights &getLights(void) const;
     const Materials &getMaterials(void) const;
     const Primitives &getPrimitives(void) const;
+    const Background &getBackground(void) const;
+    void setBackground(const Background &background);
 
     uint getMaterialIndex(void) const override;
     void setMaterialIndex(const uint &index) override;
@@ -55,6 +58,7 @@ class Scene : public IPrimitive
     Lights _lights;
     Materials _materials;
     Primitives _primitives;
+    Background _background;
     std::vector<BVHNode> _bvhNodes;
     std::vector<std::size_t> _bvhIndices;
     std::vector<std::size_t> _unboundedPrimitives;

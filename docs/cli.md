@@ -26,6 +26,8 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--width` | positive integer | Render width, window width and PPM width. | `960` |
 | `--height` | positive integer | Render height, window height and PPM height. | `540` |
 | `--frames` | positive integer | Samples per pixel. | `10` |
+| `--exposure` | non-negative float | Linear exposure multiplier before tonemapping. | `1.0` |
+| `--tonemap` | `none`, `reinhard`, or `aces` | Output tonemapping curve. | `none` |
 | `--output` | path | PPM output file. | stdout in CLI mode |
 | `--help`, `-h` | — | Print usage and exit `0`. | |
 
@@ -37,7 +39,8 @@ roughly linearly.
 
 ### Output
 
-- PPM values are gamma-corrected from the renderer's linear radiance.
+- PPM values are converted from linear radiance through exposure, the selected
+  tonemapping curve, and the sRGB transfer function.
 - CLI mode with `--output` writes a binary `P6` PPM file.
 - CLI mode without `--output` writes the PPM to standard output.
 - GUI mode writes a PPM only when `--output` is provided.

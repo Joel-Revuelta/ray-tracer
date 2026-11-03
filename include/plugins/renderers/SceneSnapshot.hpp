@@ -8,6 +8,7 @@
 #ifndef SCENE_SNAPSHOT_HPP_
 #define SCENE_SNAPSHOT_HPP_
 
+#include "Background.hpp"
 #include "IMaterial.hpp"
 #include "LightData.hpp"
 #include "PrimitiveData.hpp"
@@ -52,6 +53,7 @@ struct SceneSnapshot
     std::vector<PrimitiveData> primitives;
     std::vector<MaterialData> materials;
     std::vector<LightData> lights;
+    Background background;
 };
 
 SceneSnapshot buildSceneSnapshot(const Scene &scene, const Camera &camera);

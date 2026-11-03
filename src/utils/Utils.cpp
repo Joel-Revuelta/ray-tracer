@@ -7,24 +7,8 @@
 
 #include "Utils.hpp"
 #include "Color.hpp"
-#include <algorithm>
-#include <cmath>
 
 using namespace RayTracer;
-
-namespace
-{
-uint8_t colorComponentToByte(float value)
-{
-    if (!std::isfinite(value))
-        return 0;
-
-    const float linear = std::clamp(value, 0.0f, 1.0f);
-    const float gamma = std::sqrt(linear);
-
-    return static_cast<uint8_t>(std::lround(gamma * 255.0f));
-}
-} // namespace
 
 /**
  * PCGHash function.
@@ -49,10 +33,15 @@ uint32_t Utils::PCGHash(uint32_t input)
  */
 uint32_t Utils::convertToRGBA(const Color4D &color)
 {
-    const uint8_t r = colorComponentToByte(color.getX());
-    const uint8_t g = colorComponentToByte(color.getY());
-    const uint8_t b = colorComponentToByte(color.getZ());
-    const uint8_t a = colorComponentToByte(color.getW());
+    return convertToRGBA(color, PostProcessSettings{});
+}
+
+uint32_t Utils::convertToRGBA(const Color4D &color, const PostProcessSettings &settings)
+{
+    const uint8_t r = postProcessToByte(color.getX(), settings);
+    const uint8_t g = postProcessToByte(color.getY(), settings);
+    const uint8_t b = postProcessToByte(color.getZ(), settings);
+    const uint8_t a = postProcessToByte(color.getW(), settings, true);
 
     return (static_cast<uint32_t>(a) << 24u) | (static_cast<uint32_t>(b) << 16u) |
            (static_cast<uint32_t>(g) << 8u) | static_cast<uint32_t>(r);

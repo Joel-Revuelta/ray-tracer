@@ -10,6 +10,7 @@
 #include "plugins/renderers/CUDA/CudaKernels.hpp"
 #include "plugins/renderers/PPM.hpp"
 #include "plugins/renderers/SceneSnapshot.hpp"
+#include "render/PostProcess.hpp"
 #include "scene/PrimitiveBounds.hpp"
 #include <algorithm>
 #include <chrono>
@@ -108,6 +109,17 @@ Cuda::Camera toDevice(const CameraData &camera)
     result.width = camera.imageWidth;
     result.height = camera.imageHeight;
     return result;
+}
+
+Cuda::PostProcess toDevice(const PostProcessSettings &settings)
+{
+    return Cuda::PostProcess{settings.exposure, static_cast<int>(settings.toneMapping), settings.srgb ? 1 : 0};
+}
+
+Cuda::Background toDeviceBackground(const Background &background)
+{
+    return Cuda::Background{toDevice(background.zenith), toDevice(background.horizon), toDevice(background.ground),
+                            background.intensity, background.enabled ? 1 : 0};
 }
 
 std::vector<Cuda::Primitive> convertPrimitives(const SceneSnapshot &snapshot)
@@ -293,7 +305,7 @@ std::size_t pixelCount(int width, int height)
 class CudaRenderSession
 {
   public:
-    explicit CudaRenderSession(const SceneSnapshot &snapshot)
+    explicit CudaRenderSession(const SceneSnapshot &snapshot, const PostProcessSettings &postProcess)
         : _width(snapshot.camera.imageWidth), _height(snapshot.camera.imageHeight),
           _primitives(convertPrimitives(snapshot)), _materials(convertMaterials(snapshot)),
           _lights(convertLights(snapshot)), _bvh(buildBVH(snapshot)), _devicePrimitives(_primitives.size()),
@@ -322,6 +334,8 @@ class CudaRenderSession
         _view.unboundedIndices = _deviceUnbounded.get();
         _view.unboundedCount = checkedCount(_bvh.unbounded.size(), "unbounded primitives");
         _view.camera = toDevice(snapshot.camera);
+        _view.background = toDeviceBackground(snapshot.background);
+        _view.postProcess = toDevice(postProcess);
 
         checkCuda(cudaStreamCreateWithFlags(&_stream, cudaStreamNonBlocking), "cudaStreamCreate");
         try
@@ -571,7 +585,7 @@ void CUDARenderer::run(const RenderContext &context)
 
         if (!session || snapshot.camera.imageWidth != session->width() ||
             snapshot.camera.imageHeight != session->height())
-            session = std::make_unique<CudaRenderSession>(snapshot);
+            session = std::make_unique<CudaRenderSession>(snapshot, context.options.postProcess);
         else
             session->updateCamera(snapshot.camera);
 

@@ -11,6 +11,7 @@
 #include "Camera.hpp"
 #include "GUI.hpp"
 #include "Scene.hpp"
+#include "render/PostProcess.hpp"
 #include <memory>
 #include <string>
 
@@ -23,6 +24,7 @@ struct RenderOptions
     int height = 0;
     int frames = 1;
     std::string outputPath;
+    PostProcessSettings postProcess;
 };
 
 struct RenderContext

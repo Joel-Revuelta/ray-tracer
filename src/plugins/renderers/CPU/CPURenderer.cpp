@@ -41,7 +41,8 @@ void CPURenderer::run(const RenderContext &context)
                                    context.camera->getLookFrom(), context.camera->getVerticalFovDegree());
     }
 
-    Renderer renderer(context.options.frames, context.scene, context.camera, context.gui, context.options.outputPath);
+    Renderer renderer(context.options.frames, context.scene, context.camera, context.gui, context.options.outputPath,
+                      context.options.postProcess);
     renderer.run();
 }
 

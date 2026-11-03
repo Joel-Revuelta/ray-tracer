@@ -8,6 +8,7 @@
 #ifndef UTILS_HPP_
 #define UTILS_HPP_
 
+#include "render/PostProcess.hpp"
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
@@ -27,6 +28,7 @@ constexpr const double PI = 3.1415926535897932385;
 
 uint32_t PCGHash(uint32_t input);
 uint32_t convertToRGBA(const Color4D &color);
+uint32_t convertToRGBA(const Color4D &color, const PostProcessSettings &settings);
 Color4D convertTo255(const Color4D &color);
 Color4D convertFromRGBA(const uint32_t &rgba);
 Color4D convertTo01(const Color4D &color);

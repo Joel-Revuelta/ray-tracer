@@ -22,8 +22,10 @@ full-HD and 8K still renders.
   settings and material indices before rendering.
 - **Interactive GUI backends** — SFML 3 or GLFW/OpenGL 3.3, with
   camera-relative movement, look controls, FOV zoom, reset and camera locks.
-- **Headless CLI** — binary PPM output, stdout support and configurable
-  resolution/samples.
+- **Headless CLI** — binary PPM output, stdout support, configurable
+  resolution/samples, exposure and tonemapping.
+- **Visual pipeline** — exact sRGB output, optional Reinhard/ACES tonemapping,
+  and scene background gradients for reflections.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
 - **Included scenes** — 18 scenes, from material studies to glass showcases and 8K hero renders.
@@ -154,6 +156,7 @@ Available renderers:
 ```text
 Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
        [--renderer cpu|cuda] [--width W] [--height H] [--frames N]
+       [--exposure E] [--tonemap none|reinhard|aces]
        [--output out.ppm] [--list-renderers]
 ```
 
@@ -168,6 +171,8 @@ Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
 | `--width <N>` | Render width and window width. Must be positive. | `960` |
 | `--height <N>` | Render height and window height. Must be positive. | `540` |
 | `--frames <N>` | Samples per pixel. Higher is cleaner and slower. | `10` |
+| `--exposure <E>` | Linear exposure before tonemapping. | `1.0` |
+| `--tonemap <mode>` | `none`, `reinhard`, or `aces`. | `none` |
 | `--output <file>` | Output PPM path. | stdout in CLI mode |
 | `--help`, `-h` | Print usage and exit. | |
 

@@ -176,14 +176,14 @@ class RenderPool
 
 Renderer::Renderer(void)
     : _frameIterations(100), _frameIterationsScale(1.0 / _frameIterations), _scene(nullptr), _camera(nullptr),
-      _gui(nullptr)
+      _gui(nullptr), _postProcess()
 {
 }
 
 Renderer::Renderer(int raysPerPixel, std::shared_ptr<Scene> scene, std::shared_ptr<Camera> camera,
-                   std::shared_ptr<IGUI> gui, const std::string &outFile)
+                   std::shared_ptr<IGUI> gui, const std::string &outFile, const PostProcessSettings &postProcess)
     : _frameIterations(raysPerPixel), _frameIterationsScale(1.0 / _frameIterations), _scene(scene), _camera(camera),
-      _gui(gui)
+      _gui(gui), _postProcess(postProcess)
 {
     if (raysPerPixel <= 0)
         throw std::invalid_argument("Frame iterations must be positive");
@@ -347,7 +347,7 @@ void Renderer::renderFrame(void)
                     Color4D accumulatedColor4D = _imageAccumulationData[pixelIndex];
                     accumulatedColor4D /= (float)_frameIteration;
                     accumulatedColor4D.clampColor(0.0f, 1.0f);
-                    _imageData[pixelIndex] = Utils::convertToRGBA(accumulatedColor4D);
+                    _imageData[pixelIndex] = Utils::convertToRGBA(accumulatedColor4D, _postProcess);
                 }
             }
         }
@@ -647,8 +647,10 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
         }
         else
         {
-            // If we didn't hit anything, return the background color
-            accumulatedColor += Color3D(0.0, 0.0, 0.0);
+            const Background &background = scene.getBackground();
+
+            if (background.enabled)
+                accumulatedColor += throughput * background.sample(ray.getDirection());
             break;
         }
     }

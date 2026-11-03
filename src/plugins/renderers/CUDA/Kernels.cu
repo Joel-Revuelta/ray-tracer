@@ -87,6 +87,52 @@ __device__ inline float clamp01(float value)
     return fminf(fmaxf(value, 0.0f), 1.0f);
 }
 
+__device__ inline float linearToSRGB(float value)
+{
+    const float clamped = clamp01(value);
+
+    if (clamped <= 0.0031308f)
+        return 12.92f * clamped;
+    return 1.055f * powf(clamped, 1.0f / 2.4f) - 0.055f;
+}
+
+__device__ inline Vec3 skyColor(const Background &background, const Vec3 &direction)
+{
+    const Vec3 unit = normalize(direction);
+    const float vertical = fminf(fmaxf(unit.y, -1.0f), 1.0f);
+    const float blend = sqrtf(fabsf(vertical));
+
+    if (vertical >= 0.0f)
+        return scale(add(scale(background.horizon, 1.0f - blend), scale(background.zenith, blend)),
+                     background.intensity);
+    return scale(add(scale(background.horizon, 1.0f - blend), scale(background.ground, blend)),
+                 background.intensity);
+}
+
+__device__ inline float postProcessChannel(float linear, const PostProcess &settings)
+{
+    const float exposed = fmaxf(linear * settings.exposure, 0.0f);
+    float tonemapped = exposed;
+
+    if (settings.toneMapping == 1)
+        tonemapped = exposed / (1.0f + exposed);
+    else if (settings.toneMapping == 2)
+    {
+        constexpr float a = 2.51f;
+        constexpr float b = 0.03f;
+        constexpr float c = 2.43f;
+        constexpr float d = 0.59f;
+        constexpr float e = 0.14f;
+
+        tonemapped = (exposed * (a * exposed + b)) / (exposed * (c * exposed + d) + e);
+    }
+
+    if (settings.srgb != 0)
+        tonemapped = linearToSRGB(tonemapped);
+
+    return clamp01(tonemapped);
+}
+
 __device__ inline unsigned int pcgHash(unsigned int input)
 {
     const unsigned int state = input * 747796405u + 2891336453u;
@@ -650,7 +696,11 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         int primitiveIndex = -1;
 
         if (!intersectScene(scene, ray, distance, normal, primitiveIndex))
+        {
+            if (scene.background.enabled != 0)
+                accumulated = add(accumulated, multiply(throughput, skyColor(scene.background, ray.direction)));
             break;
+        }
 
         const Primitive &primitive = scene.primitives[primitiveIndex];
 
@@ -787,9 +837,9 @@ __global__ void renderKernel(SceneView scene, int sampleStart, int sampleCount, 
     const float inverseSamples = 1.0f / static_cast<float>(renderedSamples);
     uchar4 pixel;
 
-    const float red = clamp01(sqrtf(fmaxf(sum.x * inverseSamples, 0.0f)));
-    const float green = clamp01(sqrtf(fmaxf(sum.y * inverseSamples, 0.0f)));
-    const float blue = clamp01(sqrtf(fmaxf(sum.z * inverseSamples, 0.0f)));
+    const float red = postProcessChannel(sum.x * inverseSamples, scene.postProcess);
+    const float green = postProcessChannel(sum.y * inverseSamples, scene.postProcess);
+    const float blue = postProcessChannel(sum.z * inverseSamples, scene.postProcess);
 
     pixel.x = static_cast<unsigned char>(red * 255.0f + 0.5f);
     pixel.y = static_cast<unsigned char>(green * 255.0f + 0.5f);

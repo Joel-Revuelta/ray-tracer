@@ -145,6 +145,12 @@ std::shared_ptr<Scene> SceneBuilder::build(void)
 /**
  * Clears the _scene variable.
  */
+void SceneBuilder::setBackground(const Background &background)
+{
+    ensureScene();
+    _scene->setBackground(background);
+}
+
 void SceneBuilder::clear(void)
 {
     _scene = std::make_shared<Scene>();

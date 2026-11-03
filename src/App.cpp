@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -23,7 +24,8 @@ namespace
 {
 const char *const USAGE =
     "Usage: ./raytracer --path <scene.cfg> --cli|--sfml|--gui sfml|opengl "
-    "[--renderer cpu|cuda] [--width W] [--height H] [--frames N] [--output out.ppm] [--list-renderers]";
+    "[--renderer cpu|cuda] [--width W] [--height H] [--frames N] "
+    "[--exposure E] [--tonemap none|reinhard|aces] [--output out.ppm] [--list-renderers]";
 
 std::string normalizeGuiName(std::string name)
 {
@@ -56,6 +58,40 @@ int parsePositiveInt(const char *value, const char *name)
     }
 
     return static_cast<int>(parsed);
+}
+
+float parseNonNegativeFloat(const char *value, const char *name)
+{
+    errno = 0;
+    char *end = nullptr;
+    const float parsed = std::strtof(value, &end);
+
+    if (errno != 0 || end == value || *end != '\0' || !std::isfinite(parsed) || parsed < 0.0f)
+    {
+        std::cerr << "Invalid " << name << " value: " << value << std::endl;
+        printUsage(std::cerr);
+        std::exit(EXIT_FAILURE);
+    }
+
+    return parsed;
+}
+
+bool parseToneMapping(const char *value, ToneMapping &mapping)
+{
+    std::string name(value);
+
+    std::transform(name.begin(), name.end(), name.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+
+    if (name == "none")
+        mapping = ToneMapping::NONE;
+    else if (name == "reinhard")
+        mapping = ToneMapping::REINHARD;
+    else if (name == "aces")
+        mapping = ToneMapping::ACES;
+    else
+        return false;
+    return true;
 }
 
 void printRendererNames(std::ostream &stream)
@@ -106,7 +142,7 @@ void listRenderers(void)
  */
 App::App(int ac, char **av)
     : _parser(std::make_unique<Parser>()), _filepath(""), _output(""), _rendererName("cpu"),
-      _guiName("SFML"), _interface(Interface::NONE), _width(960), _height(540), _frames(10)
+      _guiName("SFML"), _postProcess(), _interface(Interface::NONE), _width(960), _height(540), _frames(10)
 {
     int opt;
 
@@ -121,6 +157,8 @@ App::App(int ac, char **av)
                                       {"renderer", required_argument, NULL, 9},
                                       {"list-renderers", 0, NULL, 10},
                                       {"gui", required_argument, NULL, 11},
+                                      {"exposure", required_argument, NULL, 12},
+                                      {"tonemap", required_argument, NULL, 13},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -165,6 +203,17 @@ App::App(int ac, char **av)
         case 11:
             _interface = Interface::GUI;
             _guiName = optarg;
+            break;
+        case 12:
+            _postProcess.exposure = parseNonNegativeFloat(optarg, "exposure");
+            break;
+        case 13:
+            if (!parseToneMapping(optarg, _postProcess.toneMapping))
+            {
+                std::cerr << "Unknown tonemapping mode: " << optarg << std::endl;
+                std::cerr << "Available modes: none, reinhard, aces" << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
             break;
         case '?':
         default:
@@ -257,6 +306,7 @@ void App::run(void)
         context.options.height = _height;
         context.options.frames = _frames;
         context.options.outputPath = _output;
+        context.options.postProcess = _postProcess;
 
         if (_interface == Interface::GUI)
         {

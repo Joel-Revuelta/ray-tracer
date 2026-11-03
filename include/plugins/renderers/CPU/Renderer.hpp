@@ -18,6 +18,7 @@
 #include "Scene.hpp"
 #include "Vec3D.hpp"
 #include "plugins/renderers/CameraController.hpp"
+#include "render/PostProcess.hpp"
 #include <atomic>
 #include <cstddef>
 #include <fstream>
@@ -36,7 +37,8 @@ class Renderer
   public:
     Renderer(void);
     Renderer(int frameIterations, std::shared_ptr<Scene> scene, std::shared_ptr<Camera> camera,
-             std::shared_ptr<IGUI> gui, const std::string& outFile);
+             std::shared_ptr<IGUI> gui, const std::string &outFile,
+             const PostProcessSettings &postProcess = {});
     ~Renderer(void);
 
     void run(void);
@@ -78,6 +80,7 @@ class Renderer
 
     std::shared_ptr<IGUI> _gui;
     CameraController _cameraController;
+    PostProcessSettings _postProcess;
 
     std::atomic<bool> _reset{false};
     std::atomic<bool> _stop{false};

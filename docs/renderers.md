@@ -208,6 +208,21 @@ The OpenGL backend requires GLFW 3.3+, GLEW and an X11/GLX display. It is
 disabled automatically when those dependencies are unavailable; `--gui opengl`
 then reports the missing plugin.
 
+## Output pipeline
+
+Both renderers share the same output pipeline:
+
+1. linear radiance,
+2. exposure multiplier,
+3. tonemapping: `none`, `reinhard`, or `aces`,
+4. sRGB transfer,
+5. 8-bit PPM output.
+
+The defaults are exposure `1.0` and tonemapping `none`. Use `--tonemap aces`
+for a softer highlight roll-off and `--exposure` to adjust the overall level.
+Missed rays sample the optional scene `background` gradient instead of returning
+black.
+
 ## Troubleshooting
 
 | Symptom | Resolution |

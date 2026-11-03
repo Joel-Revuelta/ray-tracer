@@ -22,6 +22,7 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
     snapshot.camera.imageWidth = camera.getImageWidth();
     snapshot.camera.imageHeight = camera.getImageHeight();
     snapshot.camera.verticalFovDegree = camera.getVerticalFovDegree();
+    snapshot.background = scene.getBackground();
 
     for (const auto &material : scene.getMaterials())
     {

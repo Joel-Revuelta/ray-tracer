@@ -314,7 +314,14 @@ add_test(
             --cli --renderer cpu --width 16 --height 9 --frames 1
             --output ${CMAKE_BINARY_DIR}/invalid_material.ppm
 )
-set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render
+add_test(
+    NAME post_process_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2
+            --tonemap reinhard --exposure 0.75
+            --output ${CMAKE_BINARY_DIR}/post_process_smoke.ppm
+)
+set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_process_smoke
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(parser_rejects_negative_material PROPERTIES
     WILL_FAIL TRUE
