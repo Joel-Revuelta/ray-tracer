@@ -43,6 +43,10 @@ Resizing the window stretches the rendered image to the new size.
 | `crystal_garden.cfg` | Glowing crystal spires, metallic shards and floating orbs on a mirrored floor |
 | `chrome_singularity.cfg` | A chrome world wrapped in a tilted accretion ring and a starfield |
 | `solar_bloom.cfg` | A huge amber sun rising over a mirror sea with silhouetted spheres |
+| `hypernova_cathedral.cfg` | A chrome singularity ringed by neon particles inside a cosmic colonnade |
+| `infinity_mirror.cfg` | A mirrored corridor filled with repeating neon gates and endless reflections |
+| `crystal_superbloom.cfg` | A vast field of giant crystal spires, floating orbs and a distant moon |
+| `solar_eclipse.cfg` | A giant amber sun eclipsed by a dark sphere above a mirror sea |
 
 ## Full HD renders
 
@@ -59,6 +63,25 @@ RENDERER=cuda FRAMES=240 ./scenes/render_hd.sh solar_bloom
 
 Set `WIDTH`, `HEIGHT`, `FRAMES`, `RENDERER` or `OUT_DIR` in the environment to
 override the defaults.
+
+## 8K renders
+
+The four ultra scenes are composed for 8K:
+
+```bash
+./scenes/render_8k.sh
+FRAMES=4096 ./scenes/render_8k.sh solar_eclipse
+```
+
+The script defaults to `7680x4320`, `2048` frames and the `cuda` renderer. It
+writes binary PPM images and converts them to full-size PNGs plus 4K and 1080p
+previews in `screenshots/8k/`. A `contact.png` sheet is also created.
+
+Use `FRAMES=4096` or `FRAMES=8192` for even longer passes. The mirrored
+Infinity Mirror scene is the most expensive because of its many reflections.
+
+8K rendering is intended for `--cli`; use the 4K or 1080p previews to inspect
+the images without loading the full-resolution files.
 
 ## Renderers
 

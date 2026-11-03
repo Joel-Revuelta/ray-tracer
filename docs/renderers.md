@@ -108,7 +108,8 @@ uses the same `SceneSnapshot` data path.
   and events are pumped between batches, so the window stays responsive and
   camera movement restarts the render promptly.
 - **Output:** uses the shared PPM helper and supports stdout, files, and
-  unwritable-output errors like the CPU renderer.
+  unwritable-output errors like the CPU renderer. PPM output is binary `P6`,
+  which keeps 8K images around 100 MB instead of several hundred MB of ASCII.
 
 Run it with:
 
