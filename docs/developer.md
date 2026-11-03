@@ -193,6 +193,16 @@ and indices into global buffers once, offsets the node/index references per
 mesh, and stores a `MeshRange` per asset. `Cuda::Primitive::meshIndex` selects
 the range; device traversal is scene BVH → mesh BVH → Möller–Trumbore.
 
+`Triangle` stores three positions and three vertex normals. The OBJ loader
+fills them from `vn` data and falls back to the face normal when a face has no
+normal. `HitPayload` carries both a geometric and a shading normal:
+`setHitNormal()` also seeds the shading normal, and smooth meshes override it
+with `setShadingNormal()`. `InstancePrimitive` transforms both normals with the
+inverse-transpose. Renderers use the shading normal for diffuse/metallic
+sampling and lighting, and the geometric normal for ray offsets, termination
+checks and dielectric reflection/refraction. CUDA propagates both normals
+through the intersection chain (`bestNormal`, `bestShadingNormal`).
+
 ### Renderer interface
 
 Renderers implement `RayTracer::IRenderer` from

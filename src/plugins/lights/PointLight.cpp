@@ -57,7 +57,7 @@ bool PointLight::getData(LightData &data) const
 Color3D PointLight::calculateLighting(const HitPayload &payload) const
 {
     const float diffuseFactor =
-        std::max<float>(vec3DDot(getLightDirection(payload), payload.getHitNormal()), 0.0f);
+        std::max<float>(vec3DDot(getLightDirection(payload), payload.getShadingNormal()), 0.0f);
 
     return diffuseFactor * getRadiance(payload);
 }

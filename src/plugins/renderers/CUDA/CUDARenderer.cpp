@@ -277,8 +277,9 @@ HostMeshes convertMeshes(const SceneSnapshot &snapshot)
             range.indexCount = checkedCount(asset->bvh.indices.size(), "mesh BVH indices");
 
             for (const Triangle &triangle : asset->triangles)
-                meshes.triangles.push_back(
-                    Cuda::Triangle{toDevice(triangle.v0), toDevice(triangle.v1), toDevice(triangle.v2)});
+                meshes.triangles.push_back(Cuda::Triangle{toDevice(triangle.v0), toDevice(triangle.v1),
+                                                          toDevice(triangle.v2), toDevice(triangle.n0),
+                                                          toDevice(triangle.n1), toDevice(triangle.n2)});
 
             for (const BVHNode &source : asset->bvh.nodes)
             {

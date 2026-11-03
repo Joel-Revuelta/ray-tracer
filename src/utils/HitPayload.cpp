@@ -10,8 +10,8 @@
 using namespace RayTracer;
 
 HitPayload::HitPayload(void)
-    : _objectIndex(-1), _hitNormal(Vec3D(0, 0, 0)), _hitDistance(std::numeric_limits<float>::infinity()),
-      _hitPosition(Point3D(0, 0, 0))
+    : _objectIndex(-1), _hitNormal(Vec3D(0, 0, 0)), _shadingNormal(Vec3D(0, 0, 0)),
+      _hitDistance(std::numeric_limits<float>::infinity()), _hitPosition(Point3D(0, 0, 0))
 {
 }
 
@@ -27,6 +27,12 @@ void HitPayload::setHitIndex(const int &objectIndex)
 void HitPayload::setHitNormal(const Vec3D &hitNormal)
 {
     _hitNormal = hitNormal;
+    _shadingNormal = hitNormal;
+}
+
+void HitPayload::setShadingNormal(const Vec3D &shadingNormal)
+{
+    _shadingNormal = shadingNormal;
 }
 
 void HitPayload::setHitDistance(const float &hitDistance)
@@ -47,6 +53,11 @@ int HitPayload::getHitIndex(void) const
 Vec3D HitPayload::getHitNormal(void) const
 {
     return _hitNormal;
+}
+
+Vec3D HitPayload::getShadingNormal(void) const
+{
+    return _shadingNormal;
 }
 
 float HitPayload::getHitDistance(void) const

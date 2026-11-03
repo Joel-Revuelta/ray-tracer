@@ -52,13 +52,20 @@ bool InstancePrimitive::hit(const Ray &ray, HitPayload &payload, size_t i) const
         return false;
 
     Vec3D normal = transformNormal(_transform, localPayload.getHitNormal());
+    Vec3D shadingNormal = transformNormal(_transform, localPayload.getShadingNormal());
+
+    if (!std::isfinite(shadingNormal.lengthSquared()) || shadingNormal.lengthSquared() < 1e-12f)
+        shadingNormal = normal;
 
     if (vec3DDot(normal, ray.getDirection()) > 0.0f)
         normal = -normal;
+    if (vec3DDot(shadingNormal, ray.getDirection()) > 0.0f)
+        shadingNormal = -shadingNormal;
 
     payload.setHitDistance(worldDistance);
     payload.setHitPosition(ray.at(worldDistance));
     payload.setHitNormal(vec3DNormalize(normal));
+    payload.setShadingNormal(vec3DNormalize(shadingNormal));
     payload.setHitIndex(static_cast<int>(i));
     return true;
 }

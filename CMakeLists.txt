@@ -386,6 +386,18 @@ add_test(
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
 )
 add_test(
+    NAME mesh_smooth_normals
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/smooth_mesh.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2
+            --output ${CMAKE_BINARY_DIR}/smooth_mesh.ppm
+)
+add_test(
+    NAME mesh_flat_fallback
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/flat_mesh.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2
+            --output ${CMAKE_BINARY_DIR}/flat_mesh.ppm
+)
+add_test(
     NAME parser_rejects_invalid_obj
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_obj.cfg
             --cli --renderer cpu --width 16 --height 9 --frames 1
@@ -434,6 +446,7 @@ add_test(
 set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_process_smoke
     roughness_smoke seed_deterministic_cpu_render threads_smoke list_guis
     bvh_matches_linear transform_smoke mesh_smoke mesh_bvh_matches_linear
+    mesh_smooth_normals mesh_flat_fallback
     dof_smoke deterministic_dof_render dof_cli_override
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed

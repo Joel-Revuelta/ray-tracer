@@ -49,14 +49,22 @@ bool MeshPrimitive::hitTriangle(const Triangle &triangle, const Ray &ray, HitPay
     if (distance <= Ray::EPSILON || distance >= payload.getHitDistance())
         return false;
 
-    Vec3D normal = vec3DCross(edge1, edge2);
+    Vec3D geometricNormal = vec3DCross(edge1, edge2);
+    const float w0 = 1.0f - u - v;
+    Vec3D shadingNormal = triangle.n0 * w0 + triangle.n1 * u + triangle.n2 * v;
 
-    if (vec3DDot(normal, ray.getDirection()) > 0.0f)
-        normal = -normal;
+    if (!std::isfinite(shadingNormal.lengthSquared()) || shadingNormal.lengthSquared() < 1e-12f)
+        shadingNormal = geometricNormal;
+
+    if (vec3DDot(geometricNormal, ray.getDirection()) > 0.0f)
+        geometricNormal = -geometricNormal;
+    if (vec3DDot(shadingNormal, ray.getDirection()) > 0.0f)
+        shadingNormal = -shadingNormal;
 
     payload.setHitDistance(distance);
     payload.setHitPosition(ray.at(distance));
-    payload.setHitNormal(vec3DNormalize(normal));
+    payload.setHitNormal(vec3DNormalize(geometricNormal));
+    payload.setShadingNormal(vec3DNormalize(shadingNormal));
     payload.setHitIndex(static_cast<int>(i));
     return true;
 }

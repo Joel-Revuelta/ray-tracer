@@ -278,10 +278,16 @@ primitives:
   [Transforms](#transforms).
 - Repeating the same resolved path shares one immutable mesh asset. Each entry
   still gets its own material and transform, which is how instancing works.
-- The loader supports `v` positions and `f` faces. Polygons are fan
-  triangulated, negative indices are supported, and `vt`, `vn`, groups,
-  objects, comments and `usemtl` are ignored.
-- Shading uses flat geometric triangle normals. Triangles are double-sided.
+- The loader supports `v` positions, `vn` vertex normals and `f` faces.
+  Polygons are fan triangulated and negative indices are supported. `vt`,
+  groups, objects, comments and `usemtl` are ignored.
+- Face tokens may use `v`, `v/vt`, `v//vn` or `v/vt/vn`. A face without normals
+  falls back to the geometric face normal.
+- When `vn` data is present, normals are interpolated across the triangle for
+  smooth shading. Without `vn`, the mesh is flat-shaded.
+- Shading normals drive diffuse/metallic lighting and sampling. Geometric
+  normals are still used for ray offsets and dielectric reflection/refraction.
+- Triangles are double-sided.
 - The parser rejects unreadable files, malformed numbers, face indices out of
   range, faces with fewer than three vertices, empty meshes and meshes above
   the internal triangle limit.
@@ -451,7 +457,8 @@ The parser rejects:
 - negative background intensity,
 - metallic roughness outside `[0, 1]`,
 - transform scale components equal to zero or non-invertible transforms,
-- unreadable or malformed OBJ files, out-of-range mesh face indices, or empty meshes,
+- unreadable or malformed OBJ files, out-of-range mesh position/normal indices,
+  zero-length normals, or empty meshes,
 - non-finite point, vector, or colour components,
 - field of view outside `(0, 180)`,
 - a negative camera lens radius or a non-positive focus distance,

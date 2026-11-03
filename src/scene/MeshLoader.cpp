@@ -22,43 +22,79 @@ namespace
 constexpr std::size_t MAX_TRIANGLES = 4000000;
 constexpr float DEGENERATE_EPSILON = 1e-12f;
 
+struct FaceVertex
+{
+    std::size_t position = 0;
+    std::size_t normal = 0;
+    bool hasNormal = false;
+};
+
 [[noreturn]] void fail(const std::string &path, std::size_t line, const std::string &message)
 {
     throw std::runtime_error(path + ":" + std::to_string(line) + ": " + message);
 }
 
-std::size_t parseFaceIndex(const std::string &token, std::size_t vertexCount, const std::string &path,
-                           std::size_t line)
+std::size_t resolveIndex(const std::string &token, std::size_t count, const std::string &kind,
+                         const std::string &path, std::size_t line)
 {
-    const std::size_t slash = token.find('/');
-    const std::string vertexToken = slash == std::string::npos ? token : token.substr(0, slash);
-
-    if (vertexToken.empty())
-        fail(path, line, "empty face index");
+    if (token.empty())
+        fail(path, line, "empty " + kind + " index");
 
     errno = 0;
     char *end = nullptr;
-    const long parsed = std::strtol(vertexToken.c_str(), &end, 10);
+    const long parsed = std::strtol(token.c_str(), &end, 10);
 
-    if (errno != 0 || end == vertexToken.c_str() || *end != '\0' || parsed == 0)
-        fail(path, line, "invalid face index '" + token + "'");
+    if (errno != 0 || end == token.c_str() || *end != '\0' || parsed == 0)
+        fail(path, line, "invalid " + kind + " index '" + token + "'");
 
-    const long resolved = parsed < 0 ? static_cast<long>(vertexCount) + parsed : parsed - 1;
+    const long resolved = parsed < 0 ? static_cast<long>(count) + parsed : parsed - 1;
 
-    if (resolved < 0 || resolved >= static_cast<long>(vertexCount))
-        fail(path, line, "face index out of range '" + token + "'");
+    if (resolved < 0 || resolved >= static_cast<long>(count))
+        fail(path, line, kind + " index out of range '" + token + "'");
 
     return static_cast<std::size_t>(resolved);
 }
 
-bool addTriangle(MeshAsset &asset, const Vec3D &v0, const Vec3D &v1, const Vec3D &v2)
+FaceVertex parseFaceVertex(const std::string &token, std::size_t vertexCount, std::size_t normalCount,
+                           const std::string &path, std::size_t line)
 {
-    const Vec3D normal = vec3DCross(v1 - v0, v2 - v0);
+    const std::size_t firstSlash = token.find('/');
+    const std::string positionToken = firstSlash == std::string::npos ? token : token.substr(0, firstSlash);
 
-    if (!std::isfinite(normal.lengthSquared()) || normal.lengthSquared() < DEGENERATE_EPSILON)
+    FaceVertex vertex;
+
+    vertex.position = resolveIndex(positionToken, vertexCount, "position", path, line);
+
+    if (firstSlash == std::string::npos)
+        return vertex;
+
+    const std::size_t secondSlash = token.find('/', firstSlash + 1);
+
+    if (secondSlash == std::string::npos)
+        return vertex;
+
+    if (token.find('/', secondSlash + 1) != std::string::npos)
+        fail(path, line, "invalid face token '" + token + "'");
+
+    const std::string normalToken = token.substr(secondSlash + 1);
+
+    if (normalToken.empty())
+        fail(path, line, "empty normal index in face token '" + token + "'");
+
+    vertex.normal = resolveIndex(normalToken, normalCount, "normal", path, line);
+    vertex.hasNormal = true;
+    return vertex;
+}
+
+bool addTriangle(MeshAsset &asset, const Vec3D &v0, const Vec3D &v1, const Vec3D &v2, const Vec3D &n0,
+                 const Vec3D &n1, const Vec3D &n2)
+{
+    const Vec3D faceNormal = vec3DCross(v1 - v0, v2 - v0);
+
+    if (!std::isfinite(faceNormal.lengthSquared()) || faceNormal.lengthSquared() < DEGENERATE_EPSILON)
         return false;
 
-    asset.triangles.push_back(Triangle{v0, v1, v2});
+    asset.triangles.push_back(Triangle{v0, v1, v2, n0, n1, n2});
     return true;
 }
 } // namespace
@@ -72,7 +108,8 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
 
     auto asset = std::make_shared<MeshAsset>();
     std::vector<Vec3D> vertices;
-    std::vector<std::size_t> faceIndices;
+    std::vector<Vec3D> normals;
+    std::vector<FaceVertex> face;
     std::string line;
     std::size_t lineNumber = 0;
 
@@ -107,25 +144,55 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
             continue;
         }
 
+        if (tag == "vn")
+        {
+            double x = 0.0;
+            double y = 0.0;
+            double z = 0.0;
+
+            if (!(stream >> x >> y >> z) || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+                fail(path, lineNumber, "invalid normal");
+
+            const Vec3D normal(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+
+            if (!std::isfinite(normal.lengthSquared()) || normal.lengthSquared() < DEGENERATE_EPSILON)
+                fail(path, lineNumber, "normal must be non-zero");
+
+            normals.push_back(vec3DNormalize(normal));
+            continue;
+        }
+
         if (tag != "f")
             continue;
 
-        faceIndices.clear();
+        face.clear();
 
         std::string token;
 
         while (stream >> token)
-            faceIndices.push_back(parseFaceIndex(token, vertices.size(), path, lineNumber));
+            face.push_back(parseFaceVertex(token, vertices.size(), normals.size(), path, lineNumber));
 
-        if (faceIndices.size() < 3)
+        if (face.size() < 3)
             fail(path, lineNumber, "face must have at least three vertices");
 
-        for (std::size_t i = 1; i + 1 < faceIndices.size(); ++i)
+        for (std::size_t i = 1; i + 1 < face.size(); ++i)
         {
             if (asset->triangles.size() >= MAX_TRIANGLES)
                 throw std::runtime_error(path + ": mesh exceeds the triangle limit");
 
-            addTriangle(*asset, vertices[faceIndices[0]], vertices[faceIndices[i]], vertices[faceIndices[i + 1]]);
+            const FaceVertex &a = face[0];
+            const FaceVertex &b = face[i];
+            const FaceVertex &c = face[i + 1];
+            const Vec3D &v0 = vertices[a.position];
+            const Vec3D &v1 = vertices[b.position];
+            const Vec3D &v2 = vertices[c.position];
+            const Vec3D faceNormal = vec3DNormalize(vec3DCross(v1 - v0, v2 - v0));
+
+            const Vec3D n0 = a.hasNormal ? normals[a.normal] : faceNormal;
+            const Vec3D n1 = b.hasNormal ? normals[b.normal] : faceNormal;
+            const Vec3D n2 = c.hasNormal ? normals[c.normal] : faceNormal;
+
+            addTriangle(*asset, v0, v1, v2, n0, n1, n2);
         }
     }
 

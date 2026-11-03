@@ -108,6 +108,9 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
   linearly. Traversal visits the nearer child first and can skip the far child.
 - Meshes use a second-level local triangle BVH. The scene BVH finds the mesh
   instance, then `MeshPrimitive` traverses the shared asset's triangle BVH.
+- OBJ vertex normals are interpolated with barycentric coordinates for smooth
+  shading; geometric normals remain responsible for ray offsets and
+  dielectrics.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
 - Uses the same 15-bounce path tracing, material and light logic as the CUDA
   renderer. Path throughput is attenuated by diffuse/metallic surface colour,
@@ -150,7 +153,8 @@ uses the same `SceneSnapshot` data path.
 - **Meshes:** unique assets are uploaded once as global triangle/BVH/index
   buffers with a `MeshRange` per asset. Instances reference a range and reuse
   the same geometry. Device traversal is scene BVH → mesh BVH →
-  Möller–Trumbore.
+  Möller–Trumbore. Triangles carry per-corner normals; both the geometric and
+  interpolated shading normal are propagated through the intersection chain.
 - **Transforms:** `PrimitiveData::transform` is copied into `Cuda::Primitive`;
   rays are transformed into local space, and normals are transformed back with
   the inverse-transpose.

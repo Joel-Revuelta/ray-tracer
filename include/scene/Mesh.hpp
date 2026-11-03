@@ -24,6 +24,9 @@ struct Triangle
     Vec3D v0;
     Vec3D v1;
     Vec3D v2;
+    Vec3D n0;
+    Vec3D n1;
+    Vec3D n2;
 };
 
 /**

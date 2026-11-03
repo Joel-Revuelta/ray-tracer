@@ -30,7 +30,7 @@ full-HD and 8K still renders.
   metallic surfaces.
 - **Scene scale** — a shared binned-SAH BVH accelerates both renderers,
   primitives support declarative transforms, and OBJ meshes use shared triangle
-  BVHs with cheap instancing.
+  BVHs with cheap instancing and smooth vertex-normal shading.
 - **Depth of field** — world-space lens radius and focus distance, with live
   keyboard focus controls in both interactive backends.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
@@ -254,7 +254,7 @@ architecture and CUDA build details.
 | `orbits.cfg` | Emissive sun, planets and a starfield. |
 | `showcase.cfg` | All material families and light types together. |
 | `transforms.cfg` | Translated, rotated and non-uniformly scaled primitives. |
-| `meshes.cfg` | Instanced OBJ icospheres and a torus with shared geometry. |
+| `meshes.cfg` | Instanced, smooth-shaded OBJ icospheres and a torus with shared geometry. |
 | `depth_of_field.cfg` | Spheres at several depths with a focused middle plane. |
 
 ### HD hero scenes

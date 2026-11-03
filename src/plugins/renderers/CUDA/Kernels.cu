@@ -270,7 +270,7 @@ __device__ void pushNodeChildren(const BVHNode *nodes, const BVHNode &node, cons
                                  int *stack, int &stackSize);
 
 __device__ bool intersectSphere(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
-                                int &bestIndex, int index)
+                                Vec3 &bestShadingNormal, int &bestIndex, int index)
 {
     if (primitive.radius <= 0.0f)
         return false;
@@ -312,11 +312,12 @@ __device__ bool intersectSphere(const Primitive &primitive, const Ray &ray, floa
     if (dot(normal, ray.direction) > 0.0f)
         normal = negate(normal);
     bestNormal = normalize(normal);
+    bestShadingNormal = bestNormal;
     return true;
 }
 
 __device__ bool intersectPlane(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
-                               int &bestIndex, int index)
+                               Vec3 &bestShadingNormal, int &bestIndex, int index)
 {
     const float denominator = dot(primitive.normal, ray.direction);
 
@@ -331,11 +332,12 @@ __device__ bool intersectPlane(const Primitive &primitive, const Ray &ray, float
     bestDistance = distance;
     bestIndex = index;
     bestNormal = denominator > 0.0f ? negate(primitive.normal) : primitive.normal;
+    bestShadingNormal = bestNormal;
     return true;
 }
 
 __device__ bool intersectCylinder(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
-                                  int &bestIndex, int index)
+                                  Vec3 &bestShadingNormal, int &bestIndex, int index)
 {
     if (primitive.radius <= 0.0f || primitive.height <= 0.0f)
         return false;
@@ -416,6 +418,7 @@ __device__ bool intersectCylinder(const Primitive &primitive, const Ray &ray, fl
     if (dot(ray.direction, bestNormal) > 0.0f)
         bestNormal = negate(bestNormal);
     bestNormal = normalize(bestNormal);
+    bestShadingNormal = bestNormal;
     return true;
 }
 
@@ -447,7 +450,7 @@ __device__ void tryConeBody(const Primitive &primitive, const Ray &ray, float di
 }
 
 __device__ bool intersectCone(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
-                              int &bestIndex, int index)
+                              Vec3 &bestShadingNormal, int &bestIndex, int index)
 {
     if (primitive.radius <= 0.0f || primitive.height <= 0.0f)
         return false;
@@ -508,11 +511,12 @@ __device__ bool intersectCone(const Primitive &primitive, const Ray &ray, float 
     if (dot(ray.direction, bestNormal) > 0.0f)
         bestNormal = negate(bestNormal);
     bestNormal = normalize(bestNormal);
+    bestShadingNormal = bestNormal;
     return true;
 }
 
 __device__ bool intersectTriangle(const Triangle &triangle, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
-                                  int &bestIndex, int index)
+                                  Vec3 &bestShadingNormal, int &bestIndex, int index)
 {
     const Vec3 edge1 = sub(triangle.v1, triangle.v0);
     const Vec3 edge2 = sub(triangle.v2, triangle.v0);
@@ -541,18 +545,26 @@ __device__ bool intersectTriangle(const Triangle &triangle, const Ray &ray, floa
         return false;
 
     Vec3 normal = cross(edge1, edge2);
+    const float w0 = 1.0f - u - v;
+    Vec3 shadingNormal = add(add(scale(triangle.n0, w0), scale(triangle.n1, u)), scale(triangle.n2, v));
+
+    if (!isfinite(lengthSquared(shadingNormal)) || lengthSquared(shadingNormal) < 1e-12f)
+        shadingNormal = normal;
 
     if (dot(normal, ray.direction) > 0.0f)
         normal = negate(normal);
+    if (dot(shadingNormal, ray.direction) > 0.0f)
+        shadingNormal = negate(shadingNormal);
 
     bestDistance = distance;
     bestNormal = normalize(normal);
+    bestShadingNormal = normalize(shadingNormal);
     bestIndex = index;
     return true;
 }
 
 __device__ bool intersectMesh(const SceneView &scene, const Primitive &primitive, const Ray &ray, float &bestDistance,
-                              Vec3 &bestNormal, int &bestIndex, int index)
+                              Vec3 &bestNormal, Vec3 &bestShadingNormal, int &bestIndex, int index)
 {
     if (primitive.meshIndex < 0 || primitive.meshIndex >= scene.meshCount)
         return false;
@@ -569,7 +581,7 @@ __device__ bool intersectMesh(const SceneView &scene, const Primitive &primitive
         for (int i = 0; i < range.triangleCount; ++i)
         {
             if (intersectTriangle(scene.meshTriangles[range.triangleStart + i], ray, bestDistance, bestNormal,
-                                  bestIndex, index))
+                                  bestShadingNormal, bestIndex, index))
                 hit = true;
         }
         return hit;
@@ -597,8 +609,8 @@ __device__ bool intersectMesh(const SceneView &scene, const Primitive &primitive
                 if (triangleIndex < 0 || triangleIndex >= scene.meshTriangleCount)
                     continue;
 
-                if (intersectTriangle(scene.meshTriangles[triangleIndex], ray, bestDistance, bestNormal, bestIndex,
-                                      index))
+                if (intersectTriangle(scene.meshTriangles[triangleIndex], ray, bestDistance, bestNormal,
+                                      bestShadingNormal, bestIndex, index))
                     hit = true;
             }
         }
@@ -640,30 +652,33 @@ __device__ inline Vec3 transformNormal(const TransformData &transform, const Vec
 }
 
 __device__ bool intersectPrimitiveLocal(const SceneView &scene, const Primitive &primitive, const Ray &ray,
-                                        float &bestDistance, Vec3 &bestNormal, int &bestIndex, int index)
+                                        float &bestDistance, Vec3 &bestNormal, Vec3 &bestShadingNormal,
+                                        int &bestIndex, int index)
 {
     switch (primitive.type)
     {
     case PRIMITIVE_SPHERE:
-        return intersectSphere(primitive, ray, bestDistance, bestNormal, bestIndex, index);
+        return intersectSphere(primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestIndex, index);
     case PRIMITIVE_PLANE:
-        return intersectPlane(primitive, ray, bestDistance, bestNormal, bestIndex, index);
+        return intersectPlane(primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestIndex, index);
     case PRIMITIVE_CYLINDER:
-        return intersectCylinder(primitive, ray, bestDistance, bestNormal, bestIndex, index);
+        return intersectCylinder(primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestIndex, index);
     case PRIMITIVE_CONE:
-        return intersectCone(primitive, ray, bestDistance, bestNormal, bestIndex, index);
+        return intersectCone(primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestIndex, index);
     case PRIMITIVE_MESH:
-        return intersectMesh(scene, primitive, ray, bestDistance, bestNormal, bestIndex, index);
+        return intersectMesh(scene, primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestIndex, index);
     default:
         return false;
     }
 }
 
 __device__ bool intersectPrimitive(const SceneView &scene, const Primitive &primitive, const Ray &ray,
-                                   float &bestDistance, Vec3 &bestNormal, int &bestIndex, int index)
+                                   float &bestDistance, Vec3 &bestNormal, Vec3 &bestShadingNormal, int &bestIndex,
+                                   int index)
 {
     if (!primitive.transformed)
-        return intersectPrimitiveLocal(scene, primitive, ray, bestDistance, bestNormal, bestIndex, index);
+        return intersectPrimitiveLocal(scene, primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestIndex,
+                                       index);
 
     const Vec3 localDirection = transformInverseVector(primitive.transform, ray.direction);
     const float directionLength = length(localDirection);
@@ -680,18 +695,27 @@ __device__ bool intersectPrimitive(const SceneView &scene, const Primitive &prim
     // distance must be converted into the normalized local space.
     float localDistance = bestDistance * directionLength;
     Vec3 localNormal = makeVec3(0.0f, 0.0f, 0.0f);
+    Vec3 localShadingNormal = makeVec3(0.0f, 0.0f, 0.0f);
     int localIndex = index;
 
-    if (!intersectPrimitiveLocal(scene, primitive, local, localDistance, localNormal, localIndex, index))
+    if (!intersectPrimitiveLocal(scene, primitive, local, localDistance, localNormal, localShadingNormal, localIndex,
+                                 index))
         return false;
 
     bestDistance = localDistance / directionLength;
     bestNormal = transformNormal(primitive.transform, localNormal);
+    bestShadingNormal = transformNormal(primitive.transform, localShadingNormal);
+
+    if (!isfinite(lengthSquared(bestShadingNormal)) || lengthSquared(bestShadingNormal) < 1e-12f)
+        bestShadingNormal = bestNormal;
 
     if (dot(ray.direction, bestNormal) > 0.0f)
         bestNormal = negate(bestNormal);
+    if (dot(ray.direction, bestShadingNormal) > 0.0f)
+        bestShadingNormal = negate(bestShadingNormal);
 
     bestNormal = normalize(bestNormal);
+    bestShadingNormal = normalize(bestShadingNormal);
     bestIndex = index;
     return true;
 }
@@ -800,7 +824,8 @@ __device__ void pushChildren(const SceneView &scene, const BVHNode &node, const 
     pushNodeChildren(scene.nodes, node, ray, maxDistance, stack, stackSize);
 }
 
-__device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &distance, Vec3 &normal, int &index)
+__device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &distance, Vec3 &normal,
+                             Vec3 &shadingNormal, int &index)
 {
     int stack[BVH_STACK_SIZE];
     int stackSize = 0;
@@ -822,7 +847,7 @@ __device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &dist
             {
                 const int primitiveIndex = scene.primitiveIndices[node.start + i];
 
-                if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
+                if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, shadingNormal, index, primitiveIndex))
                     hit = true;
             }
         }
@@ -833,20 +858,22 @@ __device__ bool intersectBVH(const SceneView &scene, const Ray &ray, float &dist
     return hit;
 }
 
-__device__ bool intersectScene(const SceneView &scene, const Ray &ray, float &distance, Vec3 &normal, int &index)
+__device__ bool intersectScene(const SceneView &scene, const Ray &ray, float &distance, Vec3 &normal,
+                               Vec3 &shadingNormal, int &index)
 {
     distance = INFINITY;
     normal = makeVec3(0.0f, 0.0f, 0.0f);
+    shadingNormal = makeVec3(0.0f, 0.0f, 0.0f);
     index = -1;
     bool hit = false;
 
     if (scene.nodeCount > 0)
-        hit = intersectBVH(scene, ray, distance, normal, index);
+        hit = intersectBVH(scene, ray, distance, normal, shadingNormal, index);
     else
     {
         for (int i = 0; i < scene.primitiveCount; ++i)
         {
-            if (intersectPrimitive(scene, scene.primitives[i], ray, distance, normal, index, i))
+            if (intersectPrimitive(scene, scene.primitives[i], ray, distance, normal, shadingNormal, index, i))
                 hit = true;
         }
     }
@@ -855,7 +882,7 @@ __device__ bool intersectScene(const SceneView &scene, const Ray &ray, float &di
     {
         const int primitiveIndex = scene.unboundedIndices[i];
 
-        if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
+        if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, shadingNormal, index, primitiveIndex))
             hit = true;
     }
 
@@ -866,6 +893,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
 {
     float distance = maxDistance;
     Vec3 normal = makeVec3(0.0f, 0.0f, 0.0f);
+    Vec3 shadingNormal = makeVec3(0.0f, 0.0f, 0.0f);
     int index = -1;
 
     if (scene.nodeCount > 0)
@@ -889,7 +917,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
                 {
                     const int primitiveIndex = scene.primitiveIndices[node.start + i];
 
-                    if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, index,
+                    if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, shadingNormal, index,
                                            primitiveIndex))
                         return true;
                 }
@@ -902,7 +930,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
     {
         for (int i = 0; i < scene.primitiveCount; ++i)
         {
-            if (intersectPrimitive(scene, scene.primitives[i], ray, distance, normal, index, i))
+            if (intersectPrimitive(scene, scene.primitives[i], ray, distance, normal, shadingNormal, index, i))
                 return true;
         }
     }
@@ -911,7 +939,7 @@ __device__ bool occluded(const SceneView &scene, const Ray &ray, float maxDistan
     {
         const int primitiveIndex = scene.unboundedIndices[i];
 
-        if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, index, primitiveIndex))
+        if (intersectPrimitive(scene, scene.primitives[primitiveIndex], ray, distance, normal, shadingNormal, index, primitiveIndex))
             return true;
     }
 
@@ -926,7 +954,7 @@ struct LightSample
 };
 
 __device__ LightSample sampleLight(const SceneView &scene, const Light &light, const Vec3 &hitPosition,
-                                   const Vec3 &hitNormal)
+                                   const Vec3 &hitNormal, const Vec3 &shadingNormal)
 {
     LightSample sample{makeVec3(0.0f, 0.0f, 0.0f), makeVec3(0.0f, 0.0f, 0.0f), false};
 
@@ -941,7 +969,7 @@ __device__ LightSample sampleLight(const SceneView &scene, const Light &light, c
     {
         sample.direction = normalize(light.direction);
 
-        if (dot(sample.direction, hitNormal) <= 0.0f)
+        if (dot(sample.direction, shadingNormal) <= 0.0f)
             return sample;
         if (occluded(scene, Ray{add(hitPosition, scale(hitNormal, RAY_EPSILON)), sample.direction}, INFINITY))
             return sample;
@@ -958,7 +986,7 @@ __device__ LightSample sampleLight(const SceneView &scene, const Light &light, c
 
         sample.direction = normalize(toLight);
 
-        if (dot(sample.direction, hitNormal) <= 0.0f)
+        if (dot(sample.direction, shadingNormal) <= 0.0f)
             return sample;
 
         const float denominator = light.attenuationConstant + light.attenuationLinear * distance +
@@ -1024,9 +1052,10 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
     {
         float distance = 0.0f;
         Vec3 normal = makeVec3(0.0f, 0.0f, 0.0f);
+        Vec3 shadingNormal = makeVec3(0.0f, 0.0f, 0.0f);
         int primitiveIndex = -1;
 
-        if (!intersectScene(scene, ray, distance, normal, primitiveIndex))
+        if (!intersectScene(scene, ray, distance, normal, shadingNormal, primitiveIndex))
         {
             if (scene.background.enabled != 0)
                 accumulated = add(accumulated, multiply(throughput, skyColor(scene.background, ray.direction)));
@@ -1086,7 +1115,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         for (int lightIndex = 0; lightIndex < scene.lightCount; ++lightIndex)
         {
             const Light &light = scene.lights[lightIndex];
-            const LightSample sample = sampleLight(scene, light, hitPosition, normal);
+            const LightSample sample = sampleLight(scene, light, hitPosition, normal, shadingNormal);
 
             if (!sample.valid)
                 continue;
@@ -1097,10 +1126,10 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
                 contribution = scale(sample.radiance, phongCoefficient);
             else
             {
-                const float diffuseFactor = fmaxf(dot(normal, sample.direction), 0.0f);
+                const float diffuseFactor = fmaxf(dot(shadingNormal, sample.direction), 0.0f);
                 const Vec3 halfDirection = normalize(add(sample.direction, viewDirection));
                 const float specularFactor =
-                    powf(fmaxf(dot(normal, halfDirection), 0.0f), blinnShininess(material.roughness));
+                    powf(fmaxf(dot(shadingNormal, halfDirection), 0.0f), blinnShininess(material.roughness));
 
                 contribution = add(scale(sample.radiance, phongCoefficient * diffuseFactor),
                                    scale(sample.radiance, material.specularReflection * specularFactor));
@@ -1125,12 +1154,12 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         Vec3 nextDirection = makeVec3(0.0f, 0.0f, 0.0f);
 
         if (material.type == MATERIAL_DIFFUSE)
-            nextDirection = randomCosineHemisphere(normal, state);
+            nextDirection = randomCosineHemisphere(shadingNormal, state);
         else if (material.type == MATERIAL_METALLIC)
         {
             Vec3 weight;
 
-            if (!sampleMetallic(viewDirection, normal, material.diffuseColor, material.roughness, state,
+            if (!sampleMetallic(viewDirection, shadingNormal, material.diffuseColor, material.roughness, state,
                                 nextDirection, weight))
                 break;
 

@@ -25,11 +25,13 @@ class HitPayload
 
     void setHitIndex(const int &objectIndex);
     void setHitNormal(const Vec3D &_sceneNormal);
+    void setShadingNormal(const Vec3D &shadingNormal);
     void setHitDistance(const float &_sceneDistance);
     void setHitPosition(const Point3D &_scenePosition);
 
     int getHitIndex(void) const;
     Vec3D getHitNormal(void) const;
+    Vec3D getShadingNormal(void) const;
     float getHitDistance(void) const;
     Point3D getHitPosition(void) const;
 
@@ -37,8 +39,13 @@ class HitPayload
     // The index of the object that was hit. Used to retrieve the material of the object.
     int _objectIndex;
 
-    // The normal of the hit point.
+    // The geometric normal of the hit point, used for ray offsets and
+    // dielectric behavior.
     Vec3D _hitNormal;
+
+    // The normal used for shading. Defaults to the geometric normal, but
+    // smooth meshes can provide an interpolated normal.
+    Vec3D _shadingNormal;
 
     // The distance from the ray origin to the hit point.
     float _hitDistance;

@@ -561,14 +561,14 @@ Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payloa
     case IMaterial::DIFFUSE:
         // Cosine-weighted sampling is the correct distribution for a
         // Lambertian surface and reduces noise compared with uniform sampling.
-        rayDirection = vec3DRandomCosineHemisphere(payload.getHitNormal(), seed);
+        rayDirection = vec3DRandomCosineHemisphere(payload.getShadingNormal(), seed);
         break;
     case IMaterial::METALLIC:
     {
         const Vec3D viewDirection = vec3DNormalize(ray.getOrigin() - payload.getHitPosition());
         Color3D weight;
 
-        if (!sampleMetallic(viewDirection, payload.getHitNormal(), material->getDiffuseColor(),
+        if (!sampleMetallic(viewDirection, payload.getShadingNormal(), material->getDiffuseColor(),
                             material->getRoughness(), seed, rayDirection, weight))
             return Vec3D(0.0f);
 
@@ -607,7 +607,7 @@ Color3D Renderer::computePhongLighting(const HitPayload &payload, const IMateria
     if (light->isAmbient())
         return reflectionCoefficient * radiance;
 
-    const Vec3D normal = payload.getHitNormal();
+    const Vec3D normal = payload.getShadingNormal();
     const Vec3D lightDirection = light->getLightDirection(payload);
     const float diffuseFactor = std::max(vec3DDot(normal, lightDirection), 0.0f);
 
