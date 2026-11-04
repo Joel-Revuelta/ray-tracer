@@ -72,6 +72,26 @@ letterboxes it to preserve aspect ratio.
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face |
 | `group_transform.cfg` | A nested scene of spheres and a point light transformed as a group |
 | `prefabs.cfg` | One lamp prefab instantiated three times with different transforms |
+| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns |
+| `brass_orrery.cfg` | Brass orbit rings, glass planets and a layered glowing sun |
+| `tidal_bloom.cfg` | Bioluminescent glass flowers over a mirror lagoon |
+| `obsidian_aurora.cfg` | Monolith silhouettes under luminous aurora ribbons |
+| `frozen_cathedral.cfg` | Ice pillars, a glowing altar and a reflective frozen nave |
+
+## Hero scene pack
+
+The five newest scenes are tuned for ACES tone mapping:
+`sakura_shrine` at exposure `1.25`, `brass_orrery` at `0.85`,
+`tidal_bloom` at `1.15`, `obsidian_aurora` at `1.15`, and
+`frozen_cathedral` at `0.90`. For example:
+
+```bash
+./raytracer --path scenes/tidal_bloom.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --frames 320 --tonemap aces --exposure 1.15 \
+  --output tidal_bloom.ppm
+```
+
+`obsidian_aurora` is composed for 8K; the other four are composed for 16:9 HD.
 
 ## Material showcase renders
 

@@ -600,6 +600,41 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_prefab_recursion.ppm
 )
 add_test(
+    NAME sakura_shrine_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/sakura_shrine.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/sakura_shrine_smoke.ppm
+)
+add_test(
+    NAME brass_orrery_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/brass_orrery_smoke.ppm
+)
+add_test(
+    NAME tidal_bloom_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/tidal_bloom.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/tidal_bloom_smoke.ppm
+)
+add_test(
+    NAME obsidian_aurora_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/obsidian_aurora.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/obsidian_aurora_smoke.ppm
+)
+add_test(
+    NAME frozen_cathedral_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/frozen_cathedral.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --output ${CMAKE_BINARY_DIR}/frozen_cathedral_smoke.ppm
+)
+add_test(
+    NAME deterministic_scene_pack_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_scene_pack.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -620,6 +655,8 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     environment_smoke deterministic_environment_render
     mtl_materials_smoke deterministic_mtl_materials_render
     group_transform_smoke prefab_instances_smoke deterministic_prefabs_render
+    sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
+    frozen_cathedral_smoke deterministic_scene_pack_render
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_transform parser_rejects_invalid_obj

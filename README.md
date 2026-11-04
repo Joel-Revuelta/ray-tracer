@@ -45,7 +45,7 @@ full-HD and 8K still renders.
   fallback.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 29 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ/MTL materials, environment lighting, group transforms, prefabs and 8K hero renders.
+- **Included scenes** — 34 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ/MTL materials, environment lighting, group transforms, prefabs, a five-scene hero pack and 8K renders.
 
 ## Requirements
 
@@ -282,6 +282,11 @@ architecture and CUDA build details.
 | `crystal_garden.cfg` | Crystal spires, metallic shards and floating orbs. |
 | `chrome_singularity.cfg` | Chrome world with a tilted accretion ring. |
 | `solar_bloom.cfg` | Amber sun over a mirror sea. |
+| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns. |
+| `brass_orrery.cfg` | Brass orbit rings, glass planets and a layered glowing sun. |
+| `tidal_bloom.cfg` | Bioluminescent glass flowers over a mirror lagoon. |
+| `obsidian_aurora.cfg` | Monolith silhouettes under luminous aurora ribbons. |
+| `frozen_cathedral.cfg` | Ice pillars, a glowing altar and a reflective frozen nave. |
 
 ### 8K ultra scenes
 
@@ -297,6 +302,26 @@ Render all HD hero scenes:
 ```bash
 ./scenes/render_hd.sh
 RENDERER=cuda FRAMES=1000 ./scenes/render_hd.sh
+```
+
+The new scene pack is tuned for ACES with a slightly raised exposure:
+
+```bash
+./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --frames 256 --tonemap aces --exposure 1.25 \
+  --output sakura_shrine.ppm
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --frames 256 --tonemap aces --exposure 0.85 \
+  --output brass_orrery.ppm
+./raytracer --path scenes/tidal_bloom.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --frames 320 --tonemap aces --exposure 1.15 \
+  --output tidal_bloom.ppm
+./raytracer --path scenes/frozen_cathedral.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --frames 256 --tonemap aces --exposure 0.90 \
+  --output frozen_cathedral.ppm
+./raytracer --path scenes/obsidian_aurora.cfg --cli --renderer cuda \
+  --width 7680 --height 4320 --frames 2048 --tonemap aces --exposure 1.15 \
+  --output obsidian_aurora.ppm
 ```
 
 Render all 8K ultra scenes:
