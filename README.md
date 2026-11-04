@@ -8,7 +8,10 @@ The project includes a strict libconfig scene parser, a reusable shared core,
 runtime-loaded primitives/materials/lights/GUI/renderers, and scripts for
 full-HD and 8K still renders.
 
-![8K CUDA scene contact sheet](screenshots/8k/contact.png)
+[![Hero scene contact sheet](screenshots/contact.png)](screenshots/contact.png)
+
+*A curated first look: the five new hero scenes plus the Glass Menagerie.
+[See the full gallery](#screenshots).*
 
 ## Highlights
 
@@ -46,6 +49,74 @@ full-HD and 8K still renders.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
 - **Included scenes** — 34 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ/MTL materials, environment lighting, group transforms, prefabs, a five-scene hero pack and 8K renders.
+
+## Screenshots
+
+The images below were rendered with the CUDA renderer at 1920×1080 (256
+samples), using ACES tone mapping. Click any preview for the full-size PNG.
+
+### Hero scene pack
+
+**Sakura Shrine at Blue Hour** — `sakura_shrine.cfg`  
+[![Sakura Shrine at Blue Hour](screenshots/hero/sakura_shrine-preview.png)](screenshots/hero/sakura_shrine.png)
+
+Prefab torii gates and stone lanterns, grouped cherry-tree transforms, an
+icosphere blossom canopy, a tiled stone path, depth of field, and a warm sphere
+light behind the shrine. The scene demonstrates prefab instancing with local
+materials and lights, plus nested group transforms.
+
+**The Brass Orrery** — `brass_orrery.cfg`  
+[![The Brass Orrery](screenshots/hero/brass_orrery-preview.png)](screenshots/hero/brass_orrery.png)
+
+Thin procedural ring meshes, tilted prefab orbit groups, GGX-brushed brass,
+chrome moons, sapphire and ruby glass planets, and a layered emissive/glass sun.
+It is a compact showcase for mesh instancing, nested transforms, metallic
+roughness and dielectric materials.
+
+**Tidal Bloom** — `tidal_bloom.cfg`  
+[![Tidal Bloom](screenshots/hero/tidal_bloom-preview.png)](screenshots/hero/tidal_bloom.png)
+
+Wide non-uniformly scaled glass petals, glowing stems and petal tips, prefab
+blooms, a mirror lagoon, floating spores, a distant moon and an equirectangular
+nebula environment. The scene is built almost entirely from prefab instances and
+demonstrates group transforms on both geometry and point lights.
+
+**Obsidian Aurora** — `obsidian_aurora.cfg`  
+[![Obsidian Aurora](screenshots/hero/obsidian_aurora-preview.png)](screenshots/hero/obsidian_aurora.png)
+
+A black mirror plain, tapered procedural monoliths, frost caps, foreground ice
+spires and layered emissive aurora ribbons. It combines a custom OBJ mesh with
+environment lighting, large sphere area lights, emitters and reflective metal.
+
+**Frozen Cathedral** — `frozen_cathedral.cfg`  
+[![Frozen Cathedral](screenshots/hero/frozen_cathedral-preview.png)](screenshots/hero/frozen_cathedral.png)
+
+A nave of prefab ice pillars with glowing cores and shard bases, a gold and
+dielectric altar, a luminous rose window, floating ice orbs, and a cracked-ice
+mirror floor. It showcases layered dielectric shells, area lights, textures and
+prefab-heavy composition.
+
+### Material and light studies
+
+| Glass Menagerie | Prism Pavilion |
+| --- | --- |
+| [![Glass Menagerie](screenshots/new-scenes/glass_menagerie-preview.png)](screenshots/new-scenes/glass_menagerie.png) | [![Prism Pavilion](screenshots/new-scenes/prism_pavilion-preview.png)](screenshots/new-scenes/prism_pavilion.png) |
+| **Glass Menagerie** — multiple dielectric IORs, chrome, gold, emissive orbs and a glass column. | **Prism Pavilion** — glass colonnade, glowing cores, chrome orb, neon ring and mirror floor. |
+
+| Roughness Study | Aurora Lens |
+| --- | --- |
+| [![Roughness Study](screenshots/new-scenes/roughness_study-preview.png)](screenshots/new-scenes/roughness_study.png) | [![Aurora Lens](screenshots/new-scenes/aurora_lens-preview.png)](screenshots/new-scenes/aurora_lens.png) |
+| **Roughness Study** — the same metallic material from perfect mirror to satin GGX roughness. | **Aurora Lens** — a giant glass lens, rose glass, chrome accents and a floating aurora arc. |
+
+### 8K ultra scenes
+
+[![8K ultra scene contact sheet](screenshots/8k/contact-preview.png)](screenshots/8k/contact.png)
+
+Four 7680×4320 scenes rendered at 2048 samples: **Hypernova Cathedral** (chrome
+singularity in a cosmic colonnade), **Infinity Mirror** (reflection-heavy neon
+corridor), **Crystal Superbloom** (a dense crystal field) and **Solar Eclipse**
+(an eclipsed sun with a particle corona over a mirror sea). The full contact
+sheet links to the 8K, 4K and 1080p versions in `screenshots/8k/`.
 
 ## Requirements
 
@@ -387,7 +458,7 @@ Key directories:
 | `src/plugins/parser/` | Scene parser. |
 | `include/plugins/renderers/` | Renderer, snapshot and helper interfaces. |
 | `scenes/` | Scene files, render scripts and scene documentation. |
-| `screenshots/` | Generated renders and previews. |
+| `screenshots/` | Curated gallery, hero renders, material studies and 8K previews. |
 
 See [docs/developer.md](docs/developer.md) for the developer guide and
 [docs/renderers.md](docs/renderers.md) for the renderer plugin API.
