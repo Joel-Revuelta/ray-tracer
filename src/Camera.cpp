@@ -276,10 +276,12 @@ void Camera::setLensRadius(const float lensRadius)
 
 void Camera::setFocusDistance(const float focusDistance)
 {
-    if (!std::isfinite(focusDistance) || focusDistance <= 0.0f)
-        throw std::invalid_argument("Camera focus distance must be greater than zero");
+    if (!std::isfinite(focusDistance) || focusDistance < 0.0f)
+        throw std::invalid_argument("Camera focus distance must not be negative");
 
-    _focusDistance = focusDistance;
+    // Zero restores automatic focus, which tracks the current look-at
+    // distance. This is used by the camera reset control.
+    _focusDistance = focusDistance > 0.0f ? focusDistance : static_cast<float>(_focalDistance);
 }
 
 int Camera::getImageWidth(void) const

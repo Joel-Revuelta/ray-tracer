@@ -129,8 +129,10 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
   controls, including live lens-radius and focus-distance adjustment.
 - Camera rays support a world-space lens disk and focus plane for depth of
   field; a zero lens radius keeps the pinhole path.
-- Sphere area lights are sampled as area sources, producing soft shadows. The
-  light loop uses `ILight::sample()` for a consistent direction, radiance and
+- Sphere area lights are sampled as soft point sources: a point is sampled on
+  the sphere and the point-light attenuation model is reused. This produces
+  soft shadows but is not a physically exact area-light integral. The light
+  loop uses `ILight::sample()` for a consistent direction, radiance and
   visibility query.
 - In GUI mode, window events are polled while workers trace a frame. A camera
   event aborts the current frame and restarts with the new pose, so heavy CPU

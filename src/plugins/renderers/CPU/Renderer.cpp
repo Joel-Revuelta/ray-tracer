@@ -187,11 +187,13 @@ Renderer::Renderer(void)
 Renderer::Renderer(int raysPerPixel, std::shared_ptr<Scene> scene, std::shared_ptr<Camera> camera,
                    std::shared_ptr<IGUI> gui, const std::string &outFile, const PostProcessSettings &postProcess,
                    std::size_t threads, uint32_t seed)
-    : _frameIterations(raysPerPixel), _frameIterationsScale(1.0 / _frameIterations), _scene(scene), _camera(camera),
-      _gui(gui), _postProcess(postProcess), _threadCount(threads), _seed(seed)
+    : _frameIterations(raysPerPixel), _frameIterationsScale(1.0f), _scene(scene), _camera(camera), _gui(gui),
+      _postProcess(postProcess), _threadCount(threads), _seed(seed)
 {
     if (raysPerPixel <= 0)
         throw std::invalid_argument("Frame iterations must be positive");
+
+    _frameIterationsScale = 1.0f / static_cast<float>(_frameIterations);
 
     if (!outFile.empty())
     {
@@ -231,6 +233,7 @@ void Renderer::initialize(void)
 
     // Generate the basic ray directions for each pixel in the image.
     _rayDirections.clear();
+    _rayDirections.reserve(pixelCount);
     for (int y = 0; y < imageHeight; y++)
     {
         for (int x = 0; x < imageWidth; x++)
@@ -364,10 +367,11 @@ void Renderer::renderFrame(void)
                     // Accumulate the color data for the pixel.
                     _imageAccumulationData[pixelIndex] += pixelColor;
 
-                    // Set the pixel color to the average of the accumulated color data.
+                    // Keep the linear average unclamped so exposure and
+                    // tonemapping see the full HDR range, matching CUDA and
+                    // the documented post-process order.
                     Color4D accumulatedColor4D = _imageAccumulationData[pixelIndex];
                     accumulatedColor4D /= (float)_frameIteration;
-                    accumulatedColor4D.clampColor(0.0f, 1.0f);
                     _imageData[pixelIndex] = Utils::convertToRGBA(accumulatedColor4D, _postProcess);
                 }
             }
@@ -707,7 +711,14 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             if (materialType == IMaterial::DIELECTRIC)
             {
                 const Vec3D normal = payload.getHitNormal();
-                const float cosi = std::clamp(-vec3DDot(ray.getDirection(), normal), 0.0f, 1.0f);
+                // Camera rays are not normalized. Fresnel and Snell's law
+                // require a unit incident vector.
+                const Vec3D incident = vec3DNormalize(ray.getDirection());
+
+                if (vec3DIsNearZero(incident))
+                    break;
+
+                const float cosi = std::clamp(-vec3DDot(incident, normal), 0.0f, 1.0f);
                 const float ior = material->getIndexOfRefraction();
                 const float etaI = insideDielectric ? ior : 1.0f;
                 const float etaT = insideDielectric ? 1.0f : ior;
@@ -721,11 +732,10 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                 Vec3D nextDirection;
 
                 if (reflectRay)
-                    nextDirection = vec3DNormalize(reflect(ray.getDirection(), normal));
+                    nextDirection = vec3DNormalize(reflect(incident, normal));
                 else
                 {
-                    nextDirection =
-                        vec3DNormalize(eta * ray.getDirection() + (eta * cosi - std::sqrt(k)) * normal);
+                    nextDirection = vec3DNormalize(eta * incident + (eta * cosi - std::sqrt(k)) * normal);
                     insideDielectric = !insideDielectric;
                 }
 

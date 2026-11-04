@@ -52,7 +52,7 @@ full-HD and 8K still renders.
 | Dependency | Notes |
 | --- | --- |
 | CMake | 3.20 minimum. Tested with 4.2.3. |
-| C++20 compiler | Tested with GCC 15.2. |
+| C++20 compiler | Tested with GCC 15.2 and Clang 21.1. |
 | `libconfig++` | Found through `pkg-config`. |
 | SFML 3.0.x | Optional GUI plugin; Graphics, Window and System. Tested with SFML 3.0.2. |
 | GLFW 3.3+ | Optional OpenGL GUI plugin. Tested with GLFW 3.4. |

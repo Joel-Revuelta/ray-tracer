@@ -84,8 +84,9 @@ class ILight : public ITransformable
         return false;
     }
 
-    // Returns an independent copy for scene composition. Lights that do not
-    // implement cloning fall back to sharing the original instance.
+    // Returns an independent copy for scene composition. A light used inside a
+    // nested scene or prefab must implement this; composition applies group
+    // transforms to the copy.
     virtual std::shared_ptr<ILight> clone(void) const
     {
         return nullptr;

@@ -94,8 +94,11 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformDa
     {
         std::shared_ptr<IMaterial> copy = material->clone();
 
+        // Composition mutates some copies (material shifts and light
+        // transforms), so silently sharing an object that does not implement
+        // clone() would corrupt the source scene.
         if (!copy)
-            copy = material;
+            throw std::runtime_error("Cannot compose a scene: a material does not implement clone()");
 
         _scene->addMaterial(copy);
     }
@@ -103,9 +106,8 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformDa
     {
         std::shared_ptr<IPrimitive> copy = primitive->clone();
 
-        // Fall back to sharing for primitive types that do not implement clone.
         if (!copy)
-            copy = primitive;
+            throw std::runtime_error("Cannot compose a scene: a primitive does not implement clone()");
 
         copy->setMaterialIndex(copy->getMaterialIndex() + materialOffset);
         copy->shiftMaterialIndices(materialOffset);
@@ -120,7 +122,7 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformDa
         std::shared_ptr<ILight> copy = light->clone();
 
         if (!copy)
-            copy = light;
+            throw std::runtime_error("Cannot compose a scene: a light does not implement clone()");
 
         copy->applyTransform(transform);
         _scene->addLight(copy);
@@ -149,6 +151,17 @@ std::shared_ptr<Scene> SceneBuilder::build(void)
     {
         if (primitive->getMaterialIndex() >= materials.size())
             throw std::runtime_error("A primitive references a material index that does not exist");
+
+        const std::shared_ptr<const std::vector<int>> groupMap = primitive->getMeshMaterialMap();
+
+        if (!groupMap)
+            continue;
+
+        for (const int groupMaterial : *groupMap)
+        {
+            if (groupMaterial >= 0 && static_cast<std::size_t>(groupMaterial) >= materials.size())
+                throw std::runtime_error("A mesh material group references a material index that does not exist");
+        }
     }
 
     _scene->buildAcceleration();

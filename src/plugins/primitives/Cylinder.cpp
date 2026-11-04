@@ -180,6 +180,7 @@ bool Cylinder::hit(const Ray &ray, HitPayload &payload, size_t i) const
     const float v = std::clamp(heightAtHit / static_cast<float>(_height), 0.0f, 1.0f);
 
     payload.setUV(u, v);
+    payload.setMaterialIndex(-1);
     payload.setHitIndex(i);
     return true;
 }

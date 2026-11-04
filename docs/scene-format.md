@@ -195,6 +195,8 @@ name = {
 `ior` is the refractive index and must be positive; it defaults to `1.5`.
 `color` tints the transmitted path. Dielectrics use Fresnel reflection,
 refraction, and total internal reflection instead of diffuse lighting.
+The path tracer tracks one inside/outside state per ray, so overlapping
+dielectric objects with different IORs are approximated.
 
 ### Textures
 
@@ -214,6 +216,7 @@ name = {
 - Supported format: binary `P6` or ASCII `P3` PPM. `P6` files must use an
   8-bit maximum value.
 - Sampling is bilinear with repeat wrapping.
+- PPM values are treated as sRGB and decoded to linear before lighting.
 - The sampled texel multiplies the material's `color`; a white tint leaves the
   texture unchanged.
 - Textures currently affect albedo only. Emission, roughness and normal maps
@@ -613,10 +616,12 @@ spheres = (
   `quadratic = 0`. The same rules and formula as point lights apply.
 - `spheres` may also be a single object instead of a list.
 
-Sphere lights are sampled as area sources. Each shading query picks a point on
-the sphere and casts a shadow ray to it, producing soft shadows. Larger radii
-give wider penumbrae, and soft shadows need more samples to converge cleanly.
-`scenes/soft_shadows.cfg` demonstrates two sphere lights over a floor.
+Sphere lights are sampled as soft point sources. Each shading query picks a
+point on the sphere and casts a shadow ray to it, producing soft shadows. This
+is an artistic approximation rather than a physically exact area-light
+integral. Larger radii give wider penumbrae, and soft shadows need more samples
+to converge cleanly. `scenes/soft_shadows.cfg` demonstrates two sphere lights
+over a floor.
 
 ## Material indices
 
@@ -666,7 +671,8 @@ The parser rejects:
   meshes,
 - material-group indices outside the current scene's material list,
 - unreadable or malformed PPM textures,
-- non-finite point, vector, or colour components,
+- non-finite point, vector, or colour components, or values that overflow the
+  renderer's float representation,
 - field of view outside `(0, 180)`,
 - a negative camera lens radius or a non-positive focus distance,
 - a camera position equal to its look-at point,

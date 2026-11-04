@@ -127,6 +127,11 @@ __device__ inline Vec3 skyColor(const SceneView &scene, const Vec3 &direction)
 
 __device__ inline float postProcessChannel(float linear, const PostProcess &settings)
 {
+    // Match the CPU byte conversion: non-finite radiance becomes black rather
+    // than a saturated or undefined pixel.
+    if (!isfinite(linear))
+        return 0.0f;
+
     const float exposed = fmaxf(linear * settings.exposure, 0.0f);
     float tonemapped = exposed;
 
@@ -752,8 +757,20 @@ __device__ bool intersectPrimitive(const SceneView &scene, const Primitive &prim
                                    float &bestV, int &bestMaterialIndex, int &bestIndex, int index)
 {
     if (!primitive.transformed)
-        return intersectPrimitiveLocal(scene, primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestU, bestV,
-                                       bestMaterialIndex, bestIndex, index);
+    {
+        // Test through a local override so a primitive that misses cannot
+        // clear the override belonging to an earlier, successful mesh hit.
+        int localMaterialIndex = -1;
+        int localIndex = index;
+
+        if (!intersectPrimitiveLocal(scene, primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestU, bestV,
+                                     localMaterialIndex, localIndex, index))
+            return false;
+
+        bestMaterialIndex = localMaterialIndex;
+        bestIndex = localIndex;
+        return true;
+    }
 
     const Vec3 localDirection = transformInverseVector(primitive.transform, ray.direction);
     const float directionLength = length(localDirection);
@@ -891,6 +908,11 @@ __device__ void pushNodeChildren(const BVHNode *nodes, const BVHNode &node, cons
     const int farNode = leftDistance <= rightDistance ? node.right : node.left;
     const float nearDistance = leftDistance <= rightDistance ? leftDistance : rightDistance;
     const float farDistance = leftDistance <= rightDistance ? rightDistance : leftDistance;
+
+    // Defensive bound check: the builder keeps the tree shallow, but an
+    // out-of-bounds write here would corrupt device state.
+    if (stackSize + 2 > BVH_STACK_SIZE)
+        return;
 
     // Push the far child first so the near child is popped (and tested) first.
     if (farDistance < maxDistance)
@@ -1264,7 +1286,14 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
 
         if (material.type == MATERIAL_DIELECTRIC)
         {
-            const float cosi = clamp01(-dot(ray.direction, normal));
+            // Camera rays are not normalized. Fresnel and Snell's law require
+            // a unit incident vector.
+            const Vec3 incident = normalize(ray.direction);
+
+            if (lengthSquared(incident) < 1e-12f)
+                break;
+
+            const float cosi = clamp01(-dot(incident, normal));
             const float etaI = insideDielectric ? material.ior : 1.0f;
             const float etaT = insideDielectric ? 1.0f : material.ior;
             const float eta = etaI / etaT;
@@ -1276,11 +1305,10 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
             Vec3 nextDirection;
 
             if (reflectRay)
-                nextDirection = normalize(reflect(ray.direction, normal));
+                nextDirection = normalize(reflect(incident, normal));
             else
             {
-                nextDirection =
-                    normalize(add(scale(ray.direction, eta), scale(normal, eta * cosi - sqrtf(k))));
+                nextDirection = normalize(add(scale(incident, eta), scale(normal, eta * cosi - sqrtf(k))));
                 insideDielectric = !insideDielectric;
             }
 

@@ -18,7 +18,7 @@
 namespace RayTracer
 {
 
-class MeshAsset;
+struct MeshAsset;
 
 class IPrimitive : public ITransformable
 {
@@ -27,8 +27,9 @@ class IPrimitive : public ITransformable
 
     virtual bool hit(const Ray &ray, HitPayload &payload, size_t i) const = 0;
 
-    // Returns an independent copy for scene composition. Primitive plugins that
-    // do not implement cloning fall back to sharing the original instance.
+    // Returns an independent copy for scene composition. A primitive used
+    // inside a nested scene or prefab must implement this; composition rejects
+    // a null result rather than mutating a shared instance.
     virtual std::shared_ptr<IPrimitive> clone(void) const
     {
         return nullptr;

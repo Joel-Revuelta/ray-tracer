@@ -158,6 +158,7 @@ bool Cone::intersect(const Ray &ray, HitPayload &payload, size_t i, bool baseAbo
     const float v = std::clamp((baseAbove ? relativeY : -relativeY) / static_cast<float>(_height), 0.0f, 1.0f);
 
     payload.setUV(u, v);
+    payload.setMaterialIndex(-1);
     payload.setHitIndex(i);
     return true;
 }

@@ -39,6 +39,10 @@ bool InstancePrimitive::hit(const Ray &ray, HitPayload &payload, size_t i) const
     const Ray localRay(transformInversePoint(_transform, ray.getOrigin()), localDirection / directionLength);
     HitPayload localPayload = payload;
 
+    // A material override belongs to the primitive that recorded the hit. Do
+    // not let a previous mesh hit leak through an instance-wrapped non-mesh.
+    localPayload.setMaterialIndex(-1);
+
     // Distances scale linearly with the ray direction, so convert the current
     // best distance into the normalized local space before testing.
     localPayload.setHitDistance(payload.getHitDistance() * directionLength);

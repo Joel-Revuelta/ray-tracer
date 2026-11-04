@@ -57,6 +57,7 @@ bool Plane::hit(const Ray &ray, HitPayload &payload, size_t i) const
         Vec3D adjustedNormal = denominator > 0 ? -getNormal() : getNormal();
         payload.setHitNormal(adjustedNormal);
         payload.setUV(hitPosition.getX(), hitPosition.getZ());
+        payload.setMaterialIndex(-1);
         payload.setHitIndex(i);
         return true;
     }

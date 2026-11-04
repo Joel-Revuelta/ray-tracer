@@ -93,6 +93,9 @@ bool Sphere::hit(const Ray &ray, HitPayload &payload, size_t i) const
     const float v = std::acos(std::clamp(local.getY(), -1.0f, 1.0f)) / static_cast<float>(Utils::PI);
 
     payload.setUV(u, v);
+    // This primitive has no per-face material override. Clears a stale mesh
+    // group override from a previously tested primitive.
+    payload.setMaterialIndex(-1);
     payload.setHitIndex(i);
     return true;
 }

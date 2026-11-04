@@ -72,11 +72,12 @@ inline std::ostream &operator<<(std::ostream &os, const Color4D &color)
 
 inline float rgbToLinear(float rgb)
 {
-    if (rgb <= 0)
-        return 0;
-    if (rgb >= 255)
-        rgb = 255;
-    return rgb * 0.0039215;
+    if (!(rgb > 0.0f))
+        return 0.0f;
+
+    const float value = std::clamp(rgb, 0.0f, 255.0f) / 255.0f;
+
+    return value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f);
 }
 
 inline Color4D ColorRGB(const float &r, const float &g, const float &b, const float &a)
@@ -86,9 +87,11 @@ inline Color4D ColorRGB(const float &r, const float &g, const float &b, const fl
 
 inline float colorLinearToGamma(float linearComponent)
 {
-    if (linearComponent <= 0)
-        return 0;
-    return sqrt(linearComponent);
+    const float value = std::clamp(linearComponent, 0.0f, 1.0f);
+
+    if (value <= 0.0031308f)
+        return 12.92f * value;
+    return 1.055f * std::pow(value, 1.0f / 2.4f) - 0.055f;
 }
 
 } // namespace RayTracer

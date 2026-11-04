@@ -249,7 +249,12 @@ PPMImage readPPM(const std::string &path)
             throw std::runtime_error("Malformed PPM line ending: " + path);
     }
 
+    constexpr std::size_t MAX_PIXELS = 16000000;
     const std::size_t pixelCount = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+
+    if (pixelCount > MAX_PIXELS)
+        throw std::runtime_error("PPM image is too large: " + path);
+
     std::vector<std::uint8_t> rgb(pixelCount * 3u);
 
     file.read(reinterpret_cast<char *>(rgb.data()), static_cast<std::streamsize>(rgb.size()));

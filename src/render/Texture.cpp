@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <algorithm>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -25,6 +26,13 @@ constexpr std::size_t MAX_TEXELS = 16000000;
 [[noreturn]] void fail(const std::string &path, const std::string &message)
 {
     throw std::runtime_error(path + ": " + message);
+}
+
+float srgbToLinear(float value)
+{
+    if (value <= 0.04045f)
+        return value / 12.92f;
+    return std::pow((value + 0.055f) / 1.055f, 2.4f);
 }
 
 bool readToken(std::istream &stream, std::string &token)
@@ -203,9 +211,9 @@ std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path
             if (file.gcount() != static_cast<std::streamsize>(sizeof(rgb)))
                 fail(path, "truncated binary texture data");
 
-            pixels.emplace_back(static_cast<float>(rgb[0]) * inverseMaximum,
-                                static_cast<float>(rgb[1]) * inverseMaximum,
-                                static_cast<float>(rgb[2]) * inverseMaximum);
+            pixels.emplace_back(srgbToLinear(static_cast<float>(rgb[0]) * inverseMaximum),
+                                srgbToLinear(static_cast<float>(rgb[1]) * inverseMaximum),
+                                srgbToLinear(static_cast<float>(rgb[2]) * inverseMaximum));
         }
     }
     else
@@ -218,8 +226,9 @@ std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path
             const int green = readInteger(file, path, "green component", 0, maxValue);
             const int blue = readInteger(file, path, "blue component", 0, maxValue);
 
-            pixels.emplace_back(static_cast<float>(red) * inverseMaximum, static_cast<float>(green) * inverseMaximum,
-                                static_cast<float>(blue) * inverseMaximum);
+            pixels.emplace_back(srgbToLinear(static_cast<float>(red) * inverseMaximum),
+                                srgbToLinear(static_cast<float>(green) * inverseMaximum),
+                                srgbToLinear(static_cast<float>(blue) * inverseMaximum));
         }
     }
 

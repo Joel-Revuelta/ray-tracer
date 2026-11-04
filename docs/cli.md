@@ -34,7 +34,6 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--exposure` | non-negative float | Linear exposure multiplier before tonemapping. | `1.0` |
 | `--tonemap` | `none`, `reinhard`, or `aces` | Output tonemapping curve. | `none` |
 | `--output` | path | PPM output file. | stdout in CLI mode |
-| `--list-renderers` | — | Print renderer availability and exit `0`. | |
 | `--list-guis` | — | Print GUI backends and exit `0`. | |
 | `--help`, `-h` | — | Print usage and exit `0`. | |
 

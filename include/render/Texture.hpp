@@ -18,7 +18,8 @@ namespace RayTracer
 
 /**
  * Bilinear, repeat-wrapped RGB texture. Texels are stored as linear floats in
- * [0, 1]; PPM input is converted from its 8-bit representation on load.
+ * [0, 1]. PPM input is sRGB-encoded and is decoded to linear on load so it can
+ * be combined directly with the renderer's linear lighting and radiance.
  */
 class Texture
 {

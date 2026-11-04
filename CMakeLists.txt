@@ -17,13 +17,22 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Compiler options (host C++ only; nvcc uses its own flags)
 add_compile_options(
-    $<$<COMPILE_LANGUAGE:CXX>:-fno-gnu-unique>
     $<$<COMPILE_LANGUAGE:CXX>:-W>
     $<$<COMPILE_LANGUAGE:CXX>:-Wall>
     $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
     $<$<COMPILE_LANGUAGE:CXX>:-Werror>
     $<$<COMPILE_LANGUAGE:CXX>:-g3>
 )
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # The plugin ABI relies on one RTTI/typeinfo definition across DSOs on GCC.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-gnu-unique>)
+endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Plugin entry points intentionally use C linkage with shared_ptr returns;
+    # the same ABI is used by GCC and is exercised by the loader. Keep this
+    # after -Wall/-Wextra, which re-enable the diagnostic in Clang.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-return-type-c-linkage>)
+endif()
 
 # Include directories
 include_directories(include)
@@ -44,10 +53,10 @@ pkg_check_modules(LIBCONFIG++ REQUIRED libconfig++)
 include_directories(${LIBCONFIG++_INCLUDE_DIRS})
 find_package(Threads REQUIRED)
 
-option(RAYTRACER_ENABLE_GUI "Build the SFML GUI plugin" ON)
+option(RAYTRACER_ENABLE_GUI "Build the SFML GUI plugin when SFML 3 is available" ON)
 option(RAYTRACER_ENABLE_OPENGL_GUI "Build the GLFW/OpenGL GUI plugin" ON)
 if (RAYTRACER_ENABLE_GUI)
-    find_package(SFML 3.0 COMPONENTS Graphics Window System REQUIRED)
+    find_package(SFML 3.0 COMPONENTS Graphics Window System QUIET)
 endif()
 if (RAYTRACER_ENABLE_OPENGL_GUI)
     find_package(OpenGL QUIET)
@@ -82,6 +91,11 @@ target_link_libraries(raytracer_core PUBLIC
 # Core executable
 add_executable(raytracer src/main.cpp src/App.cpp)
 target_link_libraries(raytracer PRIVATE raytracer_core)
+
+# Small C++ regression executable for invariants that are hard to assert from
+# the CLI (plugin ABI coefficients, per-hit material overrides, texture decode).
+add_executable(raytracer_regressions tests/renderer_regressions.cpp)
+target_link_libraries(raytracer_regressions PRIVATE raytracer_core)
 
 # CPU renderer plugin
 add_library(raytracer_renderer_cpu SHARED
@@ -128,7 +142,7 @@ if (RAYTRACER_ENABLE_CUDA)
 endif()
 
 # GUI plugin (optional)
-if (RAYTRACER_ENABLE_GUI)
+if (RAYTRACER_ENABLE_GUI AND SFML_FOUND)
     file(GLOB_RECURSE SOURCES_GUI CONFIGURE_DEPENDS "src/plugins/GUI/SFML.cpp")
     add_library(raytracer_gui SHARED ${SOURCES_GUI})
     target_link_libraries(raytracer_gui PRIVATE raytracer_core SFML::Graphics SFML::Window SFML::System)
@@ -136,6 +150,8 @@ if (RAYTRACER_ENABLE_GUI)
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
         PREFIX ""
     )
+elseif (RAYTRACER_ENABLE_GUI)
+    message(STATUS "SFML GUI disabled: install SFML 3.0.x to enable it")
 endif()
 
 # OpenGL GUI plugin (GLFW + GLEW)
@@ -324,6 +340,14 @@ set_target_properties(
 # Basic smoke tests. Run them from the repository root because plugin paths are
 # resolved relative to the working directory.
 enable_testing()
+add_test(
+    NAME renderer_regressions
+    COMMAND $<TARGET_FILE:raytracer_regressions> ${CMAKE_SOURCE_DIR}/scenes/mtl_materials.cfg
+)
+set_tests_properties(renderer_regressions PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    ENVIRONMENT "RAYTRACER_PLUGIN_DIR=${CMAKE_BINARY_DIR}/../plugins"
+)
 add_test(
     NAME cli_cpu_smoke
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
@@ -518,6 +542,18 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_environment.ppm
 )
 add_test(
+    NAME parser_rejects_float_overflow
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_overflow.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_overflow.ppm
+)
+add_test(
+    NAME parser_rejects_uv_overflow
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_uv.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_uv.ppm
+)
+add_test(
     NAME mtl_materials_smoke
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/mtl_materials.cfg
             --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
@@ -591,7 +627,8 @@ set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_area_light parser_rejects_invalid_texture
     parser_rejects_invalid_material_group parser_rejects_invalid_environment
     parser_rejects_invalid_mtl parser_rejects_unknown_prefab
-    parser_rejects_prefab_instances_in_prefabs PROPERTIES
+    parser_rejects_prefab_instances_in_prefabs parser_rejects_float_overflow
+    parser_rejects_uv_overflow PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )

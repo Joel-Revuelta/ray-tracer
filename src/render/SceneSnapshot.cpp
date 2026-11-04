@@ -10,6 +10,7 @@
 #include "Scene.hpp"
 #include "render/Texture.hpp"
 #include <cstdint>
+#include <stdexcept>
 #include <unordered_map>
 
 using namespace RayTracer;
@@ -78,8 +79,10 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
     {
         LightData data;
 
-        if (light->getData(data))
-            snapshot.lights.push_back(data);
+        if (!light->getData(data))
+            throw std::runtime_error("A light does not support renderer-neutral snapshots");
+
+        snapshot.lights.push_back(data);
     }
 
     std::unordered_map<const MeshAsset *, std::uint32_t> meshIndices;
@@ -89,7 +92,7 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
         PrimitiveData data;
 
         if (!primitive->getData(data))
-            continue;
+            throw std::runtime_error("A primitive does not support renderer-neutral snapshots");
 
         if (data.type == PrimitiveType::MESH)
         {

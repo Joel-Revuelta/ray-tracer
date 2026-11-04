@@ -31,6 +31,9 @@ class Factory
             throw std::runtime_error("type not found in library");
         _dlManager.changeLib(it->second);
         std::shared_ptr<T> obj = _dlManager.getClass<T>("create", std::forward<Args>(args)...);
+
+        if (!obj)
+            throw std::runtime_error("plugin factory returned null for '" + type + "'");
         return obj;
     }
 

@@ -108,9 +108,9 @@ bool CameraController::handleEvent(char event, Camera &camera)
         if (changed)
         {
             camera.setLensRadius(_initialLensRadius);
-
-            if (_initialFocusDistance > 0.0f)
-                camera.setFocusDistance(_initialFocusDistance);
+            // A zero initial focus means auto-focus, so passing zero here
+            // restores tracking of the restored look-at distance.
+            camera.setFocusDistance(_initialFocusDistance);
         }
         return changed;
     }

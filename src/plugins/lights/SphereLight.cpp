@@ -97,8 +97,9 @@ LightSample SphereLight::sample(const HitPayload &payload, const Scene &scene, u
 {
     LightSample result;
 
-    // Uniform point on the sphere surface. Samples below the surface are
-    // rejected by the shading-normal test, which keeps the estimator unbiased.
+    // Uniform point on the sphere surface. This is a soft-shadow
+    // approximation using the point-light attenuation model, not a physically
+    // exact area-light integral.
     const float u = Utils::numericGeneratePseudoRandom<float>(seed, 0.0f, 1.0f);
     const float v = Utils::numericGeneratePseudoRandom<float>(seed, 0.0f, 1.0f);
     const float z = 1.0f - 2.0f * u;

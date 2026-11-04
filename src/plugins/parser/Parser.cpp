@@ -23,8 +23,10 @@ namespace
 {
 void requireFinite(double value, const std::string &name)
 {
-    if (!std::isfinite(value))
-        throw std::runtime_error(name + " must be finite");
+    // The renderer stores geometry in float, so a finite double that overflows
+    // float is still invalid input.
+    if (!std::isfinite(value) || !std::isfinite(static_cast<float>(value)))
+        throw std::runtime_error(name + " must be finite and representable as a float");
 }
 
 void requirePositive(double value, const std::string &name)
@@ -115,6 +117,48 @@ class MaterialCountGuard
   private:
     uint &_count;
     uint _saved;
+};
+
+class MtlIndexGuard
+{
+  public:
+    explicit MtlIndexGuard(std::unordered_map<std::string, uint> &indices) : _indices(indices), _saved(indices)
+    {
+        _indices.clear();
+    }
+
+    ~MtlIndexGuard(void)
+    {
+        _indices = _saved;
+    }
+
+    MtlIndexGuard(const MtlIndexGuard &) = delete;
+    MtlIndexGuard &operator=(const MtlIndexGuard &) = delete;
+
+  private:
+    std::unordered_map<std::string, uint> &_indices;
+    std::unordered_map<std::string, uint> _saved;
+};
+
+class PrefabFlagGuard
+{
+  public:
+    explicit PrefabFlagGuard(bool &flag) : _flag(flag), _saved(flag)
+    {
+        _flag = true;
+    }
+
+    ~PrefabFlagGuard(void)
+    {
+        _flag = _saved;
+    }
+
+    PrefabFlagGuard(const PrefabFlagGuard &) = delete;
+    PrefabFlagGuard &operator=(const PrefabFlagGuard &) = delete;
+
+  private:
+    bool &_flag;
+    bool _saved;
 };
 } // namespace
 
@@ -535,9 +579,7 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
 
     NestingGuard nestingGuard(_sceneNestingDepth);
     MaterialCountGuard materialCountGuard(_materialCount);
-    const std::unordered_map<std::string, uint> parentMtlIndices = _mtlMaterialIndices;
-
-    _mtlMaterialIndices.clear();
+    MtlIndexGuard mtlIndexGuard(_mtlMaterialIndices);
     SceneBuilder sceneBuilder;
 
     // Materials must be registered before primitives, because a nested scene
@@ -563,17 +605,12 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
         _materialCount = static_cast<uint>(sceneBuilder.getMaterialCount());
     }
 
-    std::shared_ptr<Scene> scene = sceneBuilder.build();
-
-    _mtlMaterialIndices = parentMtlIndices;
-    return scene;
+    return sceneBuilder.build();
 }
 
 void Parser::parsePrefabs(const libconfig::Setting &prefabsSetting)
 {
-    const bool previous = _parsingPrefab;
-
-    _parsingPrefab = true;
+    PrefabFlagGuard prefabFlagGuard(_parsingPrefab);
 
     for (int i = 0; i < prefabsSetting.getLength(); ++i)
     {
@@ -585,8 +622,6 @@ void Parser::parsePrefabs(const libconfig::Setting &prefabsSetting)
 
         _prefabScenes[name] = parseScene(prefab);
     }
-
-    _parsingPrefab = previous;
 }
 
 /**
@@ -766,9 +801,13 @@ std::shared_ptr<IPrimitive> Parser::parseMesh(SceneBuilder &sceneBuilder, libcon
                 const float ambient = std::clamp(luminance(mtl.ambient), 0.0f, 1.0f);
                 const float specular = std::clamp(luminance(mtl.specular), 0.0f, 1.0f);
 
-                std::shared_ptr<IMaterial> material = _factory.create<IMaterial>(
-                    "PhongMaterial", ambient, 1.0f, specular, mtl.diffuse,
-                    roughnessFromShininess(mtl.shininess));
+                // The plugin ABI is untyped at the dlopen boundary, so the
+                // call-site argument types must match the exported signature
+                // exactly. PhongMaterial::create takes doubles; passing floats
+                // here silently corrupts the coefficients.
+                std::shared_ptr<IMaterial> material = _factory.create<IMaterial, double, double, double, Color3D, double>(
+                    "PhongMaterial", static_cast<double>(ambient), 1.0, static_cast<double>(specular), mtl.diffuse,
+                    static_cast<double>(roughnessFromShininess(mtl.shininess)));
 
                 if (!mtl.diffuseMap.empty())
                     material->setTexture(loadTexture(mtl.diffuseMap));

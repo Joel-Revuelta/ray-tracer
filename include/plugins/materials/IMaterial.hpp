@@ -25,7 +25,7 @@ class IMaterial
         FLAT_COLOR,
         EMISSIVE,
         METALLIC,
-        DIELECTRIC, // Not implemented
+        DIELECTRIC,
         TYPE_COUNT
     };
     virtual ~IMaterial(void) = default;
@@ -64,8 +64,8 @@ class IMaterial
         return nullptr;
     }
 
-    // Returns an independent copy for scene composition. Materials that do not
-    // implement cloning fall back to sharing the original instance.
+    // Returns an independent copy for scene composition. A material used
+    // inside a nested scene or prefab must implement this.
     virtual std::shared_ptr<IMaterial> clone(void) const
     {
         return nullptr;

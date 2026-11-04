@@ -45,6 +45,15 @@ struct FaceVertex
     throw std::runtime_error(path + ":" + std::to_string(line) + ": " + message);
 }
 
+float checkedFloat(double value, const std::string &path, std::size_t line, const std::string &field)
+{
+    const float converted = static_cast<float>(value);
+
+    if (!std::isfinite(converted))
+        fail(path, line, field + " is outside the supported float range");
+    return converted;
+}
+
 std::size_t resolveIndex(const std::string &token, std::size_t count, const std::string &kind,
                          const std::string &path, std::size_t line)
 {
@@ -172,7 +181,9 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
             if (!(stream >> x >> y >> z) || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
                 fail(path, lineNumber, "invalid vertex");
 
-            vertices.emplace_back(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+            vertices.emplace_back(checkedFloat(x, path, lineNumber, "vertex x"),
+                                  checkedFloat(y, path, lineNumber, "vertex y"),
+                                  checkedFloat(z, path, lineNumber, "vertex z"));
             continue;
         }
 
@@ -229,7 +240,8 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
             if (!(stream >> u >> v) || !std::isfinite(u) || !std::isfinite(v))
                 fail(path, lineNumber, "invalid texture coordinate");
 
-            textureCoords.push_back(UV{static_cast<float>(u), static_cast<float>(v)});
+            textureCoords.push_back(UV{checkedFloat(u, path, lineNumber, "texture u"),
+                                       checkedFloat(v, path, lineNumber, "texture v")});
             continue;
         }
 
@@ -242,7 +254,9 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
             if (!(stream >> x >> y >> z) || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
                 fail(path, lineNumber, "invalid normal");
 
-            const Vec3D normal(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+            const Vec3D normal(checkedFloat(x, path, lineNumber, "normal x"),
+                               checkedFloat(y, path, lineNumber, "normal y"),
+                               checkedFloat(z, path, lineNumber, "normal z"));
 
             if (!std::isfinite(normal.lengthSquared()) || normal.lengthSquared() < DEGENERATE_EPSILON)
                 fail(path, lineNumber, "normal must be non-zero");

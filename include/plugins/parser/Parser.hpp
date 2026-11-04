@@ -25,7 +25,7 @@ using MaterialVec = std::vector<std::shared_ptr<RayTracer::IMaterial>>;
 namespace RayTracer
 {
 
-class MeshAsset;
+struct MeshAsset;
 class Texture;
 
 class Parser

@@ -27,7 +27,7 @@ hooks.
 ## Prerequisites
 
 - CMake 3.20+ (tested with 4.2.3)
-- C++20 compiler (tested with GCC 15.2)
+- C++20 compiler (tested with GCC 15.2 and Clang 21.1)
 - `libconfig++` development package
 - Optional SFML 3.0.x development package (Graphics, Window, System)
 - Optional GLFW 3.3+ and GLEW 2.x development packages for the OpenGL GUI
@@ -207,8 +207,8 @@ propagates both normals through the intersection chain (`bestNormal`,
 ### Textures and UVs
 
 `include/render/Texture.hpp` provides an 8-bit RGB `Texture` with bilinear,
-repeat-wrapped sampling and a `P6`/`P3` PPM loader. The parser caches textures
-by resolved path and attaches them to materials through
+repeat-wrapped sampling and a `P6`/`P3` PPM loader. PPM values are decoded from
+sRGB to linear on load. The parser caches textures by resolved path and attaches them to materials through
 `IMaterial::setTexture()`; `AMaterial` stores the shared pointer.
 
 Primitives set local UVs in `HitPayload`:
@@ -458,7 +458,8 @@ penumbrae.
    - `getData(PrimitiveData &)` for GPU/flat renderers
    - `getMaterialIndex()` / `setMaterialIndex()`
    - `doTransformation()` (or intentionally ignore it)
-   - `clone()` so nested-scene merging can copy the primitive safely
+   - `clone()` so nested-scene merging can copy the primitive safely;
+     composition rejects a null clone rather than mutating a shared instance
    - implement `hit()` in local space; the parser wraps primitives with a
      `transform` block in `InstancePrimitive`, which handles world-space rays,
      hit positions and normals
