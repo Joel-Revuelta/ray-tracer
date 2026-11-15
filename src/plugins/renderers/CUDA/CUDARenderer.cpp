@@ -10,6 +10,7 @@
 #include "plugins/renderers/CUDA/CudaKernels.hpp"
 #include "plugins/renderers/PPM.hpp"
 #include "plugins/renderers/SceneSnapshot.hpp"
+#include "render/ImageWriter.hpp"
 #include "render/PostProcess.hpp"
 #include "render/Texture.hpp"
 #include "scene/BVHBuilder.hpp"
@@ -530,6 +531,12 @@ class CudaRenderSession
         _view.postProcess = toDevice(postProcess);
     }
 
+    void setSeed(uint32_t seed)
+    {
+        finishBatch();
+        _view.seed = seed;
+    }
+
     void refreshOutput(int renderedSamples)
     {
         if (renderedSamples <= 0)
@@ -664,7 +671,7 @@ class CudaRenderSession
 void writeOutput(const RenderContext &context, int width, int height, const std::vector<uint32_t> &pixels)
 {
     if (!context.options.outputPath.empty())
-        writePPMFile(context.options.outputPath, width, height, pixels);
+        writeImageFile(context.options.outputPath, width, height, pixels);
     else if (!context.gui)
         writePPM(std::cout, width, height, pixels);
 }
@@ -770,6 +777,73 @@ void CUDARenderer::run(const RenderContext &context)
 
     if (!isAvailable(unavailableReason))
         throw std::runtime_error("CUDA renderer unavailable: " + unavailableReason);
+
+    if (context.options.animation)
+    {
+        if (!context.animation)
+            throw std::invalid_argument("CUDA animation requires a camera animation");
+        if (context.gui)
+            throw std::invalid_argument("Animated rendering requires --cli");
+
+        const int startFrame = context.options.startFrame;
+        const int endFrame = context.options.endFrame;
+
+        if (startFrame < 0 || endFrame < startFrame)
+            throw std::invalid_argument("Invalid animation frame range");
+
+        std::shared_ptr<Camera> firstCamera =
+            context.animation->cameraAt(context.animation->timeAtFrame(startFrame, context.options.animationFps));
+        firstCamera->initialize(context.options.width, context.options.height, firstCamera->getLookAt(),
+                                firstCamera->getLookFrom(), firstCamera->getVerticalFovDegree());
+
+        if (context.options.lensRadiusOverride >= 0.0f)
+            firstCamera->setLensRadius(context.options.lensRadiusOverride);
+        if (context.options.focusDistanceOverride > 0.0f)
+            firstCamera->setFocusDistance(context.options.focusDistanceOverride);
+
+        const SceneSnapshot snapshot = buildSceneSnapshot(*context.scene, *firstCamera);
+        const uint32_t frameSeed =
+            context.options.seed + static_cast<uint32_t>(startFrame) * 0x9e3779b9u;
+        CudaRenderSession session(snapshot, context.options.postProcess, frameSeed);
+
+        for (int frame = startFrame; frame <= endFrame; ++frame)
+        {
+            std::shared_ptr<Camera> camera =
+                context.animation->cameraAt(context.animation->timeAtFrame(frame, context.options.animationFps));
+            camera->initialize(context.options.width, context.options.height, camera->getLookAt(),
+                               camera->getLookFrom(), camera->getVerticalFovDegree());
+
+            if (context.options.lensRadiusOverride >= 0.0f)
+                camera->setLensRadius(context.options.lensRadiusOverride);
+            if (context.options.focusDistanceOverride > 0.0f)
+                camera->setFocusDistance(context.options.focusDistanceOverride);
+
+            if (frame != startFrame)
+            {
+                session.updateCamera(makeCameraData(*camera));
+                session.setSeed(context.options.seed + static_cast<uint32_t>(frame) * 0x9e3779b9u);
+            }
+
+            constexpr int batchSize = 16;
+
+            for (int start = 0; start < context.options.frames; start += batchSize)
+            {
+                const int count = std::min(batchSize, context.options.frames - start);
+
+                session.renderBatch(start, count);
+            }
+
+            if (context.options.postProcess.bloom)
+                session.refreshOutput(context.options.frames);
+
+            const std::vector<uint32_t> &pixels = session.copyImage();
+            const std::string path = formatFramePath(context.options.outputPath, frame);
+
+            writeImageFile(path, session.width(), session.height(), pixels);
+            std::clog << "\rRendered animation frame " << frame << "/" << endFrame << " -> " << path << std::endl;
+        }
+        return;
+    }
 
     CameraController controller;
     controller.captureInitial(*context.camera);

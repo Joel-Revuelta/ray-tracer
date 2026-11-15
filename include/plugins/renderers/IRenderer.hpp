@@ -11,6 +11,7 @@
 #include "Camera.hpp"
 #include "GUI.hpp"
 #include "Scene.hpp"
+#include "render/Animation.hpp"
 #include "render/PostProcess.hpp"
 #include <cstdint>
 #include <memory>
@@ -29,12 +30,19 @@ struct RenderOptions
     uint32_t seed = 0;
     std::string outputPath;
     PostProcessSettings postProcess;
+    bool animation = false;
+    int startFrame = 0;
+    int endFrame = 0;
+    double animationFps = 24.0;
+    float lensRadiusOverride = -1.0f;
+    float focusDistanceOverride = -1.0f;
 };
 
 struct RenderContext
 {
     std::shared_ptr<Scene> scene;
     std::shared_ptr<Camera> camera;
+    std::shared_ptr<CameraAnimation> animation;
     std::shared_ptr<IGUI> gui;
     RenderOptions options;
 };

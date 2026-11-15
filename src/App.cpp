@@ -24,10 +24,11 @@ namespace
 {
 const char *const USAGE =
     "Usage: ./raytracer --path <scene.cfg> --cli|--sfml|--gui sfml|opengl "
-    "[--renderer cpu|cuda] [--width W] [--height H] [--frames N] [--threads N] [--seed N] "
-    "[--device N] [--lens-radius R] [--focus-distance D] [--exposure E] "
+    "[--renderer cpu|cuda] [--width W] [--height H] [--samples N] [--frames N] [--threads N] "
+    "[--seed N] [--device N] [--lens-radius R] [--focus-distance D] [--exposure E] "
     "[--tonemap none|reinhard|aces] [--bloom [--bloom-threshold T] [--bloom-intensity I] "
-    "[--bloom-radius R]] [--output out.ppm] [--list-renderers] [--list-guis]";
+    "[--bloom-radius R]] [--animation [--start-frame N] [--end-frame N] [--fps F]] "
+    "[--output out.ppm|out.png|frame-%04d.png] [--list-renderers] [--list-guis]";
 
 std::string normalizeGuiName(std::string name)
 {
@@ -106,6 +107,22 @@ float parsePositiveFloat(const char *value, const char *name)
     const float parsed = parseNonNegativeFloat(value, name);
 
     if (parsed <= 0.0f)
+    {
+        std::cerr << "Invalid " << name << " value: " << value << std::endl;
+        printUsage(std::cerr);
+        std::exit(EXIT_FAILURE);
+    }
+
+    return parsed;
+}
+
+double parsePositiveDouble(const char *value, const char *name)
+{
+    errno = 0;
+    char *end = nullptr;
+    const double parsed = std::strtod(value, &end);
+
+    if (errno != 0 || end == value || *end != '\0' || !std::isfinite(parsed) || parsed <= 0.0)
     {
         std::cerr << "Invalid " << name << " value: " << value << std::endl;
         printUsage(std::cerr);
@@ -208,6 +225,11 @@ App::App(int ac, char **av)
                                       {"bloom-threshold", required_argument, NULL, 21},
                                       {"bloom-intensity", required_argument, NULL, 22},
                                       {"bloom-radius", required_argument, NULL, 23},
+                                      {"samples", required_argument, NULL, 24},
+                                      {"animation", 0, NULL, 25},
+                                      {"start-frame", required_argument, NULL, 26},
+                                      {"end-frame", required_argument, NULL, 27},
+                                      {"fps", required_argument, NULL, 28},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -300,6 +322,21 @@ App::App(int ac, char **av)
                 std::exit(EXIT_FAILURE);
             }
             break;
+        case 24:
+            _frames = parsePositiveInt(optarg, "samples");
+            break;
+        case 25:
+            _animation = true;
+            break;
+        case 26:
+            _startFrame = parseNonNegativeInt(optarg, "start frame");
+            break;
+        case 27:
+            _endFrame = parseNonNegativeInt(optarg, "end frame");
+            break;
+        case 28:
+            _fps = parsePositiveDouble(optarg, "fps");
+            break;
         case '?':
         default:
             std::cerr << "Unknown or incomplete option." << std::endl;
@@ -361,6 +398,45 @@ void App::run(void)
         if (_focusDistance > 0.0f)
             camera->setFocusDistance(_focusDistance);
 
+        std::shared_ptr<CameraAnimation> animation = _parser->getParsedAnimation();
+        const bool animationRequested = _animation || _startFrame >= 0 || _endFrame >= 0 || _fps > 0.0;
+        int startFrame = 0;
+        int endFrame = 0;
+        double animationFps = 24.0;
+
+        if (animationRequested)
+        {
+            if (_interface != Interface::CLI)
+            {
+                std::cerr << "Animation rendering is only available with --cli." << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+            if (!animation)
+            {
+                std::cerr << "Scene has no animation block: " << _filepath << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+
+            animationFps = _fps > 0.0 ? _fps : static_cast<double>(animation->getFps());
+
+            const int frameCount = animation->getFrameCount(animationFps);
+
+            startFrame = _startFrame >= 0 ? _startFrame : 0;
+            endFrame = _endFrame >= 0 ? _endFrame : frameCount - 1;
+
+            if (startFrame >= frameCount || endFrame >= frameCount)
+            {
+                std::cerr << "Animation frame range " << startFrame << "-" << endFrame << " is outside 0-"
+                          << (frameCount - 1) << "." << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+            if (endFrame < startFrame)
+            {
+                std::cerr << "End frame must not be before the start frame." << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+        }
+
         const RendererEntry *rendererEntry = findRenderer(_rendererName);
         if (!rendererEntry)
         {
@@ -392,6 +468,7 @@ void App::run(void)
 
         context.scene = scene;
         context.camera = camera;
+        context.animation = animation;
         context.options.width = _width;
         context.options.height = _height;
         context.options.frames = _frames;
@@ -400,6 +477,12 @@ void App::run(void)
         context.options.seed = _seed;
         context.options.outputPath = _output;
         context.options.postProcess = _postProcess;
+        context.options.animation = animationRequested;
+        context.options.startFrame = startFrame;
+        context.options.endFrame = endFrame;
+        context.options.animationFps = animationFps;
+        context.options.lensRadiusOverride = _lensRadius;
+        context.options.focusDistanceOverride = _focusDistance;
 
         if (_interface == Interface::GUI)
         {

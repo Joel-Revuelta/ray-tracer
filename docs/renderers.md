@@ -46,14 +46,19 @@ struct RenderOptions
 {
     int width;
     int height;
-    int frames;
+    int frames;    // samples per pixel
     std::string outputPath;
+    bool animation;
+    int startFrame;
+    int endFrame;
+    double animationFps;
 };
 
 struct RenderContext
 {
     std::shared_ptr<Scene> scene;
     std::shared_ptr<Camera> camera;
+    std::shared_ptr<CameraAnimation> animation;
     std::shared_ptr<IGUI> gui;
     RenderOptions options;
 };
@@ -138,9 +143,11 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 - In GUI mode, window events are polled while workers trace a frame. A camera
   event aborts the current frame and restarts with the new pose, so heavy CPU
   frames do not freeze the window.
-- Writes binary `P6` PPM through the shared PPM helper.
+- Writes binary `P6` PPM or 8-bit RGBA PNG through the shared image writer.
 - CPU sampling uses the same per-pixel/sample PCG seed as CUDA, so renders are
   deterministic and the two renderers converge to the same image.
+- In animation mode, interpolates a `Camera` for each frame and renders the
+  sample count requested by `--samples`, writing one file per frame.
 
 The CPU renderer is the reference implementation for visual behavior and is
 useful for debugging. Use CUDA for high-resolution or high-sample final renders.
@@ -204,9 +211,14 @@ uses the same `SceneSnapshot` data path.
   as soon as that sample completes, so heavy scenes do not freeze the window.
   Progressive texture uploads are capped at roughly 100 updates for large
   sample counts. Frame readback uses registered host memory when available.
-- **Output:** uses the shared PPM helper and supports stdout, files, and
-  unwritable-output errors like the CPU renderer. PPM output is binary `P6`,
+- **Output:** uses the shared image writer and supports stdout, PPM/PNG files,
+  and unwritable-output errors like the CPU renderer. PPM output is binary `P6`,
   which keeps 8K images around 100 MB instead of several hundred MB of ASCII.
+- **Animation:** builds the snapshot and `CudaRenderSession` once from the
+  first frame, then reuses the scene, BVH, meshes, textures and lights for every
+  later frame. `updateCamera()` replaces the camera and clears accumulation;
+  `setSeed()` applies the deterministic per-frame seed. The session is never
+  rebuilt for a camera-only animation, so long sequences avoid the upload cost.
 
 Run it with:
 
@@ -271,12 +283,31 @@ Both renderers share the same output pipeline:
 2. exposure multiplier,
 3. tonemapping: `none`, `reinhard`, or `aces`,
 4. sRGB transfer,
-5. 8-bit PPM output.
+5. 8-bit PPM or PNG output.
 
 The defaults are exposure `1.0` and tonemapping `none`. Use `--tonemap aces`
 for a softer highlight roll-off and `--exposure` to adjust the overall level.
 Missed rays sample the optional scene `background` gradient instead of returning
 black.
+
+## Animation
+
+Both renderers play the same `CameraAnimation` timeline and share the per-frame
+seed formula `seed + frame * 0x9e3779b9u`.
+
+- The CPU renderer creates a fresh `Renderer` per frame with the interpolated
+  camera. This reuses the immutable scene graph and avoids rebuilding geometry;
+  allocation cost is small relative to tracing.
+- The CUDA renderer keeps one `CudaRenderSession` alive and updates only
+  `CameraData` and the seed between frames. Device memory for the BVH, meshes
+  and textures is allocated once.
+- Both write through `formatFramePath` and `writeImageFile`, so `.ppm` and
+  `.png` sequences use identical names and numbering.
+- Animation is CLI-only. GUI renderers reject animation flags so interactive
+  camera control cannot fight the timeline.
+- CPU/CUDA sequences match within normal Monte Carlo noise when the sample
+  count and seed are identical. Camera-only animation does not change scene
+  ordering, so parity behavior is unchanged from still rendering.
 
 ## Troubleshooting
 

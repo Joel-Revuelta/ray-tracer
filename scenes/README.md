@@ -21,14 +21,15 @@ Or render it headlessly without a display server:
 
 Useful options:
 
-- `--cli` — render without opening a window. The PPM image is written to
+- `--cli` — render without opening a window. The image is written to
   `--output`, or to standard output when `--output` is omitted.
 - `--gui sfml|opengl` — open an interactive window. `--sfml` is an alias for
-  `--gui sfml`. A PPM is only written when `--output` is given.
-- `--frames N` — samples per pixel (higher = cleaner, slower; default 10).
-  Use 30+ for quick previews and 100+ for final stills.
-- `--output out.ppm` — write the rendered image as a binary P6 PPM.
-- `--width/--height` — render resolution, GUI window size and PPM size
+  `--gui sfml`. A file is only written when `--output` is given.
+- `--samples N` — samples per pixel (higher = cleaner, slower; default 10).
+  Use 30+ for quick previews and 100+ for final stills. `--frames` is a
+  backward-compatible alias.
+- `--output out.ppm|out.png` — write a binary P6 PPM or 8-bit RGBA PNG.
+- `--width/--height` — render resolution, GUI window size and output size
   (default 960x540).
 - `--renderer cpu|cuda` — choose the renderer plugin (default `cpu`).
 - `--list-renderers` — list the available renderer plugins and their status.
@@ -72,9 +73,9 @@ letterboxes it to preserve aspect ratio.
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face |
 | `group_transform.cfg` | A nested scene of spheres and a point light transformed as a group |
 | `prefabs.cfg` | One lamp prefab instantiated three times with different transforms |
-| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns |
-| `brass_orrery.cfg` | Brass orbit rings, glass planets and a layered glowing sun |
-| `tidal_bloom.cfg` | Bioluminescent glass flowers over a mirror lagoon |
+| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns; camera dolly |
+| `brass_orrery.cfg` | Brass orbit rings, glass planets and a layered glowing sun; camera orbit |
+| `tidal_bloom.cfg` | Bioluminescent glass flowers over a mirror lagoon; camera glide |
 | `obsidian_aurora.cfg` | Monolith silhouettes under luminous aurora ribbons |
 | `frozen_cathedral.cfg` | Ice pillars, a glowing altar and a reflective frozen nave |
 
@@ -93,6 +94,36 @@ bloom: `sakura_shrine` at exposure `1.25`, `brass_orrery` at `0.85`,
 ```
 
 `obsidian_aurora` is composed for 8K; the other four are composed for 16:9 HD.
+
+## Camera animations
+
+`sakura_shrine`, `brass_orrery` and `tidal_bloom` include camera-only
+`animation` blocks. Still renders are unchanged; pass `--animation` to play the
+timeline. `--start-frame`, `--end-frame` and `--fps` select a sub-range and can
+override the scene frame rate.
+
+```bash
+# Brass Orrery: 8-second arc at 24 fps, full sequence
+mkdir -p frames
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --samples 128 --tonemap aces --exposure 0.85 \
+  --bloom --bloom-threshold 2.5 --bloom-intensity 0.20 \
+  --animation --output 'frames/orrery-%04d.png'
+
+# Sakura Shrine: first 2 seconds only, 12 fps preview
+./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cpu \
+  --width 640 --height 360 --samples 8 \
+  --start-frame 0 --end-frame 23 --fps 12 \
+  --output 'frames/sakura-%04d.ppm'
+```
+
+Assemble PNG frames with `ffmpeg` after rendering, or use
+`scenes/render_animation.sh`:
+
+```bash
+SCENE=sakura_shrine SAMPLES=64 WIDTH=1280 HEIGHT=720 ./scenes/render_animation.sh
+FFMPEG=1 ./scenes/render_animation.sh brass_orrery
+```
 
 ## Material showcase renders
 

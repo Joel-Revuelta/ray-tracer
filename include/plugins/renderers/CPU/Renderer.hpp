@@ -92,7 +92,7 @@ class Renderer
     std::atomic<bool> _stop{false};
 
     std::ostream *_outStream = nullptr;
-    std::fstream _fileStream;
+    std::string _outputPath;
     std::unique_ptr<RenderPool> _pool;
 
     // Private methods

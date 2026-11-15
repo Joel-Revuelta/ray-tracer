@@ -11,7 +11,9 @@
 #include "Scene.hpp"
 #include "SceneBuilder.hpp"
 #include "TransformData.hpp"
+#include "render/Animation.hpp"
 #include "render/Environment.hpp"
+#include "render/ImageWriter.hpp"
 #include "render/Texture.hpp"
 #include <algorithm>
 #include <cmath>
@@ -236,6 +238,115 @@ int checkTextureColorSpace(void)
 
     return 0;
 }
+
+int checkCameraAnimation(void)
+{
+    const std::vector<CameraKeyframe> keyframes = {
+        {0.0, Vec3D(0.0f, 0.0f, -10.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
+        {2.0, Vec3D(10.0f, 0.0f, -10.0f), Vec3D(0.0f, 0.0f, 0.0f), 80.0f, 0.04f, 20.0f}};
+    const CameraAnimation animation(keyframes, 24);
+
+    if (animation.getFps() != 24 || !closeTo(static_cast<float>(animation.getDuration()), 2.0f) ||
+        animation.getFrameCount() != 48 || animation.getFrameCount(30.0) != 60)
+        return fail("animation frame count or duration is wrong");
+
+    const std::shared_ptr<Camera> start = animation.cameraAt(0.0);
+
+    if (!closeTo(start->getLookFrom().getZ(), -10.0f) || !closeTo(start->getVerticalFovDegree(), 60.0f))
+        return fail("animation did not reproduce the first keyframe");
+
+    const std::shared_ptr<Camera> middle = animation.cameraAt(1.0);
+
+    if (!closeTo(middle->getLookFrom().getX(), 5.0f, 1e-3f) ||
+        !closeTo(middle->getLookFrom().getZ(), -10.0f, 1e-3f) ||
+        !closeTo(middle->getVerticalFovDegree(), 70.0f, 1e-3f) ||
+        !closeTo(middle->getLensRadius(), 0.02f, 1e-4f) ||
+        !closeTo(middle->getFocusDistance(), 10.0f, 1e-3f))
+        return fail("animation midpoint interpolation is wrong");
+
+    const std::shared_ptr<Camera> end = animation.cameraAt(2.0);
+
+    if (!closeTo(end->getLookFrom().getX(), 10.0f) || !closeTo(end->getLookFrom().getZ(), -10.0f) ||
+        !closeTo(end->getVerticalFovDegree(), 80.0f))
+        return fail("animation did not reproduce the last keyframe");
+
+    if (!closeTo(static_cast<float>(animation.timeAtFrame(24, 24.0)), 1.0f) ||
+        !closeTo(static_cast<float>(animation.timeAtFrame(1000, 24.0)), 2.0f))
+        return fail("animation frame time mapping is wrong");
+
+    auto expectThrow = [](const std::vector<CameraKeyframe> &keys, int fps, const std::string &label) {
+        try
+        {
+            const CameraAnimation invalid(keys, fps);
+            (void)invalid;
+        }
+        catch (const std::invalid_argument &)
+        {
+            return true;
+        }
+        std::cerr << "renderer_regressions: animation accepted " << label << std::endl;
+        return false;
+    };
+
+    if (!expectThrow({{0.0, Vec3D(0.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f}}, 24,
+                     "a single keyframe"))
+        return 1;
+    if (!expectThrow({{1.0, Vec3D(0.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
+                      {2.0, Vec3D(1.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f}},
+                     24, "a first keyframe after time zero"))
+        return 1;
+    if (!expectThrow({{0.0, Vec3D(0.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
+                      {2.0, Vec3D(1.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
+                      {2.0, Vec3D(2.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f}},
+                     24, "duplicate keyframe times"))
+        return 1;
+    if (!expectThrow({{0.0, Vec3D(0.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
+                      {1.0, Vec3D(1.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 180.0f, 0.0f, 0.0f}},
+                     24, "an out-of-range field of view"))
+        return 1;
+    if (!expectThrow({{0.0, Vec3D(0.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
+                      {1.0, Vec3D(1.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f}},
+                     0, "a non-positive FPS"))
+        return 1;
+    if (!expectThrow({{0.0, Vec3D(0.0f, 0.0f, 0.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
+                      {1.0, Vec3D(1.0f, 0.0f, 0.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f}},
+                     24, "a degenerate first camera pose"))
+        return 1;
+    if (!expectThrow({{0.0, Vec3D(std::numeric_limits<float>::quiet_NaN(), 0.0f, -5.0f),
+                       Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
+                      {1.0, Vec3D(1.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f}},
+                     24, "a non-finite camera position"))
+        return 1;
+    return 0;
+}
+
+int checkFramePathFormatting(void)
+{
+    if (formatFramePath("frame-%04d.png", 7) != "frame-0007.png" ||
+        formatFramePath("out/frame-%d.ppm", 12) != "out/frame-12.ppm" ||
+        formatFramePath("100%%-%03d.png", 3) != "100%-003.png" ||
+        formatFramePath("shot.png", 3) != "shot-0003.png" ||
+        formatFramePath("shot", 42) != "shot-0042.ppm" ||
+        formatFramePath("", 5) != "frame-0005.ppm")
+        return fail("frame path formatting produced an unexpected name");
+
+    auto expectThrow = [](const std::string &pattern) {
+        try
+        {
+            formatFramePath(pattern, 1);
+        }
+        catch (const std::invalid_argument &)
+        {
+            return true;
+        }
+        std::cerr << "renderer_regressions: frame path accepted " << pattern << std::endl;
+        return false;
+    };
+
+    if (!expectThrow("frame-%s.png") || !expectThrow("frame-%d-%d.png"))
+        return 1;
+    return 0;
+}
 } // namespace
 
 int main(int ac, char **av)
@@ -257,6 +368,10 @@ int main(int ac, char **av)
     if (const int status = checkCloneRequirement(factory); status != 0)
         return status;
     if (const int status = checkTextureColorSpace(); status != 0)
+        return status;
+    if (const int status = checkCameraAnimation(); status != 0)
+        return status;
+    if (const int status = checkFramePathFormatting(); status != 0)
         return status;
 
     std::cout << "renderer_regressions: all checks passed" << std::endl;

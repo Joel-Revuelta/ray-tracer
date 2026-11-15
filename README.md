@@ -5,8 +5,8 @@ GLFW/OpenGL previewers, a multithreaded CPU renderer, and an optional CUDA GPU
 renderer.
 
 The project includes a strict libconfig scene parser, a reusable shared core,
-runtime-loaded primitives/materials/lights/GUI/renderers, and scripts for
-full-HD and 8K still renders.
+runtime-loaded primitives/materials/lights/GUI/renderers, deterministic
+camera-animation sequences, and scripts for full-HD and 8K still renders.
 
 [![Hero scene contact sheet](screenshots/contact.png)](screenshots/contact.png)
 
@@ -25,8 +25,10 @@ full-HD and 8K still renders.
   settings and material indices before rendering.
 - **Interactive GUI backends** — SFML 3 or GLFW/OpenGL 3.3, with
   camera-relative movement, look controls, FOV zoom, reset and camera locks.
-- **Headless CLI** — binary PPM output, stdout support, configurable
+- **Headless CLI** — binary PPM or PNG output, stdout support, configurable
   resolution/samples, exposure and tonemapping.
+- **Camera animation** — keyframed position/look-at/FOV/lens/focus timelines,
+  deterministic numbered frame sequences, and CPU/CUDA playback from the CLI.
 - **Visual pipeline** — exact sRGB output, optional Reinhard/ACES tonemapping,
   and scene background gradients for reflections.
 - **Materials** — diffuse, emissive, flat-colour, Fresnel glass and GGX-rough
@@ -206,9 +208,25 @@ Render the same scene with CUDA:
 
 ```bash
 ./raytracer --path scenes/showcase.cfg --cli --renderer cuda \
-  --width 1920 --height 1080 --frames 1000 \
-  --output showcase.ppm
+  --width 1920 --height 1080 --samples 1000 \
+  --output showcase.png
 ```
+
+Render a deterministic camera animation as a PNG sequence:
+
+```bash
+mkdir -p frames
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
+  --width 1280 --height 720 --samples 64 --animation \
+  --output 'frames/orrery-%04d.png'
+
+ffmpeg -framerate 24 -i 'frames/orrery-%04d.png' \
+  -c:v libx264 -pix_fmt yuv420p orrery.mp4
+```
+
+`--start-frame`, `--end-frame` and `--fps` select a sub-range and override the
+scene frame rate. Animation is CLI-only; still renders of the same scene are
+unchanged.
 
 Open the interactive SFML window:
 
@@ -256,10 +274,12 @@ Available GUI backends:
 
 ```text
 Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
-       [--renderer cpu|cuda] [--width W] [--height H] [--frames N]
+       [--renderer cpu|cuda] [--width W] [--height H] [--samples N] [--frames N]
        [--threads N] [--seed N] [--device N]
        [--lens-radius R] [--focus-distance D] [--exposure E]
-       [--tonemap none|reinhard|aces] [--output out.ppm]
+       [--tonemap none|reinhard|aces]
+       [--animation [--start-frame N] [--end-frame N] [--fps F]]
+       [--output out.ppm|out.png|frame-%04d.png]
        [--list-renderers] [--list-guis]
 ```
 
@@ -273,7 +293,8 @@ Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
 | `--list-renderers` | List renderers and exit. | |
 | `--width <N>` | Render width and window width. Must be positive. | `960` |
 | `--height <N>` | Render height and window height. Must be positive. | `540` |
-| `--frames <N>` | Samples per pixel. Higher is cleaner and slower. | `10` |
+| `--samples <N>` | Samples per pixel. Higher is cleaner and slower. | `10` |
+| `--frames <N>` | Backward-compatible alias for `--samples`. | `10` |
 | `--threads <N>` | CPU worker threads; `0` means automatic. | `0` |
 | `--seed <N>` | Sampling seed offset for reproducible renders. | `0` |
 | `--device <N>` | CUDA device index. | `0` |
@@ -281,19 +302,27 @@ Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
 | `--focus-distance <D>` | Distance from the eye to the focus plane. | scene value |
 | `--exposure <E>` | Linear exposure before tonemapping. | `1.0` |
 | `--tonemap <mode>` | `none`, `reinhard`, or `aces`. | `none` |
-| `--output <file>` | Output PPM path. | stdout in CLI mode |
+| `--animation` | Render the scene camera animation. | off |
+| `--start-frame <N>` | First animation frame, inclusive. | `0` |
+| `--end-frame <N>` | Last animation frame, inclusive. | last frame |
+| `--fps <F>` | Override the scene animation frame rate. | scene value |
+| `--output <file>` | Output PPM/PNG path or animation frame pattern. | stdout; `frame-%04d.ppm` for animation |
 | `--list-renderers` | List renderer plugins and exit. | |
 | `--list-guis` | List GUI backends and exit. | |
 | `--help`, `-h` | Print usage and exit. | |
 
 Important details:
 
-- `--frames` is the number of **samples per pixel**, not an animation frame
-  count.
-- PPM output is binary `P6`, so 8K images are roughly 95 MB instead of several
-  hundred MB of ASCII.
-- In CLI mode, omitting `--output` writes the PPM to standard output.
-- In GUI mode, no file is written unless `--output` is provided.
+- `--samples` (and the legacy `--frames`) is the number of **samples per
+  pixel**, not an animation frame count. Use `--start-frame`/`--end-frame` to
+  select animation frames.
+- The output format follows the extension: `.ppm` is binary `P6` and `.png` is
+  8-bit RGBA. PPM keeps 8K images around 95 MB instead of several hundred MB of
+  ASCII.
+- In CLI mode, omitting `--output` writes a still PPM to standard output.
+  Animated renders default to `frame-%04d.ppm` in the current directory.
+- In GUI mode, no file is written unless `--output` is provided. Animation is
+  rejected in GUI mode.
 - Errors exit with status `1` and do not write an image.
 - `--list-renderers` and `--help` exit with status `0`.
 
@@ -356,9 +385,9 @@ architecture and CUDA build details.
 | `crystal_garden.cfg` | Crystal spires, metallic shards and floating orbs. |
 | `chrome_singularity.cfg` | Chrome world with a tilted accretion ring. |
 | `solar_bloom.cfg` | Amber sun over a mirror sea. |
-| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns. |
-| `brass_orrery.cfg` | Brass orbit rings, glass planets and a layered glowing sun. |
-| `tidal_bloom.cfg` | Bioluminescent glass flowers over a mirror lagoon. |
+| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns; camera dolly. |
+| `brass_orrery.cfg` | Brass orbit rings, glass planets and a glowing sun; camera orbit. |
+| `tidal_bloom.cfg` | Bioluminescent glass flowers over a lagoon; camera glide. |
 | `obsidian_aurora.cfg` | Monolith silhouettes under luminous aurora ribbons. |
 | `frozen_cathedral.cfg` | Ice pillars, a glowing altar and a reflective frozen nave. |
 
@@ -370,6 +399,26 @@ architecture and CUDA build details.
 | `infinity_mirror.cfg` | Mirrored corridor of repeating neon gates. |
 | `crystal_superbloom.cfg` | Dense field of giant crystal spires. |
 | `solar_eclipse.cfg` | Eclipse with a particle corona over a mirror sea. |
+
+### Camera animations
+
+`sakura_shrine`, `brass_orrery` and `tidal_bloom` include camera-only
+`animation` blocks. Render a numbered sequence with `--animation`:
+
+```bash
+mkdir -p frames
+./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cuda \
+  --width 1280 --height 720 --samples 64 --animation \
+  --output 'frames/sakura-%04d.png'
+```
+
+Or use the helper, which also assembles an MP4 when `ffmpeg` is available:
+
+```bash
+SCENE=sakura_shrine SAMPLES=64 WIDTH=1280 HEIGHT=720 \
+  ./scenes/render_animation.sh
+FFMPEG=1 ./scenes/render_animation.sh brass_orrery
+```
 
 Render all HD hero scenes:
 
@@ -458,7 +507,7 @@ Key directories:
 | Path | Contents |
 | --- | --- |
 | `src/` | Executable entry point and application flow. |
-| `src/render/` | Renderer registry, PPM output, camera controller, scene snapshot. |
+| `src/render/` | Renderer registry, animation timeline, PPM/PNG output, camera controller, scene snapshot. |
 | `src/plugins/renderers/` | CPU and CUDA renderer plugins. |
 | `src/plugins/primitives/` | Sphere, plane, cylinder and cone plugins. |
 | `src/plugins/materials/` | Material plugins. |

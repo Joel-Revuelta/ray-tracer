@@ -14,6 +14,7 @@
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -183,6 +184,7 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
 {
     SceneBuilder sceneBuilder;
     _camera.reset();
+    _animation.reset();
     _materialCount = 0;
     _mtlMaterialIndices.clear();
     _prefabScenes.clear();
@@ -192,6 +194,8 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
     {
         initConfig(filename);
         _camera = parseCamera(_config.lookup("camera"));
+        if (_config.exists("animation"))
+            _animation = parseAnimation(_config.lookup("animation"));
         parseMaterials(sceneBuilder, _config.lookup("materials"));
         if (_config.exists("prefabs"))
             parsePrefabs(_config.lookup("prefabs"));
@@ -272,6 +276,100 @@ std::shared_ptr<Camera> Parser::parseCamera(const libconfig::Setting &cameraSett
     }
 
     return camera;
+}
+
+/**
+ * Parses the optional camera animation. Keyframes inherit omitted fields from
+ * the previous keyframe, starting with the top-level camera.
+ */
+std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting &animationSetting)
+{
+    double fpsValue = 24.0;
+
+    if (animationSetting.exists("fps"))
+    {
+        const libconfig::Setting &fpsSetting = animationSetting.lookup("fps");
+
+        if (!fpsSetting.isNumber())
+            throw std::runtime_error("Animation fps must be a positive integer");
+
+        if (fpsSetting.getType() == libconfig::Setting::TypeFloat)
+            fpsValue = static_cast<double>(fpsSetting);
+        else if (fpsSetting.getType() == libconfig::Setting::TypeInt64)
+            fpsValue = static_cast<double>(static_cast<long long>(fpsSetting));
+        else
+            fpsValue = static_cast<double>(static_cast<int>(fpsSetting));
+
+        requireFinite(fpsValue, "Animation fps");
+        if (fpsValue <= 0.0 || fpsValue != std::floor(fpsValue) ||
+            fpsValue > static_cast<double>(std::numeric_limits<int>::max()))
+            throw std::runtime_error("Animation fps must be a positive integer");
+    }
+
+    const int fps = static_cast<int>(fpsValue);
+
+    const libconfig::Setting &keyframesSetting = animationSetting.lookup("camera");
+
+    if (!keyframesSetting.isList() || keyframesSetting.getLength() < 2)
+        throw std::runtime_error("Animation requires at least two camera keyframes");
+
+    std::vector<CameraKeyframe> keyframes;
+    keyframes.reserve(static_cast<std::size_t>(keyframesSetting.getLength()));
+
+    Point3D position = _camera ? _camera->getLookFrom() : Point3D(0.0f, 0.0f, 0.0f);
+    Point3D lookAt = _camera ? _camera->getLookAt() : Point3D(0.0f, 0.0f, 1.0f);
+    float fieldOfView = _camera ? _camera->getVerticalFovDegree() : 60.0f;
+    float lensRadius = _camera ? _camera->getLensRadius() : 0.0f;
+    float focusDistance = _camera ? _camera->getFocusDistance() : 0.0f;
+    double previousTime = -1.0;
+
+    for (int i = 0; i < keyframesSetting.getLength(); ++i)
+    {
+        const libconfig::Setting &keyframeSetting = keyframesSetting[i];
+        const double time = keyframeSetting.lookup("time");
+
+        requireFinite(time, "Animation keyframe time");
+        if (time < 0.0)
+            throw std::runtime_error("Animation keyframe time must not be negative");
+        if (i == 0 && std::fabs(time) > 1e-9)
+            throw std::runtime_error("Animation must start at time zero");
+        if (time <= previousTime)
+            throw std::runtime_error("Animation keyframe times must be strictly increasing");
+
+        if (keyframeSetting.exists("position"))
+            position = parsePoint(keyframeSetting.lookup("position"));
+        if (keyframeSetting.exists("rotation"))
+            lookAt = parsePoint(keyframeSetting.lookup("rotation"));
+        if (keyframeSetting.exists("fieldOfView"))
+        {
+            const double value = keyframeSetting.lookup("fieldOfView");
+
+            requireFinite(value, "Animation field of view");
+            if (value <= 0.0 || value >= 180.0)
+                throw std::runtime_error("Animation field of view must be strictly between 0 and 180 degrees");
+            fieldOfView = static_cast<float>(value);
+        }
+        if (keyframeSetting.exists("lensRadius"))
+        {
+            const double value = keyframeSetting.lookup("lensRadius");
+
+            requireNonNegative(value, "Animation lens radius");
+            lensRadius = static_cast<float>(value);
+        }
+        if (keyframeSetting.exists("focusDistance"))
+        {
+            const double value = keyframeSetting.lookup("focusDistance");
+
+            requirePositive(value, "Animation focus distance");
+            focusDistance = static_cast<float>(value);
+        }
+
+        keyframes.push_back(
+            CameraKeyframe{time, position, lookAt, fieldOfView, lensRadius, focusDistance});
+        previousTime = time;
+    }
+
+    return std::make_shared<CameraAnimation>(std::move(keyframes), fps);
 }
 
 /**
@@ -996,4 +1094,9 @@ Background Parser::parseBackground(const libconfig::Setting &backgroundSetting)
 std::shared_ptr<Camera> Parser::getParsedCamera(void) const
 {
     return _camera;
+}
+
+std::shared_ptr<CameraAnimation> Parser::getParsedAnimation(void) const
+{
+    return _animation;
 }

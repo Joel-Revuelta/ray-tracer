@@ -15,22 +15,30 @@
 
 using namespace RayTracer;
 
+CameraData RayTracer::makeCameraData(const Camera &camera)
+{
+    CameraData data;
+
+    data.lookFrom = camera.getLookFrom();
+    data.initialPixelPos = camera.getInitialPixelPos();
+    data.pixelWidthDistance = camera.getPixelWidthDistance();
+    data.pixelHeightDistance = camera.getPixelHeightDistance();
+    data.viewRight = camera.getCamViewRight();
+    data.viewUp = camera.getCamViewUp();
+    data.imageWidth = camera.getImageWidth();
+    data.imageHeight = camera.getImageHeight();
+    data.verticalFovDegree = camera.getVerticalFovDegree();
+    data.lensRadius = camera.getLensRadius();
+    data.focusDistance = camera.getFocusDistance();
+    data.focalDistance = static_cast<float>(camera.getFocalDistance());
+    return data;
+}
+
 SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &camera)
 {
     SceneSnapshot snapshot;
 
-    snapshot.camera.lookFrom = camera.getLookFrom();
-    snapshot.camera.initialPixelPos = camera.getInitialPixelPos();
-    snapshot.camera.pixelWidthDistance = camera.getPixelWidthDistance();
-    snapshot.camera.pixelHeightDistance = camera.getPixelHeightDistance();
-    snapshot.camera.viewRight = camera.getCamViewRight();
-    snapshot.camera.viewUp = camera.getCamViewUp();
-    snapshot.camera.imageWidth = camera.getImageWidth();
-    snapshot.camera.imageHeight = camera.getImageHeight();
-    snapshot.camera.verticalFovDegree = camera.getVerticalFovDegree();
-    snapshot.camera.lensRadius = camera.getLensRadius();
-    snapshot.camera.focusDistance = camera.getFocusDistance();
-    snapshot.camera.focalDistance = static_cast<float>(camera.getFocalDistance());
+    snapshot.camera = makeCameraData(camera);
     snapshot.background = scene.getBackground();
 
     std::unordered_map<const Texture *, int> textureIndices;

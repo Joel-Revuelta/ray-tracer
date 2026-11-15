@@ -80,7 +80,7 @@ the repository root so that `./plugins/` resolves.
 | `src/plugins/renderers/CPU/` | CPU renderer plugin. |
 | `src/plugins/renderers/CUDA/` | CUDA host plugin and device kernels. |
 | `src/plugins/GUI/` | SFML 3 and GLFW/OpenGL GUI plugins. |
-| `src/render/` | Renderer registry, PPM writer, camera controller, scene snapshot. |
+| `src/render/` | Renderer registry, animation timeline, PPM/PNG writer, camera controller, scene snapshot. |
 | `include/plugins/renderers/` | Renderer interface, snapshot data, registry, PPM and camera controller headers. |
 | `scenes/` | Scene files, render scripts and scene documentation. |
 | `screenshots/` | Generated renders and previews. |
@@ -108,11 +108,13 @@ runtime code here, not in the executable, if plugins need it.
 `App` uses `Parser` to build a `Scene` and `Camera`. It then:
 
 1. Applies the requested render width/height to the camera.
-2. Looks up the requested renderer in `RendererRegistry`.
-3. Creates the renderer plugin through `Factory`.
-4. Checks `IRenderer::isAvailable()`.
-5. Builds a `RenderContext` with the scene, camera, optional GUI and options.
-6. Calls `IRenderer::run()`.
+2. Resolves the optional camera animation, frame range and FPS.
+3. Looks up the requested renderer in `RendererRegistry`.
+4. Creates the renderer plugin through `Factory`.
+5. Checks `IRenderer::isAvailable()`.
+6. Builds a `RenderContext` with the scene, camera, optional animation, optional
+   GUI and options.
+7. Calls `IRenderer::run()`.
 
 ### Plugin loading
 
@@ -346,18 +348,25 @@ struct RenderOptions
 {
     int width;
     int height;
-    int frames;
+    int frames;    // samples per pixel
     int threads;   // CPU only, 0 = automatic
     int device;    // CUDA only
     uint32_t seed;
     std::string outputPath;
     PostProcessSettings postProcess;
+    bool animation;
+    int startFrame;
+    int endFrame;
+    double animationFps;
+    float lensRadiusOverride;
+    float focusDistanceOverride;
 };
 
 struct RenderContext
 {
     std::shared_ptr<Scene> scene;
     std::shared_ptr<Camera> camera;
+    std::shared_ptr<CameraAnimation> animation;
     std::shared_ptr<IGUI> gui;
     RenderOptions options;
 };
@@ -376,10 +385,12 @@ class IRenderer
 - `getName()` returns the user-facing name (`cpu`, `cuda`).
 - `isAvailable()` must return `false` with a reason when the runtime/device is
   missing.
-- `run()` performs the render and writes the PPM when requested.
+- `run()` performs the render and writes a PPM or PNG when requested.
 - The CPU renderer walks the plugin-backed scene graph directly.
 - The CUDA renderer uses `buildSceneSnapshot(scene, camera)` to obtain a flat,
   device-friendly representation.
+- When `options.animation` is set, `run()` iterates the inclusive frame range
+  and writes one numbered file per frame instead of a single image.
 
 See [renderers.md](renderers.md) for the renderer plugin guide, CUDA details and
 the flat scene data model.
@@ -441,6 +452,48 @@ and polar disk mapping; keep that order if you change either path.
 
 `CameraData`/`Cuda::Camera` carry `viewRight`, `viewUp`, `lensRadius`,
 `focusDistance` and `focalDistance` to the device.
+
+### Camera animation
+
+`render/Animation.hpp` defines `CameraKeyframe` and `CameraAnimation`. The
+parser resolves omitted keyframe fields and constructs one timeline per scene.
+`CameraAnimation::cameraAt(time)`:
+
+1. clamps the time to the timeline,
+2. finds the surrounding keyframe pair,
+3. interpolates position and look-at with Catmull-Rom (endpoint keyframes are
+   duplicated as phantom neighbours),
+4. interpolates FOV, lens radius and focus distance linearly,
+5. returns a new `Camera` with the requested pose.
+
+Frame helpers keep sequence rendering consistent:
+
+```cpp
+const int frameCount = animation->getFrameCount(fps);
+const double time = animation->timeAtFrame(frame, fps);
+```
+
+`timeAtFrame` returns `frame / fps` clamped to the last keyframe, and
+`getFrameCount` returns `ceil(duration * fps)` (at least one frame).
+
+Sequence rendering keeps still rendering untouched:
+
+- **CPU** constructs a `Renderer` per frame with the interpolated `Camera` and
+  writes `formatFramePath(outputPath, frame)`. The scene graph is shared; no
+  primitives are rebuilt.
+- **CUDA** builds the `SceneSnapshot` and `CudaRenderSession` once from the
+  first frame. Later frames call `updateCamera(makeCameraData(camera))`, which
+  synchronises the previous batch and clears the accumulation buffer, plus
+  `setSeed`. The BVH, meshes, textures and lights stay resident on the device.
+- The per-frame seed is `seed + frame * 0x9e3779b9u`, so sequences are
+  deterministic and independent of thread count.
+- `formatFramePath` accepts one `d`/`i`/`u` printf conversion, escapes `%%`,
+  and appends a padded `-NNNN` suffix when the pattern has no conversion.
+- `writeImageFile` dispatches `.png` to `stbi_write_png` and everything else to
+  the PPM writer.
+
+Animation is camera-only. Do not mutate primitives or lights between frames:
+that would invalidate the immutable scene snapshot and the CUDA BVH.
 
 ### Lights and area sampling
 
@@ -606,6 +659,16 @@ Soft-shadow check:
 bash tests/deterministic_soft_shadow.sh ./raytracer . build
 ```
 
+Animation and PNG output:
+
+```bash
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cpu \
+  --width 320 --height 180 --samples 8 --animation \
+  --start-frame 0 --end-frame 11 --output '/tmp/orrery-%04d.png'
+bash tests/deterministic_animation.sh ./raytracer . build
+bash tests/png_output.sh ./raytracer . build
+```
+
 Texture check:
 
 ```bash
@@ -659,7 +722,8 @@ RENDERER=cuda FRAMES=1000 ./scenes/render_hd.sh
   buffer, plus texture memory in GUI mode. 8K should be rendered with `--cli`.
 - `Infinity Mirror` is the most expensive scene because of nested metallic
   reflections. Lower `FRAMES` or use a simpler scene for quick tests.
-- PPM output is binary `P6`; use Pillow or ImageMagick to inspect or convert it.
+- PPM output is binary `P6`; PNG output is 8-bit RGBA. Both store
+  display-referred values after exposure, tonemapping and the sRGB transfer.
 - The render scripts produce 4K and 1080p previews so you do not need to open
   8K files directly.
 

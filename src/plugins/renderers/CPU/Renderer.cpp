@@ -6,6 +6,7 @@
 */
 
 #include "plugins/renderers/CPU/Renderer.hpp"
+#include "render/ImageWriter.hpp"
 #include "render/Texture.hpp"
 #include "Utils.hpp"
 #include "render/Brdf.hpp"
@@ -269,12 +270,7 @@ Renderer::Renderer(int raysPerPixel, std::shared_ptr<Scene> scene, std::shared_p
     _frameIterationsScale = 1.0f / static_cast<float>(_frameIterations);
 
     if (!outFile.empty())
-    {
-        _fileStream.open(outFile, std::ios::out | std::ios::binary);
-        if (!_fileStream.is_open())
-            throw std::runtime_error("Cannot open output file: " + outFile);
-        _outStream = &_fileStream;
-    }
+        _outputPath = outFile;
     else if (!gui)
         _outStream = &std::cout;
 
@@ -393,7 +389,9 @@ void Renderer::render(void)
         if (_stop)
             break;
     }
-    if (_outStream)
+    if (!_outputPath.empty())
+        writeImageFile(_outputPath, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
+    else if (_outStream)
         writePPM(*_outStream, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
 
     updateTitle();

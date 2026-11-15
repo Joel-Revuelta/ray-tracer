@@ -83,6 +83,67 @@ camera:
 };
 ```
 
+## Camera animation
+
+An optional top-level `animation` block declares a camera-only timeline. The
+top-level `camera` above remains the still-image camera; the animation is only
+played when the CLI asks for it (`--animation`, `--start-frame`, `--end-frame`
+or `--fps`).
+
+```libconfig
+animation:
+{
+    fps = 24;
+
+    camera = (
+        {
+            time = 0.0;
+            position = { x = 0.0; y = 2.8; z = -12.5; };
+            rotation = { x = 0.0; y = 2.8; z = 1.5; };
+            fieldOfView = 48.0;
+            lensRadius = 0.03;
+            focusDistance = 14.0;
+        },
+        {
+            time = 4.0;
+            position = { x = 3.5; y = 4.0; z = -9.0; };
+            rotation = { x = 0.0; y = 2.8; z = 1.5; };
+            fieldOfView = 52.0;
+        }
+    );
+};
+```
+
+- `fps` is an optional positive integer frame rate. It defaults to `24` and can
+  be overridden per render with `--fps F`.
+- `camera` is a list of at least two keyframes.
+- `time` is in seconds and the first keyframe must be exactly `0.0`. Times must
+  be non-negative and strictly increasing.
+- Every keyframe must produce a valid camera: `position` and `rotation` (the
+  look-at point) must differ, and `fieldOfView` must stay inside `(0, 180)`.
+- `position`, `rotation`, `fieldOfView`, `lensRadius` and `focusDistance` are
+  optional per keyframe. An omitted field inherits the previous keyframe; the
+  first keyframe inherits from the top-level `camera`.
+- `lensRadius` must be non-negative and `focusDistance` must be positive.
+- The animation duration is the time of the last keyframe. The frame count is
+  `ceil(duration * fps)` and frames are numbered from `0`.
+
+Position and look-at use Catmull-Rom interpolation across neighbouring
+keyframes. Catmull-Rom passes exactly through every keyframe and gives smooth
+velocity across segment boundaries; sparse, sharp direction changes can
+overshoot, so keep adjacent poses reasonably close. `fieldOfView`,
+`lensRadius` and `focusDistance` use linear interpolation. Values requested
+outside the timeline are clamped to the first or last keyframe.
+
+If the first keyframe repeats the top-level camera pose and settings, frame `0`
+renders identically to the still image. The three animated hero scenes follow
+that convention.
+
+Animation is camera-only in this version. Object, light and prefab transforms
+remain static for the whole sequence, which keeps the scene, BVH and CUDA
+snapshot immutable across frames. The block is validated when the scene loads,
+so an invalid timeline fails even if only a still image is rendered.
+
 ## Background
 
 An optional background is returned when a camera or bounce ray misses all
@@ -682,6 +743,9 @@ The parser rejects:
 - field of view outside `(0, 180)`,
 - a negative camera lens radius or a non-positive focus distance,
 - a camera position equal to its look-at point,
+- an animation fps that is not a positive integer,
+- an animation with fewer than two keyframes, a first keyframe not at time
+  zero, or non-increasing keyframe times,
 - negative material indices, or indices outside the material list.
 
 Renderer selection errors (unknown renderer names, missing plugins, unavailable
@@ -689,5 +753,7 @@ CUDA devices) are handled at runtime and are documented in [cli.md](cli.md).
 
 ## Output
 
-The renderer writes binary `P6` PPM files. Use Pillow or ImageMagick to convert
-them to PNG. The provided render scripts also create 4K and 1080p previews.
+The renderer writes binary `P6` PPM files or 8-bit RGBA PNG files, selected by
+the output extension (`.ppm` or `.png`). The provided render scripts create 4K
+and 1080p previews. Animated renders write one file per frame; see
+[cli.md](cli.md) for frame patterns and ranges.

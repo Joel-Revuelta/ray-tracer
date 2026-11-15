@@ -49,6 +49,10 @@ class App
     uint32_t _seed = 0;
     float _lensRadius = -1.0f;
     float _focusDistance = -1.0f;
+    bool _animation = false;
+    int _startFrame = -1;
+    int _endFrame = -1;
+    double _fps = 0.0;
 };
 
 } // namespace RayTracer

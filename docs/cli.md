@@ -23,9 +23,10 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--sfml` | — | Alias for `--gui sfml`. | |
 | `--renderer` | `cpu` or `cuda` | Renderer plugin name. Case-insensitive. | `cpu` |
 | `--list-renderers` | — | Print renderer availability and exit `0`. | |
-| `--width` | positive integer | Render width, window width and PPM width. | `960` |
-| `--height` | positive integer | Render height, window height and PPM height. | `540` |
-| `--frames` | positive integer | Samples per pixel. | `10` |
+| `--width` | positive integer | Render width, window width and output width. | `960` |
+| `--height` | positive integer | Render height, window height and output height. | `540` |
+| `--samples` | positive integer | Samples per pixel. | `10` |
+| `--frames` | positive integer | Backward-compatible alias for `--samples`. | `10` |
 | `--threads` | non-negative integer | CPU worker threads; `0` means automatic. | `0` |
 | `--seed` | non-negative integer | Sampling seed offset. | `0` |
 | `--device` | non-negative integer | CUDA device index. | `0` |
@@ -37,25 +38,74 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--bloom-threshold` | non-negative float | Linear luminance above which pixels glow. | `1.0` |
 | `--bloom-intensity` | non-negative float | Additive bloom strength. | `0.15` |
 | `--bloom-radius` | positive integer, max `16` | Gaussian blur radius in pixels. | `8` |
-| `--output` | path | PPM output file. | stdout in CLI mode |
+| `--animation` | — | Render the scene's camera animation as a frame sequence. | off |
+| `--start-frame` | non-negative integer | First frame of an animation range, inclusive. | `0` |
+| `--end-frame` | non-negative integer | Last frame of an animation range, inclusive. | last frame |
+| `--fps` | positive float | Override the scene animation frame rate. | scene value |
+| `--output` | path or pattern | PPM/PNG output file, or a frame pattern for animation. | stdout in CLI mode; `frame-%04d.ppm` for animation |
 | `--list-guis` | — | Print GUI backends and exit `0`. | |
 | `--help`, `-h` | — | Print usage and exit `0`. | |
 
-### Samples, not animation frames
+### Samples
 
-`--frames N` means **N samples per pixel**. Each sample traces a camera ray and
-up to 15 bounces. More samples reduce Monte Carlo noise but scale render time
-roughly linearly.
+`--samples N` (or the legacy `--frames N`) means **N samples per pixel**. Each
+sample traces a camera ray and up to 15 bounces. More samples reduce Monte
+Carlo noise but scale render time roughly linearly. Frames in an animation are
+not controlled by this flag; use `--start-frame` and `--end-frame`.
+
+### Animation
+
+Camera animations are declared in the scene file; see
+[scene-format.md](scene-format.md#camera-animation). Animation is CLI-only in
+this version.
+
+- `--animation` renders the scene animation.
+- `--start-frame`, `--end-frame` and `--fps` also imply `--animation`.
+- `--start-frame` and `--end-frame` are inclusive and zero-based. The default
+  range is every frame.
+- Frame count is `ceil(duration * fps)`. The per-frame time is `frame / fps`.
+- Frames outside the valid range are rejected.
+- `--animation` on a scene without an `animation` block is an error.
+- A GUI render with animation flags is rejected; use `--cli`.
+- Each frame uses a deterministic seed derived from `--seed` and the frame
+  index, so CPU and CUDA sequences are reproducible and independent of thread
+  count.
+- `--lens-radius` and `--focus-distance` override the keyframed values for every
+  frame. Leave them unset to use the animation timeline.
+
+Output paths support one printf-style integer conversion, such as `%d` or
+`%04d`. A path without a conversion gets a zero-padded `-NNNN` suffix before
+the extension. Escape a literal percent sign as `%%`; paths with more than one
+conversion are rejected.
+
+```bash
+# 1920x1080 PNG sequence into an existing frames/ directory
+mkdir -p frames
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --samples 128 --animation \
+  --output 'frames/orrery-%04d.png'
+
+# Preview only frames 0-47 at 12 fps
+./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cpu \
+  --width 640 --height 360 --samples 8 \
+  --start-frame 0 --end-frame 47 --fps 12 \
+  --output 'frames/sakura-%04d.ppm'
+```
 
 ### Output
 
-- PPM values are converted from linear radiance through optional bloom,
+- PPM and PNG values are converted from linear radiance through optional bloom,
   exposure, the selected tonemapping curve, and the sRGB transfer function.
 - Bloom is applied to the HDR image before exposure and tonemapping, with a
   shared Gaussian kernel on CPU and CUDA.
-- CLI mode with `--output` writes a binary `P6` PPM file.
-- CLI mode without `--output` writes the PPM to standard output.
-- GUI mode writes a PPM only when `--output` is provided.
+- The output format follows the extension: `.ppm` writes binary `P6`, `.png`
+  writes 8-bit RGBA. Other extensions fall back to PPM.
+- CLI mode with `--output` writes one file per render, or one numbered file per
+  animation frame.
+- CLI mode without `--output` writes a still PPM to standard output. Animation
+  defaults to `frame-%04d.ppm` in the current directory.
+- GUI mode writes an image only when `--output` is provided; interactive
+  `P` screenshots remain timestamped PPM files.
 - Parent directories are not created automatically.
 - On errors, the program exits with status `1` and does not write an image.
 
@@ -136,8 +186,19 @@ practical on most displays.
 
 ```bash
 ./raytracer --path scenes/showcase.cfg --cli \
-  --renderer cpu --width 960 --height 540 --frames 30 \
-  --output preview.ppm
+  --renderer cpu --width 960 --height 540 --samples 30 \
+  --output preview.png
+```
+
+### Camera animation
+
+```bash
+./raytracer --path scenes/brass_orrery.cfg --cli \
+  --renderer cuda --width 1280 --height 720 --samples 64 \
+  --animation --output 'frames/orrery-%04d.png'
+
+ffmpeg -framerate 24 -i 'frames/orrery-%04d.png' \
+  -c:v libx264 -pix_fmt yuv420p orrery.mp4
 ```
 
 ### CUDA high-quality still
@@ -192,6 +253,23 @@ RENDERER=cuda FRAMES=4096 OUT_DIR=/tmp/cuda-8k ./scenes/render_8k.sh solar_eclip
 | `OUT_DIR` | `screenshots/8k` |
 | `CONVERT` | `1`; set to `0` to skip PNG/preview conversion |
 
+### `scenes/render_animation.sh`
+
+| Variable | Default |
+| --- | --- |
+| `SCENE` or first argument | `brass_orrery` |
+| `SAMPLES` | `128` |
+| `WIDTH` | `1280` |
+| `HEIGHT` | `720` |
+| `RENDERER` | `cpu` |
+| `FPS` | scene value |
+| `START_FRAME` | `0` |
+| `END_FRAME` | last frame |
+| `OUT_DIR` | `animations/<scene>` |
+| `PATTERN` | `<OUT_DIR>/frame-%04d.png` |
+| `FFMPEG` | `0`; set to `1` to assemble an MP4 |
+| `TONEMAP`, `EXPOSURE`, `BLOOM`, `BLOOM_THRESHOLD`, `BLOOM_INTENSITY` | unset; passed through when set |
+
 ## Renderer environment variables
 
 | Variable | Effect |
@@ -207,7 +285,10 @@ See [performance.md](performance.md) for benchmark methodology and numbers.
 | Message | Resolution |
 | --- | --- |
 | `Unknown or incomplete option.` | Check the option spelling and required argument. |
-| `Invalid width/height/frames value` | Values must be positive integers. |
+| `Invalid width/height/samples value` | Values must be positive integers. |
+| `Scene has no animation block: ...` | Add an `animation` block or drop the animation flags. |
+| `Animation frame range ... is outside ...` | Check `--start-frame`/`--end-frame` against the scene duration and `--fps`. |
+| `Animation rendering is only available with --cli.` | Sequence rendering is headless-only. |
 | `Unknown renderer: <name>` | Use `--list-renderers` to see valid names. |
 | `Renderer '<name>' is unavailable: ...` | The plugin is missing or the runtime/device is unavailable. |
 | `Cannot open output file: ...` | Ensure the parent directory exists and is writable. |

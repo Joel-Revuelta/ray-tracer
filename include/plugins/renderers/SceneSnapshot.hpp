@@ -69,6 +69,7 @@ struct SceneSnapshot
     Background background;
 };
 
+CameraData makeCameraData(const Camera &camera);
 SceneSnapshot buildSceneSnapshot(const Scene &scene, const Camera &camera);
 
 } // namespace RayTracer

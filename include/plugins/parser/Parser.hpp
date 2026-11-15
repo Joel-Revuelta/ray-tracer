@@ -17,6 +17,7 @@
 #include "Scene.hpp"
 #include "MtlLoader.hpp"
 #include "SceneBuilder.hpp"
+#include "render/Animation.hpp"
 #include <libconfig.h++>
 #include <unordered_map>
 
@@ -38,6 +39,7 @@ class Parser
     void initConfig(const std::string &filename);
 
     std::shared_ptr<Camera> parseCamera(const libconfig::Setting &cameraSetting);
+    std::shared_ptr<CameraAnimation> parseAnimation(const libconfig::Setting &animationSetting);
     void parseMaterials(SceneBuilder &scene, const libconfig::Setting &primitiveSetting);
 
     void parseLights(SceneBuilder &scene, const libconfig::Setting &lightSetting);
@@ -65,6 +67,7 @@ class Parser
                                                const libconfig::Setting &primitiveSetting);
 
     std::shared_ptr<Camera> getParsedCamera(void) const;
+    std::shared_ptr<CameraAnimation> getParsedAnimation(void) const;
 
   private:
     std::string resolveAssetPath(const std::string &path) const;
@@ -73,6 +76,7 @@ class Parser
 
     Factory _factory;
     std::shared_ptr<Camera> _camera;
+    std::shared_ptr<CameraAnimation> _animation;
     libconfig::Config _config;
     std::string _sceneDirectory = ".";
     std::unordered_map<std::string, std::shared_ptr<const MeshAsset>> _meshCache;

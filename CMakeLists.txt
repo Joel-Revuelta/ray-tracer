@@ -649,6 +649,53 @@ add_test(
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
 )
 add_test(
+    NAME animation_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 32 --height 18 --samples 1
+            --animation --start-frame 0 --end-frame 1
+            --output ${CMAKE_BINARY_DIR}/animation_smoke-%02d.ppm
+)
+add_test(
+    NAME implicit_animation_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/sakura_shrine.cfg
+            --cli --renderer cpu --width 32 --height 18 --samples 1
+            --start-frame 0 --end-frame 1
+            --output ${CMAKE_BINARY_DIR}/implicit_animation_smoke-%02d.ppm
+)
+add_test(
+    NAME deterministic_animation_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_animation.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME png_output_smoke
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/png_output.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_invalid_animation_order
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_order.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_order.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_animation_fov
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_fov.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_fov.ppm
+)
+add_test(
+    NAME cli_rejects_missing_animation
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1 --animation
+)
+add_test(
+    NAME cli_rejects_invalid_animation_range
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --animation --start-frame 0 --end-frame 999
+)
+add_test(
     NAME cli_rejects_invalid_bloom_radius
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --width 16 --height 9 --frames 1
@@ -678,6 +725,8 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
     frozen_cathedral_smoke deterministic_scene_pack_render
     bloom_smoke deterministic_bloom_render
+    animation_smoke implicit_animation_smoke deterministic_animation_render
+    png_output_smoke
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_transform parser_rejects_invalid_obj
@@ -686,7 +735,9 @@ set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_material_group parser_rejects_invalid_environment
     parser_rejects_invalid_mtl parser_rejects_unknown_prefab
     parser_rejects_prefab_instances_in_prefabs parser_rejects_float_overflow
-    parser_rejects_uv_overflow cli_rejects_invalid_bloom_radius PROPERTIES
+    parser_rejects_uv_overflow cli_rejects_invalid_bloom_radius
+    parser_rejects_invalid_animation_order parser_rejects_invalid_animation_fov
+    cli_rejects_missing_animation cli_rejects_invalid_animation_range PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )
