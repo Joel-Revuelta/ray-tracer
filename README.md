@@ -36,16 +36,18 @@ full-HD and 8K still renders.
   BVHs with cheap instancing and smooth vertex-normal shading.
 - **Depth of field** — world-space lens radius and focus distance, with live
   keyboard focus controls in both interactive backends.
-- **Area lights** — sampled sphere lights produce soft shadows in both
-  renderers, with the same attenuation controls as point lights.
+- **Area lights** — solid-angle cone sampling of sphere lights produces
+  physically consistent soft shadows in both renderers.
 - **Textures** — PPM albedo maps with UVs on meshes and analytic primitives,
   bilinear filtering and repeat wrapping on CPU and CUDA.
 - **OBJ materials** — `usemtl` face groups mapped to scene materials, automatic
   `mtllib`/MTL import with `Kd`/`Ka`/`Ks`/`Ns` and `map_Kd`, plus a per-mesh
   fallback for unmapped groups.
-- **Environment maps** — equirectangular PPM skies for backgrounds, reflections
-  and path-traced image-based lighting, with the gradient background as a
+- **HDR environment maps** — equirectangular PPM, PNG, JPG and Radiance `.hdr`
+  skies with importance-sampled IBL and MIS; gradient backgrounds remain the
   fallback.
+- **Cinematic bloom** — optional HDR bright-pass and separable Gaussian glow
+  with matching CPU/CUDA kernels, applied before exposure and tonemapping.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
 - **Included scenes** — 34 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ/MTL materials, environment lighting, group transforms, prefabs, a five-scene hero pack and 8K renders.
@@ -53,7 +55,8 @@ full-HD and 8K still renders.
 ## Screenshots
 
 The images below were rendered with the CUDA renderer at 1920×1080 (256
-samples), using ACES tone mapping. Click any preview for the full-size PNG.
+samples), using ACES tone mapping, HDR IBL and tuned bloom. Click any preview
+for the full-size PNG.
 
 ### Hero scene pack
 
@@ -380,18 +383,23 @@ The new scene pack is tuned for ACES with a slightly raised exposure:
 ```bash
 ./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cuda \
   --width 1920 --height 1080 --frames 256 --tonemap aces --exposure 1.25 \
+  --bloom --bloom-threshold 1.5 --bloom-intensity 0.20 --bloom-radius 6 \
   --output sakura_shrine.ppm
 ./raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
   --width 1920 --height 1080 --frames 256 --tonemap aces --exposure 0.85 \
+  --bloom --bloom-threshold 1.5 --bloom-intensity 0.35 --bloom-radius 8 \
   --output brass_orrery.ppm
 ./raytracer --path scenes/tidal_bloom.cfg --cli --renderer cuda \
   --width 1920 --height 1080 --frames 320 --tonemap aces --exposure 1.15 \
+  --bloom --bloom-threshold 2.5 --bloom-intensity 0.20 --bloom-radius 6 \
   --output tidal_bloom.ppm
 ./raytracer --path scenes/frozen_cathedral.cfg --cli --renderer cuda \
   --width 1920 --height 1080 --frames 256 --tonemap aces --exposure 0.90 \
+  --bloom --bloom-threshold 2.0 --bloom-intensity 0.20 --bloom-radius 6 \
   --output frozen_cathedral.ppm
 ./raytracer --path scenes/obsidian_aurora.cfg --cli --renderer cuda \
   --width 7680 --height 4320 --frames 2048 --tonemap aces --exposure 1.15 \
+  --bloom --bloom-threshold 3.0 --bloom-intensity 0.25 --bloom-radius 6 \
   --output obsidian_aurora.ppm
 ```
 

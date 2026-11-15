@@ -1112,32 +1112,55 @@ __device__ LightSample sampleLight(const SceneView &scene, const Light &light, c
 
     if (light.type == LIGHT_AREA_SPHERE)
     {
-        const float u = randomFloat(state);
-        const float v = randomFloat(state);
-        const float z = 1.0f - 2.0f * u;
-        const float radial = sqrtf(fmaxf(0.0f, 1.0f - z * z));
-        const float angle = 2.0f * PI_F * v;
-        const Vec3 sphereNormal = makeVec3(radial * cosf(angle), radial * sinf(angle), z);
-        const Vec3 lightPoint = add(light.position, scale(sphereNormal, light.radius));
-        const Vec3 toLight = sub(lightPoint, hitPosition);
-        const float distance = length(toLight);
+        const Vec3 toCenter = sub(light.position, hitPosition);
+        const float centerDistance = length(toCenter);
 
-        if (!isfinite(distance) || distance <= 1e-6f)
+        if (!isfinite(centerDistance) || centerDistance <= light.radius)
             return sample;
 
-        sample.direction = scale(toLight, 1.0f / distance);
+        const float sinThetaMax = fminf(1.0f, light.radius / centerDistance);
+        const float cosThetaMax = sqrtf(fmaxf(0.0f, 1.0f - sinThetaMax * sinThetaMax));
+        const float u = randomFloat(state);
+        const float v = randomFloat(state);
+        const float cosTheta = 1.0f - u * (1.0f - cosThetaMax);
+        const float sinTheta = sqrtf(fmaxf(0.0f, 1.0f - cosTheta * cosTheta));
+        const float phi = 2.0f * PI_F * v;
+        const Vec3 w = scale(toCenter, 1.0f / centerDistance);
+        const Vec3 up = fabsf(w.y) < 0.999f ? makeVec3(0.0f, 1.0f, 0.0f) : makeVec3(1.0f, 0.0f, 0.0f);
+        const Vec3 tangent = normalize(cross(up, w));
+        const Vec3 bitangent = cross(w, tangent);
+
+        sample.direction = normalize(add(add(scale(tangent, cosf(phi) * sinTheta),
+                                             scale(bitangent, sinf(phi) * sinTheta)),
+                                         scale(w, cosTheta)));
 
         if (dot(sample.direction, shadingNormal) <= 0.0f)
             return sample;
 
-        const float denominator = light.attenuationConstant + light.attenuationLinear * distance +
-                                  light.attenuationQuadratic * distance * distance;
-        const float attenuation = denominator > 0.0f ? 1.0f / denominator : 0.0f;
+        const Vec3 originToCenter = sub(hitPosition, light.position);
+        const float b = dot(originToCenter, sample.direction);
+        const float c = dot(originToCenter, originToCenter) - light.radius * light.radius;
+        const float discriminant = b * b - c;
+        float shadowDistance = centerDistance - light.radius;
 
-        if (occluded(scene, Ray{add(hitPosition, scale(hitNormal, RAY_EPSILON)), sample.direction}, distance))
+        if (discriminant >= 0.0f)
+        {
+            const float entryDistance = -b - sqrtf(discriminant);
+
+            if (entryDistance > RAY_EPSILON)
+                shadowDistance = entryDistance;
+        }
+
+        const float denominator = light.attenuationConstant + light.attenuationLinear * centerDistance +
+                                  light.attenuationQuadratic * centerDistance * centerDistance;
+        const float attenuation = denominator > 0.0f ? 1.0f / denominator : 0.0f;
+        const float solidAngle = 2.0f * PI_F * (1.0f - cosThetaMax);
+
+        if (occluded(scene, Ray{add(hitPosition, scale(hitNormal, RAY_EPSILON)), sample.direction},
+                     shadowDistance))
             return sample;
 
-        sample.radiance = scale(light.color, light.intensity * attenuation);
+        sample.radiance = scale(light.color, light.intensity * attenuation * solidAngle);
         sample.valid = true;
         return sample;
     }
@@ -1210,6 +1233,129 @@ __device__ Vec3 sampleTextureClamped(const SceneView &scene, int index, float u,
     return sampleTextureInternal(scene, index, u, v, true);
 }
 
+__device__ inline float environmentLuminance(const Vec3 &color)
+{
+    return 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+}
+
+__device__ inline int sampleCdfIndex(const float *cdf, int count, float value)
+{
+    int low = 0;
+    int high = count;
+
+    while (low < high)
+    {
+        const int middle = (low + high) / 2;
+
+        if (cdf[middle] < value)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+
+    return low < count ? low : count - 1;
+}
+
+__device__ inline bool environmentTexelLuminance(const SceneView &scene, int x, int y, float &luminance)
+{
+    const int textureIndex = scene.background.environmentTextureIndex;
+
+    if (textureIndex < 0 || textureIndex >= scene.textureCount || scene.textures == nullptr || scene.texels == nullptr)
+        return false;
+
+    const TextureRange &range = scene.textures[textureIndex];
+
+    if (x < 0 || x >= range.width || y < 0 || y >= range.height)
+        return false;
+
+    const int index = range.start + y * range.width + x;
+
+    if (index < 0 || index >= scene.texelCount)
+        return false;
+
+    luminance = fmaxf(0.0f, environmentLuminance(scene.texels[index]));
+    return true;
+}
+
+__device__ inline float powerHeuristicPdf(float first, float second)
+{
+    const float firstSquared = first * first;
+    const float secondSquared = second * second;
+    const float total = firstSquared + secondSquared;
+
+    return total > 0.0f ? firstSquared / total : 0.0f;
+}
+
+__device__ inline Vec3 environmentDirection(float u, float v)
+{
+    const float theta = PI_F * v;
+    const float phi = 2.0f * PI_F * (u - 0.5f);
+    const float sinTheta = sinf(theta);
+
+    return makeVec3(sinTheta * cosf(phi), cosf(theta), sinTheta * sinf(phi));
+}
+
+__device__ bool sampleEnvironment(const SceneView &scene, unsigned int &state, Vec3 &direction, Vec3 &radiance, float &pdf)
+{
+    const Background &background = scene.background;
+
+    if (background.enabled == 0 || background.environmentConditionalCdf == nullptr ||
+        background.environmentMarginalCdf == nullptr || background.environmentWidth <= 0 ||
+        background.environmentHeight <= 0 || background.environmentTotal <= 0.0f)
+        return false;
+
+    const int y = sampleCdfIndex(background.environmentMarginalCdf, background.environmentHeight, randomFloat(state));
+
+    if (y < 0)
+        return false;
+
+    const float *row = background.environmentConditionalCdf + static_cast<std::size_t>(y) * background.environmentWidth;
+    const int x = sampleCdfIndex(row, background.environmentWidth, randomFloat(state));
+
+    if (x < 0)
+        return false;
+
+    float texelLuminance = 0.0f;
+
+    if (!environmentTexelLuminance(scene, x, y, texelLuminance) || texelLuminance <= 0.0f)
+        return false;
+
+    const float u = (static_cast<float>(x) + 0.5f) / static_cast<float>(background.environmentWidth);
+    const float v = (static_cast<float>(y) + 0.5f) / static_cast<float>(background.environmentHeight);
+
+    direction = environmentDirection(u, v);
+    radiance = sampleTextureClamped(scene, background.environmentTextureIndex, u, v);
+    pdf = texelLuminance * static_cast<float>(background.environmentWidth) *
+          static_cast<float>(background.environmentHeight) / (background.environmentTotal * 2.0f * PI_F * PI_F);
+    return true;
+}
+
+__device__ float environmentPdf(const SceneView &scene, const Vec3 &direction)
+{
+    const Background &background = scene.background;
+
+    if (background.enabled == 0 || background.environmentConditionalCdf == nullptr || background.environmentWidth <= 0 ||
+        background.environmentHeight <= 0 || background.environmentTotal <= 0.0f)
+        return 0.0f;
+
+    const Vec3 unit = normalize(direction);
+
+    if (lengthSquared(unit) < 1e-12f)
+        return 0.0f;
+
+    const float u = 0.5f + atan2f(unit.z, unit.x) / (2.0f * PI_F);
+    const float v = acosf(fmaxf(-1.0f, fminf(1.0f, unit.y))) / PI_F;
+    const int x = max(0, min(background.environmentWidth - 1, static_cast<int>(floorf(u * background.environmentWidth))));
+    const int y = max(0, min(background.environmentHeight - 1, static_cast<int>(floorf(v * background.environmentHeight))));
+    float texelLuminance = 0.0f;
+
+    if (!environmentTexelLuminance(scene, x, y, texelLuminance) || texelLuminance <= 0.0f)
+        return 0.0f;
+
+    return texelLuminance * static_cast<float>(background.environmentWidth) *
+           static_cast<float>(background.environmentHeight) / (background.environmentTotal * 2.0f * PI_F * PI_F);
+}
+
 __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
 {
     unsigned int state =
@@ -1252,6 +1398,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
     Ray ray{origin, direction};
     Vec3 accumulated = makeVec3(0.0f, 0.0f, 0.0f);
     Vec3 throughput = makeVec3(1.0f, 1.0f, 1.0f);
+    float backgroundWeight = 1.0f;
     bool insideDielectric = false;
 
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce)
@@ -1267,7 +1414,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         if (!intersectScene(scene, ray, distance, normal, shadingNormal, u, v, materialIndex, primitiveIndex))
         {
             if (scene.background.enabled != 0)
-                accumulated = add(accumulated, multiply(throughput, skyColor(scene, ray.direction)));
+                accumulated = add(accumulated, scale(multiply(throughput, skyColor(scene, ray.direction)), backgroundWeight));
             break;
         }
 
@@ -1322,6 +1469,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
 
             ray.origin = add(hitPosition, scale(nextDirection, RAY_EPSILON));
             ray.direction = nextDirection;
+            backgroundWeight = 1.0f;
             continue;
         }
 
@@ -1371,6 +1519,35 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
                 break;
         }
 
+        float nextBackgroundWeight = 1.0f;
+
+        // Explicit environment lighting for diffuse surfaces, combined with
+        // cosine-weighted BSDF sampling through MIS.
+        if (material.type == MATERIAL_DIFFUSE && scene.background.enabled != 0)
+        {
+            Vec3 environmentDirection;
+            Vec3 environmentRadiance;
+            float environmentSamplePdf = 0.0f;
+
+            if (sampleEnvironment(scene, state, environmentDirection, environmentRadiance, environmentSamplePdf) &&
+                environmentSamplePdf > 0.0f)
+            {
+                const float environmentCosine = fmaxf(dot(shadingNormal, environmentDirection), 0.0f);
+
+                if (environmentCosine > 0.0f)
+                {
+                    const float bsdfPdfAtEnvironment = environmentCosine / PI_F;
+                    const float environmentWeight =
+                        powerHeuristicPdf(environmentSamplePdf, bsdfPdfAtEnvironment);
+                    const float contributionScale =
+                        environmentCosine / (PI_F * environmentSamplePdf) * environmentWeight;
+
+                    accumulated = add(accumulated,
+                                      scale(multiply(throughput, environmentRadiance), contributionScale));
+                }
+            }
+        }
+
         Vec3 nextDirection = makeVec3(0.0f, 0.0f, 0.0f);
 
         if (material.type == MATERIAL_DIFFUSE)
@@ -1395,6 +1572,16 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
             dot(nextDirection, normal) <= 0.0f)
             break;
 
+        if (material.type == MATERIAL_DIFFUSE)
+        {
+            const float bsdfCosine = fmaxf(dot(shadingNormal, nextDirection), 0.0f);
+            const float bsdfPdf = bsdfCosine / PI_F;
+            const float environmentPdfValue = environmentPdf(scene, nextDirection);
+
+            nextBackgroundWeight = powerHeuristicPdf(bsdfPdf, environmentPdfValue);
+        }
+
+        backgroundWeight = nextBackgroundWeight;
         ray.origin = add(hitPosition, scale(normal, RAY_EPSILON));
         ray.direction = nextDirection;
     }
@@ -1402,12 +1589,26 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
     return accumulated;
 }
 
-__device__ inline uchar4 postProcessPixel(const SceneView &scene, const float4 &sum, int renderedSamples)
+__device__ inline uchar4 postProcessPixel(const SceneView &scene, const float4 &sum, int renderedSamples,
+                                          const float4 *bloom, std::size_t index)
 {
     const float inverseSamples = 1.0f / static_cast<float>(renderedSamples);
-    const float red = postProcessChannel(sum.x * inverseSamples, scene.postProcess);
-    const float green = postProcessChannel(sum.y * inverseSamples, scene.postProcess);
-    const float blue = postProcessChannel(sum.z * inverseSamples, scene.postProcess);
+    float bloomRed = 0.0f;
+    float bloomGreen = 0.0f;
+    float bloomBlue = 0.0f;
+
+    if (bloom != nullptr && scene.postProcess.bloom != 0)
+    {
+        const float4 value = bloom[index];
+
+        bloomRed = value.x * scene.postProcess.bloomIntensity;
+        bloomGreen = value.y * scene.postProcess.bloomIntensity;
+        bloomBlue = value.z * scene.postProcess.bloomIntensity;
+    }
+
+    const float red = postProcessChannel(sum.x * inverseSamples + bloomRed, scene.postProcess);
+    const float green = postProcessChannel(sum.y * inverseSamples + bloomGreen, scene.postProcess);
+    const float blue = postProcessChannel(sum.z * inverseSamples + bloomBlue, scene.postProcess);
     uchar4 pixel;
 
     pixel.x = static_cast<unsigned char>(red * 255.0f + 0.5f);
@@ -1415,6 +1616,87 @@ __device__ inline uchar4 postProcessPixel(const SceneView &scene, const float4 &
     pixel.z = static_cast<unsigned char>(blue * 255.0f + 0.5f);
     pixel.w = 255;
     return pixel;
+}
+
+__global__ void bloomBrightPassKernel(SceneView scene, const float4 *accumulation, int renderedSamples, float4 *bloom)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= scene.camera.width || y >= scene.camera.height)
+        return;
+
+    const std::size_t index = static_cast<std::size_t>(x) +
+                              static_cast<std::size_t>(y) * static_cast<std::size_t>(scene.camera.width);
+    const float inverseSamples = 1.0f / static_cast<float>(renderedSamples);
+    const float4 sum = accumulation[index];
+    const Vec3 color = makeVec3(sum.x * inverseSamples, sum.y * inverseSamples, sum.z * inverseSamples);
+    const float luminance = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+
+    bloom[index] = luminance > scene.postProcess.bloomThreshold ? make_float4(color.x, color.y, color.z, 0.0f)
+                                                                : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+}
+
+__global__ void bloomBlurHorizontalKernel(SceneView scene, const float4 *input, float4 *output)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= scene.camera.width || y >= scene.camera.height)
+        return;
+
+    const int radius = scene.postProcess.bloomRadius;
+    float red = 0.0f;
+    float green = 0.0f;
+    float blue = 0.0f;
+
+    for (int offset = -radius; offset <= radius; ++offset)
+    {
+        const int sampleX = max(0, min(scene.camera.width - 1, x + offset));
+        const int index = y * scene.camera.width + sampleX;
+        const float4 value = input[index];
+        const float weight = scene.postProcess.bloomWeights[offset + BLOOM_MAX_RADIUS];
+
+        red += value.x * weight;
+        green += value.y * weight;
+        blue += value.z * weight;
+    }
+
+    const std::size_t index = static_cast<std::size_t>(x) +
+                              static_cast<std::size_t>(y) * static_cast<std::size_t>(scene.camera.width);
+
+    output[index] = make_float4(red, green, blue, 0.0f);
+}
+
+__global__ void bloomBlurVerticalKernel(SceneView scene, const float4 *input, float4 *output)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= scene.camera.width || y >= scene.camera.height)
+        return;
+
+    const int radius = scene.postProcess.bloomRadius;
+    float red = 0.0f;
+    float green = 0.0f;
+    float blue = 0.0f;
+
+    for (int offset = -radius; offset <= radius; ++offset)
+    {
+        const int sampleY = max(0, min(scene.camera.height - 1, y + offset));
+        const int index = sampleY * scene.camera.width + x;
+        const float4 value = input[index];
+        const float weight = scene.postProcess.bloomWeights[offset + BLOOM_MAX_RADIUS];
+
+        red += value.x * weight;
+        green += value.y * weight;
+        blue += value.z * weight;
+    }
+
+    const std::size_t index = static_cast<std::size_t>(x) +
+                              static_cast<std::size_t>(y) * static_cast<std::size_t>(scene.camera.width);
+
+    output[index] = make_float4(red, green, blue, 0.0f);
 }
 
 __global__ void renderKernel(SceneView scene, int sampleStart, int sampleCount, float4 *accumulation, uchar4 *output)
@@ -1439,10 +1721,11 @@ __global__ void renderKernel(SceneView scene, int sampleStart, int sampleCount, 
     }
 
     accumulation[index] = sum;
-    output[index] = postProcessPixel(scene, sum, sampleStart + sampleCount);
+    output[index] = postProcessPixel(scene, sum, sampleStart + sampleCount, nullptr, index);
 }
 
-__global__ void postProcessKernel(SceneView scene, const float4 *accumulation, int renderedSamples, uchar4 *output)
+__global__ void postProcessKernel(SceneView scene, const float4 *accumulation, const float4 *bloom, int renderedSamples,
+                                  uchar4 *output)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1453,7 +1736,7 @@ __global__ void postProcessKernel(SceneView scene, const float4 *accumulation, i
     const std::size_t index = static_cast<std::size_t>(x) +
                               static_cast<std::size_t>(y) * static_cast<std::size_t>(scene.camera.width);
 
-    output[index] = postProcessPixel(scene, accumulation[index], renderedSamples);
+    output[index] = postProcessPixel(scene, accumulation[index], renderedSamples, bloom, index);
 }
 } // namespace
 
@@ -1471,8 +1754,8 @@ void launchRender(const SceneView &scene, int sampleStart, int sampleCount, floa
                                              reinterpret_cast<uchar4 *>(output));
 }
 
-void launchPostProcess(const SceneView &scene, const float4 *accumulation, int renderedSamples, unsigned char *output,
-                       cudaStream_t stream)
+void launchPostProcess(const SceneView &scene, const float4 *accumulation, int renderedSamples, float4 *bloomA,
+                       float4 *bloomB, unsigned char *output, cudaStream_t stream)
 {
     if (renderedSamples <= 0)
         return;
@@ -1480,8 +1763,17 @@ void launchPostProcess(const SceneView &scene, const float4 *accumulation, int r
     const dim3 block(16, 16);
     const dim3 grid(static_cast<unsigned int>((scene.camera.width + 15) / 16),
                     static_cast<unsigned int>((scene.camera.height + 15) / 16));
+    const float4 *bloom = nullptr;
 
-    postProcessKernel<<<grid, block, 0, stream>>>(scene, accumulation, renderedSamples,
+    if (scene.postProcess.bloom != 0 && bloomA != nullptr && bloomB != nullptr)
+    {
+        bloomBrightPassKernel<<<grid, block, 0, stream>>>(scene, accumulation, renderedSamples, bloomA);
+        bloomBlurHorizontalKernel<<<grid, block, 0, stream>>>(scene, bloomA, bloomB);
+        bloomBlurVerticalKernel<<<grid, block, 0, stream>>>(scene, bloomB, bloomA);
+        bloom = bloomA;
+    }
+
+    postProcessKernel<<<grid, block, 0, stream>>>(scene, accumulation, bloom, renderedSamples,
                                                   reinterpret_cast<uchar4 *>(output));
 }
 

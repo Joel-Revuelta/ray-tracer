@@ -101,6 +101,7 @@ class Renderer
 
     // Raytracing methods
     void renderFrame(void);
+    void updateImage(int completedSamples);
     Color4D getPixelColor(uint32_t seed, int x, int y);
     Color3D computeLightContribution(const HitPayload &payload, const IMaterial &material,
                                      const LightSample &sample, bool ambient, const Ray &ray);

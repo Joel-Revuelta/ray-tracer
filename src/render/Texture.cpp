@@ -6,11 +6,14 @@
 */
 
 #include "render/Texture.hpp"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#include <algorithm>
 #include <cerrno>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
-#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -162,6 +165,96 @@ Color3D Texture::sample(float u, float v) const
 Color3D Texture::sampleClamped(float u, float v) const
 {
     return sampleInternal(u, v, true);
+}
+
+std::shared_ptr<const Texture> RayTracer::loadHDRTexture(const std::string &path)
+{
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+
+    if (!stbi_info(path.c_str(), &width, &height, &channels) || width <= 0 || height <= 0 ||
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) > MAX_TEXELS)
+        throw std::runtime_error(path + ": invalid HDR image dimensions");
+
+    float *data = stbi_loadf(path.c_str(), &width, &height, &channels, 3);
+
+    if (data == nullptr)
+    {
+        const char *reason = stbi_failure_reason();
+
+        throw std::runtime_error(path + ": " + (reason != nullptr ? reason : "could not load HDR image"));
+    }
+
+    const std::size_t texelCount = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+
+    if (width <= 0 || height <= 0 || texelCount > MAX_TEXELS)
+    {
+        stbi_image_free(data);
+        throw std::runtime_error(path + ": HDR image has invalid dimensions");
+    }
+
+    std::vector<Color3D> pixels;
+
+    pixels.reserve(texelCount);
+
+    for (std::size_t i = 0; i < texelCount; ++i)
+        pixels.emplace_back(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]);
+
+    stbi_image_free(data);
+    return std::make_shared<Texture>(width, height, std::move(pixels));
+}
+
+std::shared_ptr<const Texture> RayTracer::loadTextureFile(const std::string &path)
+{
+    std::string extension = std::filesystem::path(path).extension().string();
+
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+
+    if (extension == ".ppm")
+        return loadPPMTexture(path);
+    if (extension == ".hdr")
+        return loadHDRTexture(path);
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+
+    if (!stbi_info(path.c_str(), &width, &height, &channels) || width <= 0 || height <= 0 ||
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) > MAX_TEXELS)
+        throw std::runtime_error(path + ": invalid image dimensions");
+
+    stbi_uc *data = stbi_load(path.c_str(), &width, &height, &channels, 3);
+
+    if (data == nullptr)
+    {
+        const char *reason = stbi_failure_reason();
+
+        throw std::runtime_error(path + ": " + (reason != nullptr ? reason : "unsupported image format"));
+    }
+
+    const std::size_t texelCount = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+
+    if (width <= 0 || height <= 0 || texelCount > MAX_TEXELS)
+    {
+        stbi_image_free(data);
+        throw std::runtime_error(path + ": image has invalid dimensions");
+    }
+
+    std::vector<Color3D> pixels;
+
+    pixels.reserve(texelCount);
+
+    for (std::size_t i = 0; i < texelCount; ++i)
+    {
+        pixels.emplace_back(srgbToLinear(static_cast<float>(data[i * 3]) / 255.0f),
+                            srgbToLinear(static_cast<float>(data[i * 3 + 1]) / 255.0f),
+                            srgbToLinear(static_cast<float>(data[i * 3 + 2]) / 255.0f));
+    }
+
+    stbi_image_free(data);
+    return std::make_shared<Texture>(width, height, std::move(pixels));
 }
 
 std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path)

@@ -136,6 +136,72 @@ def generate_ice_cracks() -> None:
     write_ppm(TEXTURES / "ice_cracks.ppm", width, height, pixels)
 
 
+def to_rgbe(red: float, green: float, blue: float) -> tuple[int, int, int, int]:
+    maximum = max(red, green, blue)
+
+    if maximum < 1e-32:
+        return 0, 0, 0, 0
+
+    mantissa, exponent = math.frexp(maximum)
+    scale = mantissa * 256.0 / maximum
+
+    return (
+        max(0, min(255, int(red * scale))),
+        max(0, min(255, int(green * scale))),
+        max(0, min(255, int(blue * scale))),
+        max(0, min(255, exponent + 128)),
+    )
+
+
+def write_hdr(path: Path, width: int, height: int, pixels: list[tuple[float, float, float]]) -> None:
+    header = f"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n".encode("ascii")
+    data = bytearray()
+
+    for red, green, blue in pixels:
+        data.extend(to_rgbe(red, green, blue))
+
+    with path.open("wb") as handle:
+        handle.write(header)
+        handle.write(data)
+
+
+def generate_nebula_hdr() -> None:
+    width = 1024
+    height = 512
+    rng = random.Random(5513)
+    pixels: list[tuple[float, float, float]] = []
+
+    for y in range(height):
+        v = y / (height - 1)
+
+        for x in range(width):
+            u = x / (width - 1)
+            horizon = math.exp(-((v - 0.58) ** 2) / (2.0 * 0.16 ** 2))
+            upper = math.exp(-((v - 0.28) ** 2) / (2.0 * 0.22 ** 2))
+            cloud = (
+                math.sin(u * 13.0 + math.sin(v * 9.0) * 2.0)
+                + 0.6 * math.sin(u * 27.0 - v * 17.0)
+                + 0.35 * math.sin(u * 51.0 + v * 33.0)
+            )
+            cloud = max(0.0, cloud * 0.5 + 0.5)
+            teal = cloud * horizon
+            violet = cloud * upper * 0.7
+            base = 0.00015 + 0.00025 * (1.0 - v)
+
+            red = base + 0.016 * violet + 0.0020 * horizon
+            green = base + 0.030 * teal + 0.0026 * horizon
+            blue = base + 0.034 * teal + 0.022 * violet + 0.0034 * horizon
+            pixels.append((red, green, blue))
+
+    for _ in range(360):
+        x = rng.randrange(width)
+        y = rng.randrange(height)
+        intensity = rng.uniform(1.5, 12.0)
+        pixels[y * width + x] = (intensity, intensity * 1.04, intensity * 1.14)
+
+    write_hdr(TEXTURES / "nebula_equirect.hdr", width, height, pixels)
+
+
 def generate_nebula_equirect() -> None:
     width = 1024
     height = 512
@@ -254,6 +320,7 @@ def main() -> None:
     generate_dark_marble()
     generate_ice_cracks()
     generate_nebula_equirect()
+    generate_nebula_hdr()
     generate_thin_ring()
     generate_monolith()
 

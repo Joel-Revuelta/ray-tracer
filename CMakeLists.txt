@@ -47,6 +47,7 @@ include_directories(include/plugins/primitives)
 include_directories(include/plugins/transformations)
 include_directories(include/plugins/GUI)
 include_directories(include/plugins/renderers)
+include_directories(third_party/stb)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBCONFIG++ REQUIRED libconfig++)
@@ -343,6 +344,7 @@ enable_testing()
 add_test(
     NAME renderer_regressions
     COMMAND $<TARGET_FILE:raytracer_regressions> ${CMAKE_SOURCE_DIR}/scenes/mtl_materials.cfg
+            ${CMAKE_SOURCE_DIR}/scenes/textures/nebula_equirect.hdr
 )
 set_tests_properties(renderer_regressions PROPERTIES
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -635,6 +637,24 @@ add_test(
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
 )
 add_test(
+    NAME bloom_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/tidal_bloom.cfg
+            --cli --renderer cpu --width 32 --height 18 --frames 2 --seed 5
+            --tonemap aces --bloom --bloom-intensity 0.45
+            --output ${CMAKE_BINARY_DIR}/bloom_smoke.ppm
+)
+add_test(
+    NAME deterministic_bloom_render
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_bloom.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME cli_rejects_invalid_bloom_radius
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --bloom --bloom-radius 17
+)
+add_test(
     NAME cli_rejects_invalid_threads
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
@@ -657,6 +677,7 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     group_transform_smoke prefab_instances_smoke deterministic_prefabs_render
     sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
     frozen_cathedral_smoke deterministic_scene_pack_render
+    bloom_smoke deterministic_bloom_render
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_transform parser_rejects_invalid_obj
@@ -665,7 +686,7 @@ set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_material_group parser_rejects_invalid_environment
     parser_rejects_invalid_mtl parser_rejects_unknown_prefab
     parser_rejects_prefab_instances_in_prefabs parser_rejects_float_overflow
-    parser_rejects_uv_overflow PROPERTIES
+    parser_rejects_uv_overflow cli_rejects_invalid_bloom_radius PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
 )

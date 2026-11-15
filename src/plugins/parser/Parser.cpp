@@ -725,7 +725,7 @@ std::shared_ptr<const Texture> Parser::loadTexture(const std::string &path)
     if (cached != _textureCache.end())
         return cached->second;
 
-    std::shared_ptr<const Texture> texture = loadPPMTexture(path);
+    std::shared_ptr<const Texture> texture = loadTextureFile(path);
 
     _textureCache.emplace(path, texture);
     return texture;
@@ -965,6 +965,9 @@ Background Parser::parseBackground(const libconfig::Setting &backgroundSetting)
         const std::string texturePath = resolveAssetPath(backgroundSetting.lookup("texture"));
 
         background.environment = loadTexture(texturePath);
+
+        if (background.environment)
+            background.environmentDistribution = buildEnvironmentDistribution(*background.environment);
     }
 
     if (backgroundSetting.exists("zenith"))

@@ -97,37 +97,55 @@ LightSample SphereLight::sample(const HitPayload &payload, const Scene &scene, u
 {
     LightSample result;
 
-    // Uniform point on the sphere surface. This is a soft-shadow
-    // approximation using the point-light attenuation model, not a physically
-    // exact area-light integral.
-    const float u = Utils::numericGeneratePseudoRandom<float>(seed, 0.0f, 1.0f);
-    const float v = Utils::numericGeneratePseudoRandom<float>(seed, 0.0f, 1.0f);
-    const float z = 1.0f - 2.0f * u;
-    const float radial = std::sqrt(std::max(0.0f, 1.0f - z * z));
-    const float angle = 2.0f * static_cast<float>(Utils::PI) * v;
-    const Vec3D sphereNormal(radial * std::cos(angle), radial * std::sin(angle), z);
-    const Vec3D lightPoint = _position + sphereNormal * _radius;
-    const Vec3D toLight = lightPoint - payload.getHitPosition();
-    const float distance = toLight.length();
+    const Vec3D toCenter = _position - payload.getHitPosition();
+    const float centerDistance = toCenter.length();
 
-    if (!std::isfinite(distance) || distance <= 1e-6f)
+    if (!std::isfinite(centerDistance) || centerDistance <= _radius)
         return result;
 
-    const Vec3D direction = toLight / distance;
+    const float sinThetaMax = std::min(1.0f, _radius / centerDistance);
+    const float cosThetaMax = std::sqrt(std::max(0.0f, 1.0f - sinThetaMax * sinThetaMax));
+    const float u = Utils::numericGeneratePseudoRandom<float>(seed, 0.0f, 1.0f);
+    const float v = Utils::numericGeneratePseudoRandom<float>(seed, 0.0f, 1.0f);
+    const float cosTheta = 1.0f - u * (1.0f - cosThetaMax);
+    const float sinTheta = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
+    const float phi = 2.0f * static_cast<float>(Utils::PI) * v;
+    const Vec3D w = toCenter / centerDistance;
+    const Vec3D up = std::fabs(w.getY()) < 0.999f ? Vec3D(0.0f, 1.0f, 0.0f) : Vec3D(1.0f, 0.0f, 0.0f);
+    const Vec3D tangent = vec3DNormalize(vec3DCross(up, w));
+    const Vec3D bitangent = vec3DCross(w, tangent);
+    const Vec3D direction = vec3DNormalize(tangent * (std::cos(phi) * sinTheta) +
+                                           bitangent * (std::sin(phi) * sinTheta) + w * cosTheta);
 
     if (vec3DDot(direction, payload.getShadingNormal()) <= 0.0f)
         return result;
+
+    const Vec3D originToCenter = payload.getHitPosition() - _position;
+    const float b = vec3DDot(originToCenter, direction);
+    const float c = vec3DDot(originToCenter, originToCenter) - _radius * _radius;
+    const float discriminant = b * b - c;
+    float shadowDistance = centerDistance - _radius;
+
+    if (discriminant >= 0.0f)
+    {
+        const float entryDistance = -b - std::sqrt(discriminant);
+
+        if (entryDistance > Ray::EPSILON)
+            shadowDistance = entryDistance;
+    }
 
     const Ray shadowRay(payload.getHitPosition() + payload.getHitNormal() * Ray::EPSILON, direction);
     HitPayload occluder;
 
     scene.hit(shadowRay, occluder, 0);
 
-    if (occluder.getHitDistance() < distance - Ray::EPSILON)
+    if (occluder.getHitDistance() < shadowDistance - Ray::EPSILON)
         return result;
 
+    const float solidAngle = 2.0f * static_cast<float>(Utils::PI) * (1.0f - cosThetaMax);
+
     result.direction = direction;
-    result.radiance = _color * _intensity * attenuationAt(distance);
+    result.radiance = _color * _intensity * attenuationAt(centerDistance) * solidAngle;
     result.valid = true;
     return result;
 }

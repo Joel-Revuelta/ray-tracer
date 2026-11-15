@@ -9,6 +9,7 @@
 #define POST_PROCESS_HPP_
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 
@@ -22,12 +23,39 @@ enum class ToneMapping : int
     ACES = 2
 };
 
+constexpr int BLOOM_MAX_RADIUS = 16;
+
 struct PostProcessSettings
 {
     float exposure = 1.0f;
     ToneMapping toneMapping = ToneMapping::NONE;
     bool srgb = true;
+    bool bloom = false;
+    float bloomThreshold = 1.0f;
+    float bloomIntensity = 0.15f;
+    int bloomRadius = 8;
 };
+
+inline std::array<float, BLOOM_MAX_RADIUS * 2 + 1> bloomKernel(int radius)
+{
+    std::array<float, BLOOM_MAX_RADIUS * 2 + 1> weights{};
+    const int clampedRadius = std::clamp(radius, 1, BLOOM_MAX_RADIUS);
+    const float sigma = std::max(1.0f, static_cast<float>(clampedRadius) * 0.5f);
+    const float denominator = 2.0f * sigma * sigma;
+    float total = 0.0f;
+
+    for (int offset = -clampedRadius; offset <= clampedRadius; ++offset)
+    {
+        const float weight = std::exp(-static_cast<float>(offset * offset) / denominator);
+
+        weights[static_cast<std::size_t>(offset + BLOOM_MAX_RADIUS)] = weight;
+        total += weight;
+    }
+
+    for (float &weight : weights)
+        weight /= total;
+    return weights;
+}
 
 inline float applyToneMapping(float linear, ToneMapping mode)
 {

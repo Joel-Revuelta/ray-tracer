@@ -10,6 +10,7 @@
 
 #include "Color.hpp"
 #include "Vec3D.hpp"
+#include "render/Environment.hpp"
 #include "render/Texture.hpp"
 #include <algorithm>
 #include <cmath>
@@ -30,6 +31,7 @@ struct Background
     Color3D ground{0.01f, 0.01f, 0.02f};
     float intensity = 1.0f;
     std::shared_ptr<const Texture> environment;
+    std::shared_ptr<const EnvironmentDistribution> environmentDistribution;
     int environmentTextureIndex = -1;
 
     Color3D sample(const Vec3D &direction) const

@@ -80,14 +80,15 @@ letterboxes it to preserve aspect ratio.
 
 ## Hero scene pack
 
-The five newest scenes are tuned for ACES tone mapping:
-`sakura_shrine` at exposure `1.25`, `brass_orrery` at `0.85`,
+The five newest scenes use HDR IBL and are tuned for ACES tone mapping plus
+bloom: `sakura_shrine` at exposure `1.25`, `brass_orrery` at `0.85`,
 `tidal_bloom` at `1.15`, `obsidian_aurora` at `1.15`, and
 `frozen_cathedral` at `0.90`. For example:
 
 ```bash
 ./raytracer --path scenes/tidal_bloom.cfg --cli --renderer cuda \
   --width 1920 --height 1080 --frames 320 --tonemap aces --exposure 1.15 \
+  --bloom --bloom-threshold 2.5 --bloom-intensity 0.20 --bloom-radius 6 \
   --output tidal_bloom.ppm
 ```
 

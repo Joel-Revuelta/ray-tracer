@@ -33,6 +33,10 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--focus-distance` | positive float | Distance from the eye to the focus plane. | scene value |
 | `--exposure` | non-negative float | Linear exposure multiplier before tonemapping. | `1.0` |
 | `--tonemap` | `none`, `reinhard`, or `aces` | Output tonemapping curve. | `none` |
+| `--bloom` | — | Enable the optional HDR bloom/glow pass. | off |
+| `--bloom-threshold` | non-negative float | Linear luminance above which pixels glow. | `1.0` |
+| `--bloom-intensity` | non-negative float | Additive bloom strength. | `0.15` |
+| `--bloom-radius` | positive integer, max `16` | Gaussian blur radius in pixels. | `8` |
 | `--output` | path | PPM output file. | stdout in CLI mode |
 | `--list-guis` | — | Print GUI backends and exit `0`. | |
 | `--help`, `-h` | — | Print usage and exit `0`. | |
@@ -45,8 +49,10 @@ roughly linearly.
 
 ### Output
 
-- PPM values are converted from linear radiance through exposure, the selected
-  tonemapping curve, and the sRGB transfer function.
+- PPM values are converted from linear radiance through optional bloom,
+  exposure, the selected tonemapping curve, and the sRGB transfer function.
+- Bloom is applied to the HDR image before exposure and tonemapping, with a
+  shared Gaussian kernel on CPU and CUDA.
 - CLI mode with `--output` writes a binary `P6` PPM file.
 - CLI mode without `--output` writes the PPM to standard output.
 - GUI mode writes a PPM only when `--output` is provided.

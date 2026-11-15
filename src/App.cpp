@@ -26,7 +26,8 @@ const char *const USAGE =
     "Usage: ./raytracer --path <scene.cfg> --cli|--sfml|--gui sfml|opengl "
     "[--renderer cpu|cuda] [--width W] [--height H] [--frames N] [--threads N] [--seed N] "
     "[--device N] [--lens-radius R] [--focus-distance D] [--exposure E] "
-    "[--tonemap none|reinhard|aces] [--output out.ppm] [--list-renderers] [--list-guis]";
+    "[--tonemap none|reinhard|aces] [--bloom [--bloom-threshold T] [--bloom-intensity I] "
+    "[--bloom-radius R]] [--output out.ppm] [--list-renderers] [--list-guis]";
 
 std::string normalizeGuiName(std::string name)
 {
@@ -203,6 +204,10 @@ App::App(int ac, char **av)
                                       {"device", required_argument, NULL, 17},
                                       {"lens-radius", required_argument, NULL, 18},
                                       {"focus-distance", required_argument, NULL, 19},
+                                      {"bloom", 0, NULL, 20},
+                                      {"bloom-threshold", required_argument, NULL, 21},
+                                      {"bloom-intensity", required_argument, NULL, 22},
+                                      {"bloom-radius", required_argument, NULL, 23},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -276,6 +281,24 @@ App::App(int ac, char **av)
             break;
         case 19:
             _focusDistance = parsePositiveFloat(optarg, "focus distance");
+            break;
+        case 20:
+            _postProcess.bloom = true;
+            break;
+        case 21:
+            _postProcess.bloomThreshold = parseNonNegativeFloat(optarg, "bloom threshold");
+            break;
+        case 22:
+            _postProcess.bloomIntensity = parseNonNegativeFloat(optarg, "bloom intensity");
+            break;
+        case 23:
+            _postProcess.bloomRadius = parsePositiveInt(optarg, "bloom radius");
+
+            if (_postProcess.bloomRadius > BLOOM_MAX_RADIUS)
+            {
+                std::cerr << "Bloom radius must be at most " << BLOOM_MAX_RADIUS << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
             break;
         case '?':
         default:

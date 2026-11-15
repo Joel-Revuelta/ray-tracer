@@ -17,9 +17,9 @@ namespace RayTracer
 {
 
 /**
- * Bilinear, repeat-wrapped RGB texture. Texels are stored as linear floats in
- * [0, 1]. PPM input is sRGB-encoded and is decoded to linear on load so it can
- * be combined directly with the renderer's linear lighting and radiance.
+ * Bilinear, repeat-wrapped RGB texture. Texels are stored as linear,
+ * non-negative floats. LDR input is sRGB-decoded on load; Radiance HDR input
+ * keeps its full high-dynamic-range values.
  */
 class Texture
 {
@@ -47,6 +47,17 @@ class Texture
  * path and reason on malformed input.
  */
 std::shared_ptr<const Texture> loadPPMTexture(const std::string &path);
+
+/**
+ * Loads an image by extension. PPM uses the in-tree parser, Radiance HDR
+ * keeps linear HDR values, and PNG/JPG are decoded from sRGB to linear.
+ */
+std::shared_ptr<const Texture> loadTextureFile(const std::string &path);
+
+/**
+ * Loads a Radiance RGBE HDR image using stb_image.
+ */
+std::shared_ptr<const Texture> loadHDRTexture(const std::string &path);
 
 } // namespace RayTracer
 

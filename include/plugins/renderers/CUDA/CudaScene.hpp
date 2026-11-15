@@ -9,6 +9,7 @@
 #define CUDA_SCENE_HPP_
 
 #include "TransformData.hpp"
+#include "render/PostProcess.hpp"
 
 namespace RayTracer
 {
@@ -117,6 +118,11 @@ struct PostProcess
     float exposure;
     int toneMapping;
     int srgb;
+    int bloom;
+    float bloomThreshold;
+    float bloomIntensity;
+    int bloomRadius;
+    float bloomWeights[33];
 };
 
 struct Background
@@ -127,6 +133,11 @@ struct Background
     float intensity;
     int enabled;
     int environmentTextureIndex;
+    const float *environmentConditionalCdf = nullptr;
+    const float *environmentMarginalCdf = nullptr;
+    int environmentWidth = 0;
+    int environmentHeight = 0;
+    float environmentTotal = 0.0f;
 };
 
 struct BVHNode

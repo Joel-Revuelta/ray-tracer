@@ -110,17 +110,19 @@ background:
 };
 ```
 
-- `texture` is an equirectangular PPM environment map. Paths resolve relative
-  to the scene file. `u` wraps around the horizon and `v` is clamped from the
+- `texture` is an equirectangular environment map. Paths resolve relative to
+  the scene file. `u` wraps around the horizon and `v` is clamped from the
   north to the south pole.
+- Supported environment formats are PPM, PNG, JPG and Radiance RGBE `.hdr`.
+  LDR images are decoded from sRGB; HDR images keep linear values above `1.0`.
+  OpenEXR is not supported yet.
 - When a texture is present it takes precedence over the gradient fields.
 - `zenith`, `horizon`, and `ground` remain the fallback when no texture is
   given.
 - `intensity` must be non-negative and defaults to `1.0`.
 - If the block is omitted, the background is black.
 - Environment maps are visible in reflections and illuminate diffuse/metallic
-  paths through ordinary path tracing. They are LDR PPM images; HDR/EXR
-  environments are not supported.
+  paths through importance-sampled path tracing.
 - Backgrounds are top-level only; nested scenes inherit the parent background.
 
 `scenes/environment.cfg` demonstrates an equirectangular sky used for the
@@ -213,10 +215,11 @@ name = {
 ```
 
 - Paths resolve relative to the scene file, like meshes.
-- Supported format: binary `P6` or ASCII `P3` PPM. `P6` files must use an
-  8-bit maximum value.
+- Supported formats: binary `P6` or ASCII `P3` PPM, PNG, JPG and Radiance
+  RGBE `.hdr`. `P6` files must use an 8-bit maximum value.
 - Sampling is bilinear with repeat wrapping.
-- PPM values are treated as sRGB and decoded to linear before lighting.
+- LDR textures are treated as sRGB and decoded to linear; HDR textures keep
+  their linear values.
 - The sampled texel multiplies the material's `color`; a white tint leaves the
   texture unchanged.
 - Textures currently affect albedo only. Emission, roughness and normal maps
@@ -393,7 +396,8 @@ map_Kd ../textures/checker.ppm
 - `Kd` is the diffuse colour.
 - `Ka` and `Ks` contribute ambient and specular reflection coefficients.
 - `Ns` is converted to a roughness value.
-- `map_Kd` is an albedo texture resolved relative to the MTL file.
+- `map_Kd` is an albedo texture resolved relative to the MTL file; the same
+  PPM/PNG/JPG/HDR formats are supported.
 - `Ke`, `d`, `Tr` and unsupported maps are accepted but not fully applied yet.
 - `map_Kd` options such as `-s`/`-o` are not supported.
 
@@ -616,12 +620,14 @@ spheres = (
   `quadratic = 0`. The same rules and formula as point lights apply.
 - `spheres` may also be a single object instead of a list.
 
-Sphere lights are sampled as soft point sources. Each shading query picks a
-point on the sphere and casts a shadow ray to it, producing soft shadows. This
-is an artistic approximation rather than a physically exact area-light
-integral. Larger radii give wider penumbrae, and soft shadows need more samples
-to converge cleanly. `scenes/soft_shadows.cfg` demonstrates two sphere lights
-over a floor.
+Sphere lights are sampled as area sources using a cone around the light centre.
+Two random values choose a direction uniformly inside the sphere's subtended
+solid angle, and the returned radiance is scaled by that solid angle. This
+produces physically consistent soft shadows. Because the control is
+radiance-like rather than a point-light intensity, sphere-light intensities in
+the sample scenes are larger than nearby point-light intensities. Larger radii
+give wider penumbrae, and soft shadows need more samples to converge cleanly.
+`scenes/soft_shadows.cfg` demonstrates two sphere lights over a floor.
 
 ## Material indices
 

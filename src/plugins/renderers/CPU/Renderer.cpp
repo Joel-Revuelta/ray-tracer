@@ -28,6 +28,79 @@ using namespace RayTracer;
 
 namespace RayTracer
 {
+namespace
+{
+float powerHeuristicPdf(float first, float second)
+{
+    const float firstSquared = first * first;
+    const float secondSquared = second * second;
+    const float total = firstSquared + secondSquared;
+
+    return total > 0.0f ? firstSquared / total : 0.0f;
+}
+
+float colorLuminance(const Color3D &color)
+{
+    return 0.2126f * color.getX() + 0.7152f * color.getY() + 0.0722f * color.getZ();
+}
+
+void applyBloom(std::vector<Color3D> &hdr, int width, int height, const PostProcessSettings &settings)
+{
+    if (!settings.bloom || width <= 0 || height <= 0)
+        return;
+
+    const int radius = std::clamp(settings.bloomRadius, 1, BLOOM_MAX_RADIUS);
+    const std::array<float, BLOOM_MAX_RADIUS * 2 + 1> weights = bloomKernel(radius);
+    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    std::vector<Color3D> bright(count);
+    std::vector<Color3D> horizontal(count);
+    std::vector<Color3D> vertical(count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        if (colorLuminance(hdr[i]) > settings.bloomThreshold)
+            bright[i] = hdr[i];
+    }
+
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            Color3D value(0.0f);
+
+            for (int offset = -radius; offset <= radius; ++offset)
+            {
+                const int sampleX = std::clamp(x + offset, 0, width - 1);
+                value += bright[static_cast<std::size_t>(y) * width + static_cast<std::size_t>(sampleX)] *
+                         weights[static_cast<std::size_t>(offset + BLOOM_MAX_RADIUS)];
+            }
+
+            horizontal[static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)] = value;
+        }
+    }
+
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            Color3D value(0.0f);
+
+            for (int offset = -radius; offset <= radius; ++offset)
+            {
+                const int sampleY = std::clamp(y + offset, 0, height - 1);
+                value += horizontal[static_cast<std::size_t>(sampleY) * width + static_cast<std::size_t>(x)] *
+                         weights[static_cast<std::size_t>(offset + BLOOM_MAX_RADIUS)];
+            }
+
+            vertical[static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)] = value;
+        }
+    }
+
+    for (std::size_t i = 0; i < count; ++i)
+        hdr[i] += vertical[i] * settings.bloomIntensity;
+}
+} // namespace
+
 class RenderPool
 {
   public:
@@ -364,15 +437,9 @@ void Renderer::renderFrame(void)
                         static_cast<std::size_t>(x) + static_cast<std::size_t>(y) * static_cast<std::size_t>(width);
                     Color4D pixelColor = getPixelColor(seed, x, y);
 
-                    // Accumulate the color data for the pixel.
+                    // Accumulate the color data for the pixel. The final HDR
+                    // average is post-processed once all workers finish.
                     _imageAccumulationData[pixelIndex] += pixelColor;
-
-                    // Keep the linear average unclamped so exposure and
-                    // tonemapping see the full HDR range, matching CUDA and
-                    // the documented post-process order.
-                    Color4D accumulatedColor4D = _imageAccumulationData[pixelIndex];
-                    accumulatedColor4D /= (float)_frameIteration;
-                    _imageData[pixelIndex] = Utils::convertToRGBA(accumulatedColor4D, _postProcess);
                 }
             }
         }
@@ -445,11 +512,42 @@ void Renderer::renderFrame(void)
 
     if (_stop)
         return;
+
+    updateImage(_frameIteration);
+
     if (_gui)
     {
         _gui->setImage(getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
         _gui->display();
     }
+}
+
+void Renderer::updateImage(int completedSamples)
+{
+    if (completedSamples <= 0 || !getCamera())
+        return;
+
+    const int width = getCamera()->getImageWidth();
+    const int height = getCamera()->getImageHeight();
+    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+
+    if (_imageAccumulationData.size() < count || _imageData.size() < count)
+        return;
+
+    std::vector<Color3D> hdr(count);
+    const float inverseSamples = 1.0f / static_cast<float>(completedSamples);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const Color4D &accumulated = _imageAccumulationData[i];
+
+        hdr[i] = Color3D(accumulated.getX(), accumulated.getY(), accumulated.getZ()) * inverseSamples;
+    }
+
+    applyBloom(hdr, width, height, _postProcess);
+
+    for (std::size_t i = 0; i < count; ++i)
+        _imageData[i] = Utils::convertToRGBA(Color4D(hdr[i], 1.0f), _postProcess);
 }
 
 void Renderer::refreshImage(void)
@@ -459,13 +557,7 @@ void Renderer::refreshImage(void)
     if (completedSamples <= 0)
         return;
 
-    for (std::size_t i = 0; i < _imageData.size(); ++i)
-    {
-        Color4D color = _imageAccumulationData[i];
-
-        color /= static_cast<float>(completedSamples);
-        _imageData[i] = Utils::convertToRGBA(color, _postProcess);
-    }
+    updateImage(completedSamples);
 
     if (_gui)
     {
@@ -652,6 +744,10 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
     const Primitives &primitives = scene.getPrimitives();
     const Materials &materials = scene.getMaterials();
     const Lights &lights = scene.getLights();
+    const Background &background = scene.getBackground();
+    const std::shared_ptr<const Texture> &environment = background.environment;
+    const std::shared_ptr<const EnvironmentDistribution> &environmentDistribution = background.environmentDistribution;
+    float backgroundWeight = 1.0f;
     const std::size_t pixelIndex =
         static_cast<std::size_t>(x) + static_cast<std::size_t>(y) * static_cast<std::size_t>(camera.getImageWidth());
 
@@ -749,6 +845,7 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
 
                 ray.setDirection(nextDirection);
                 ray.setOrigin(payload.getHitPosition() + nextDirection * Ray::EPSILON);
+                backgroundWeight = 1.0f;
                 continue;
             }
 
@@ -793,6 +890,35 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                     break;
             }
 
+            float nextBackgroundWeight = 1.0f;
+
+            // Explicit environment lighting for diffuse surfaces. The
+            // environment strategy is combined with cosine-weighted BSDF
+            // sampling through MIS so highlights and smooth skies both stay
+            // low-noise.
+            if (materialType == IMaterial::DIFFUSE && background.enabled && environment && environmentDistribution &&
+                environmentDistribution->total > 0.0f)
+            {
+                const Vec3D normal = payload.getShadingNormal();
+                const EnvironmentSample environmentSample =
+                    sampleEnvironment(*environment, *environmentDistribution, sampler);
+
+                if (environmentSample.valid && environmentSample.pdf > 0.0f)
+                {
+                    const float environmentCosine = std::max(vec3DDot(normal, environmentSample.direction), 0.0f);
+
+                    if (environmentCosine > 0.0f)
+                    {
+                        const float bsdfPdfAtEnvironment = environmentCosine / PI_F;
+                        const float environmentWeight =
+                            powerHeuristicPdf(environmentSample.pdf, bsdfPdfAtEnvironment);
+
+                        accumulatedColor += throughput * environmentSample.radiance *
+                                            (environmentCosine / (PI_F * environmentSample.pdf)) * environmentWeight;
+                    }
+                }
+            }
+
             // Handle set direction and origin for the next ray
             const Vec3D nextDirection = computeNextRayDirection(ray, payload, sampler, throughput, surfaceColor);
 
@@ -804,15 +930,25 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             if (vec3DIsNearZero(nextDirection) || vec3DDot(nextDirection, payload.getHitNormal()) <= 0.0f)
                 break;
 
+            if (materialType == IMaterial::DIFFUSE && background.enabled && environment && environmentDistribution &&
+                environmentDistribution->total > 0.0f)
+            {
+                const float bsdfCosine =
+                    std::max(vec3DDot(payload.getShadingNormal(), nextDirection), 0.0f);
+                const float bsdfPdf = bsdfCosine / PI_F;
+                const float environmentPdfValue = environmentPdf(*environment, *environmentDistribution, nextDirection);
+
+                nextBackgroundWeight = powerHeuristicPdf(bsdfPdf, environmentPdfValue);
+            }
+
+            backgroundWeight = nextBackgroundWeight;
             ray.setDirection(nextDirection);
             ray.setOrigin(payload.getHitPosition() + payload.getHitNormal() * Ray::EPSILON);
         }
         else
         {
-            const Background &background = scene.getBackground();
-
             if (background.enabled)
-                accumulatedColor += throughput * background.sample(ray.getDirection());
+                accumulatedColor += throughput * backgroundWeight * background.sample(ray.getDirection());
             break;
         }
     }

@@ -115,7 +115,8 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
   hit UV. UVs come from analytic primitive mappings or interpolated OBJ `vt`
   data.
 - Equirectangular environment backgrounds are sampled on miss with a clamped
-  V coordinate and provide reflections plus path-traced indirect lighting.
+  V coordinate. Diffuse surfaces additionally use an importance-sampled
+  luminance CDF and MIS for explicit environment lighting.
 - OBJ `usemtl` groups resolve to per-triangle material overrides. Unmapped
   groups use the mesh's fallback material. `mtllib` materials are imported as
   Phong-style materials with optional `map_Kd` textures.
@@ -129,10 +130,10 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
   controls, including live lens-radius and focus-distance adjustment.
 - Camera rays support a world-space lens disk and focus plane for depth of
   field; a zero lens radius keeps the pinhole path.
-- Sphere area lights are sampled as soft point sources: a point is sampled on
-  the sphere and the point-light attenuation model is reused. This produces
-  soft shadows but is not a physically exact area-light integral. The light
-  loop uses `ILight::sample()` for a consistent direction, radiance and
+- Sphere area lights are sampled as solid-angle cone sources. A direction is
+  sampled uniformly inside the sphere's subtended cone, the shadow ray targets
+  the sphere entry point, and radiance is scaled by the cone's solid angle. The
+  light loop uses `ILight::sample()` for a consistent direction, radiance and
   visibility query.
 - In GUI mode, window events are polled while workers trace a frame. A camera
   event aborts the current frame and restarts with the new pose, so heavy CPU
@@ -257,7 +258,9 @@ then reports the missing plugin.
 
 Both GUIs support live statistics in the window title, `Space` pause/resume,
 `P` screenshot saving, and `[`/`]` exposure changes. CPU screenshots are
-re-tonemapped from the accumulated HDR buffer; CUDA uses a device post-process
+re-tonemapped from the accumulated HDR buffer; CUDA uses matching device
+bright-pass, Gaussian blur and composite bloom kernels. The two paths share the
+same bloom kernel weights and parameterization. CUDA uses a device post-process
 pass over its accumulation buffer.
 
 ## Output pipeline

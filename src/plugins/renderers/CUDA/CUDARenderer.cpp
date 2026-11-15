@@ -124,7 +124,21 @@ Cuda::Camera toDevice(const CameraData &camera)
 
 Cuda::PostProcess toDevice(const PostProcessSettings &settings)
 {
-    return Cuda::PostProcess{settings.exposure, static_cast<int>(settings.toneMapping), settings.srgb ? 1 : 0};
+    Cuda::PostProcess result{};
+
+    result.exposure = settings.exposure;
+    result.toneMapping = static_cast<int>(settings.toneMapping);
+    result.srgb = settings.srgb ? 1 : 0;
+    result.bloom = settings.bloom ? 1 : 0;
+    result.bloomThreshold = settings.bloomThreshold;
+    result.bloomIntensity = settings.bloomIntensity;
+    result.bloomRadius = std::clamp(settings.bloomRadius, 1, BLOOM_MAX_RADIUS);
+
+    const std::array<float, BLOOM_MAX_RADIUS * 2 + 1> weights = bloomKernel(result.bloomRadius);
+
+    for (std::size_t i = 0; i < weights.size(); ++i)
+        result.bloomWeights[i] = weights[i];
+    return result;
 }
 
 Cuda::Background toDeviceBackground(const Background &background)
@@ -229,6 +243,15 @@ struct HostTextures
     std::vector<Cuda::TextureRange> ranges;
 };
 
+struct HostEnvironment
+{
+    std::vector<float> conditionalCdf;
+    std::vector<float> marginalCdf;
+    int width = 0;
+    int height = 0;
+    float total = 0.0f;
+};
+
 HostBVH buildBVH(const SceneSnapshot &snapshot)
 {
     const BVHBuildResult result = RayTracer::buildBVH(snapshot.primitives);
@@ -295,6 +318,23 @@ HostTextures convertTextures(const SceneSnapshot &snapshot)
     return textures;
 }
 
+HostEnvironment convertEnvironment(const SceneSnapshot &snapshot)
+{
+    HostEnvironment environment;
+
+    if (!snapshot.background.environmentDistribution)
+        return environment;
+
+    const EnvironmentDistribution &distribution = *snapshot.background.environmentDistribution;
+
+    environment.conditionalCdf = distribution.conditionalCdf;
+    environment.marginalCdf = distribution.marginalCdf;
+    environment.width = distribution.width;
+    environment.height = distribution.height;
+    environment.total = distribution.total;
+    return environment;
+}
+
 HostMeshes convertMeshes(const SceneSnapshot &snapshot)
 {
     HostMeshes meshes;
@@ -359,15 +399,20 @@ class CudaRenderSession
         : _width(snapshot.camera.imageWidth), _height(snapshot.camera.imageHeight),
           _primitives(convertPrimitives(snapshot)), _materials(convertMaterials(snapshot)),
           _lights(convertLights(snapshot)), _bvh(buildBVH(snapshot)), _meshes(convertMeshes(snapshot)),
-          _textures(convertTextures(snapshot)), _meshMaterialMaps(snapshot.meshMaterialMaps),
+          _textures(convertTextures(snapshot)), _environment(convertEnvironment(snapshot)),
+          _meshMaterialMaps(snapshot.meshMaterialMaps),
           _devicePrimitives(_primitives.size()),
           _deviceMaterials(_materials.size()), _deviceLights(_lights.size()), _deviceNodes(_bvh.nodes.size()),
           _deviceIndices(_bvh.indices.size()), _deviceUnbounded(_bvh.unbounded.size()),
           _deviceMeshTriangles(_meshes.triangles.size()), _deviceMeshNodes(_meshes.nodes.size()),
           _deviceMeshIndices(_meshes.indices.size()), _deviceMeshRanges(_meshes.ranges.size()),
           _deviceTexels(_textures.texels.size()), _deviceTextureRanges(_textures.ranges.size()),
-          _deviceMeshMaterialMaps(_meshMaterialMaps.size()), _deviceAccumulation(pixelCount(_width, _height)),
-          _deviceOutput(pixelCount(_width, _height) * 4u)
+          _deviceMeshMaterialMaps(_meshMaterialMaps.size()),
+          _deviceEnvironmentConditional(_environment.conditionalCdf.size()),
+          _deviceEnvironmentMarginal(_environment.marginalCdf.size()),
+          _deviceBloomA(postProcess.bloom ? pixelCount(_width, _height) : 0),
+          _deviceBloomB(postProcess.bloom ? pixelCount(_width, _height) : 0),
+          _deviceAccumulation(pixelCount(_width, _height)), _deviceOutput(pixelCount(_width, _height) * 4u)
     {
         _devicePrimitives.upload(_primitives);
         _deviceMaterials.upload(_materials);
@@ -382,6 +427,8 @@ class CudaRenderSession
         _deviceTexels.upload(_textures.texels);
         _deviceTextureRanges.upload(_textures.ranges);
         _deviceMeshMaterialMaps.upload(_meshMaterialMaps);
+        _deviceEnvironmentConditional.upload(_environment.conditionalCdf);
+        _deviceEnvironmentMarginal.upload(_environment.marginalCdf);
 
         _view.primitives = _devicePrimitives.get();
         _view.primitiveCount = checkedCount(_primitives.size(), "primitives");
@@ -411,6 +458,11 @@ class CudaRenderSession
         _view.meshMaterialMapCount = checkedCount(_meshMaterialMaps.size(), "mesh material maps");
         _view.camera = toDevice(snapshot.camera);
         _view.background = toDeviceBackground(snapshot.background);
+        _view.background.environmentConditionalCdf = _deviceEnvironmentConditional.get();
+        _view.background.environmentMarginalCdf = _deviceEnvironmentMarginal.get();
+        _view.background.environmentWidth = _environment.width;
+        _view.background.environmentHeight = _environment.height;
+        _view.background.environmentTotal = _environment.total;
         _view.postProcess = toDevice(postProcess);
         _view.seed = seed;
 
@@ -484,7 +536,8 @@ class CudaRenderSession
             return;
 
         finishBatch();
-        Cuda::launchPostProcess(_view, _deviceAccumulation.get(), renderedSamples, _deviceOutput.get(), _stream);
+        Cuda::launchPostProcess(_view, _deviceAccumulation.get(), renderedSamples, _deviceBloomA.get(),
+                                _deviceBloomB.get(), _deviceOutput.get(), _stream);
         checkCuda(cudaGetLastError(), "post-process kernel launch");
         checkCuda(cudaStreamSynchronize(_stream), "post-process synchronize");
     }
@@ -579,6 +632,7 @@ class CudaRenderSession
     HostBVH _bvh;
     HostMeshes _meshes;
     HostTextures _textures;
+    HostEnvironment _environment;
     std::vector<int> _meshMaterialMaps;
     DeviceBuffer<Cuda::Primitive> _devicePrimitives;
     DeviceBuffer<Cuda::Material> _deviceMaterials;
@@ -593,6 +647,10 @@ class CudaRenderSession
     DeviceBuffer<Cuda::Vec3> _deviceTexels;
     DeviceBuffer<Cuda::TextureRange> _deviceTextureRanges;
     DeviceBuffer<int> _deviceMeshMaterialMaps;
+    DeviceBuffer<float> _deviceEnvironmentConditional;
+    DeviceBuffer<float> _deviceEnvironmentMarginal;
+    DeviceBuffer<float4> _deviceBloomA;
+    DeviceBuffer<float4> _deviceBloomB;
     DeviceBuffer<float4> _deviceAccumulation;
     DeviceBuffer<unsigned char> _deviceOutput;
     std::vector<uint32_t> _hostPixels;
@@ -766,6 +824,9 @@ void CUDARenderer::run(const RenderContext &context)
             }
             std::clog << std::endl;
 
+            if (postProcess.bloom)
+                session->refreshOutput(totalSamples);
+
             const std::vector<uint32_t> &pixels = session->copyImage();
 
             writeOutput(context, session->width(), session->height(), pixels);
@@ -916,6 +977,12 @@ void CUDARenderer::run(const RenderContext &context)
                 session->setPostProcess(postProcess);
                 session->refreshOutput(start);
                 postProcessDirty = false;
+                refreshed = true;
+            }
+
+            if (postProcess.bloom && !refreshed)
+            {
+                session->refreshOutput(start);
                 refreshed = true;
             }
 

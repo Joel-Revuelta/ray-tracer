@@ -11,7 +11,9 @@
 #include "Scene.hpp"
 #include "SceneBuilder.hpp"
 #include "TransformData.hpp"
+#include "render/Environment.hpp"
 #include "render/Texture.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -160,6 +162,53 @@ int checkCloneRequirement(Factory &factory)
     return fail("scene composition accepted a primitive without clone()");
 }
 
+int checkHDREnvironment(const std::string &path)
+{
+    const std::shared_ptr<const Texture> texture = loadTextureFile(path);
+
+    if (!texture)
+        return fail("could not load the HDR environment");
+
+    float maximum = 0.0f;
+
+    for (const Color3D &pixel : texture->getPixels())
+    {
+        maximum = std::max(maximum, pixel.getX());
+        maximum = std::max(maximum, pixel.getY());
+        maximum = std::max(maximum, pixel.getZ());
+    }
+
+    if (!(maximum > 1.0f) || !std::isfinite(maximum))
+        return fail("HDR environment did not preserve values above 1.0");
+
+    const std::shared_ptr<const EnvironmentDistribution> distribution = buildEnvironmentDistribution(*texture);
+
+    if (!distribution || distribution->total <= 0.0f)
+        return fail("HDR environment distribution is empty");
+
+    uint32_t seed = 12345;
+
+    for (int i = 0; i < 512; ++i)
+    {
+        const EnvironmentSample sample = sampleEnvironment(*texture, *distribution, seed);
+
+        if (!sample.valid || !(sample.pdf > 0.0f) || !std::isfinite(sample.pdf))
+            return fail("HDR environment sampling produced an invalid sample");
+        if (!std::isfinite(sample.direction.lengthSquared()) ||
+            std::fabs(sample.direction.length() - 1.0f) > 1e-3f)
+            return fail("HDR environment sampling produced a non-unit direction");
+        if (!std::isfinite(sample.radiance.getX()) || sample.radiance.getX() < 0.0f)
+            return fail("HDR environment sampling produced invalid radiance");
+
+        const float pdf = environmentPdf(*texture, *distribution, sample.direction);
+
+        if (!(pdf > 0.0f) || !std::isfinite(pdf))
+            return fail("HDR environment PDF is invalid");
+    }
+
+    return 0;
+}
+
 int checkTextureColorSpace(void)
 {
     const char *path = "renderer_regressions_gray.ppm";
@@ -191,15 +240,17 @@ int checkTextureColorSpace(void)
 
 int main(int ac, char **av)
 {
-    if (ac != 2)
+    if (ac != 3)
     {
-        std::cerr << "usage: " << av[0] << " <mtl-scene>" << std::endl;
+        std::cerr << "usage: " << av[0] << " <mtl-scene> <hdr-environment>" << std::endl;
         return 2;
     }
 
     Factory factory;
 
     if (const int status = checkPhongCoefficients(av[1]); status != 0)
+        return status;
+    if (const int status = checkHDREnvironment(av[2]); status != 0)
         return status;
     if (const int status = checkMaterialOverride(factory); status != 0)
         return status;
