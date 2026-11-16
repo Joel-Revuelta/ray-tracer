@@ -4,8 +4,67 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  headless:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc
+            cc: gcc
+            cxx: g++
+          - name: clang
+            cc: clang
+            cxx: clang++
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang cmake pkg-config libconfig++-dev
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DRAYTRACER_ENABLE_GUI=OFF \
+            -DRAYTRACER_ENABLE_CUDA=OFF \
+            -DRAYTRACER_IN_SOURCE_OUTPUT=OFF
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Smoke-test every scene
+        run: |
+          for scene in scenes/*.cfg; do
+            name="$(basename "${scene%.cfg}")"
+            ./build/raytracer --path "$scene" --cli --renderer cpu \
+              --width 16 --height 9 --samples 1 \
+              --output "/tmp/${name}.ppm"
+          done
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-${{ matrix.name }}
+          path: build/Testing
+          if-no-files-found: ignore
+
+  sanitizers:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,21 +78,54 @@ jobs:
       - name: Configure
         run: |
           cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=Debug \
             -DRAYTRACER_ENABLE_GUI=OFF \
-            -DRAYTRACER_ENABLE_CUDA=OFF
+            -DRAYTRACER_ENABLE_CUDA=OFF \
+            -DRAYTRACER_IN_SOURCE_OUTPUT=OFF \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
 
       - name: Test
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
+          UBSAN_OPTIONS: "halt_on_error=1:print_stacktrace=1"
         run: ctest --test-dir build --output-on-failure
 
-      - name: Smoke-test every scene
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-sanitizers
+          path: build/Testing
+          if-no-files-found: ignore
+
+  cuda-parity:
+    if: ${{ vars.RAYTRACER_CUDA_CI == 'true' }}
+    runs-on: [self-hosted, cuda]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
         run: |
-          for scene in scenes/*.cfg; do
-            name="$(basename "${scene%.cfg}")"
-            ./raytracer --path "$scene" --cli --renderer cpu \
-              --width 16 --height 9 --frames 1 \
-              --output "/tmp/${name}.ppm"
-          done
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DRAYTRACER_ENABLE_GUI=OFF \
+            -DRAYTRACER_IN_SOURCE_OUTPUT=OFF
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: CPU/CUDA parity
+        run: ctest --test-dir build --output-on-failure -L parity
+
+      - name: CUDA memory check
+        run: |
+          /usr/local/cuda/bin/compute-sanitizer --tool memcheck --target-processes all \
+            ./build/raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
+            --width 32 --height 18 --samples 2 --animation \
+            --start-frame 0 --end-frame 0 --output /tmp/cuda-sanitizer.ppm

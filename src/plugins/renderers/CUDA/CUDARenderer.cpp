@@ -12,11 +12,13 @@
 #include "plugins/renderers/SceneSnapshot.hpp"
 #include "render/ImageWriter.hpp"
 #include "render/PostProcess.hpp"
+#include "render/SequenceMetadata.hpp"
 #include "render/Texture.hpp"
 #include "scene/BVHBuilder.hpp"
 #include "scene/Transform.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cuda_runtime.h>
 #include <cstddef>
 #include <cstdint>
@@ -31,6 +33,22 @@
 #include <vector>
 
 using namespace RayTracer;
+
+namespace
+{
+std::string formatDuration(double seconds)
+{
+    if (!std::isfinite(seconds) || seconds < 0.0)
+        seconds = 0.0;
+
+    const int total = static_cast<int>(seconds);
+    std::ostringstream formatted;
+
+    formatted << std::setfill('0') << std::setw(2) << total / 3600 << ":" << std::setw(2) << (total / 60) % 60
+              << ":" << std::setw(2) << total % 60;
+    return formatted.str();
+}
+} // namespace
 
 #ifndef RAYTRACER_CUDA_MIN_CC
 #define RAYTRACER_CUDA_MIN_CC 89
@@ -542,11 +560,38 @@ class CudaRenderSession
         if (renderedSamples <= 0)
             return;
 
+        refreshOutputFrom(_deviceAccumulation.get(), renderedSamples);
+    }
+
+    void beginShutter(void)
+    {
         finishBatch();
-        Cuda::launchPostProcess(_view, _deviceAccumulation.get(), renderedSamples, _deviceBloomA.get(),
-                                _deviceBloomB.get(), _deviceOutput.get(), _stream);
-        checkCuda(cudaGetLastError(), "post-process kernel launch");
-        checkCuda(cudaStreamSynchronize(_stream), "post-process synchronize");
+        if (!_deviceShutterAccumulation)
+            _deviceShutterAccumulation =
+                std::make_unique<DeviceBuffer<float4>>(pixelCount(_width, _height));
+
+        checkCuda(cudaMemsetAsync(_deviceShutterAccumulation->get(), 0,
+                                  pixelCount(_width, _height) * sizeof(float4), _stream),
+                  "cudaMemsetAsync");
+    }
+
+    void accumulateShutter(void)
+    {
+        if (!_deviceShutterAccumulation)
+            throw std::runtime_error("CUDA shutter accumulation was not initialized");
+
+        finishBatch();
+        Cuda::launchAccumulateShutter(_deviceAccumulation.get(), _deviceShutterAccumulation->get(),
+                                      static_cast<int>(pixelCount(_width, _height)), _stream);
+        checkCuda(cudaGetLastError(), "shutter accumulation kernel launch");
+    }
+
+    void refreshShutterOutput(int renderedSamples)
+    {
+        if (!_deviceShutterAccumulation)
+            throw std::runtime_error("CUDA shutter output was not initialized");
+
+        refreshOutputFrom(_deviceShutterAccumulation->get(), renderedSamples);
     }
 
     void launchBatch(int sampleStart, int sampleCount)
@@ -631,6 +676,18 @@ class CudaRenderSession
     }
 
   private:
+    void refreshOutputFrom(const float4 *accumulation, int renderedSamples)
+    {
+        if (renderedSamples <= 0)
+            return;
+
+        finishBatch();
+        Cuda::launchPostProcess(_view, accumulation, renderedSamples, _deviceBloomA.get(),
+                                _deviceBloomB.get(), _deviceOutput.get(), _stream);
+        checkCuda(cudaGetLastError(), "post-process kernel launch");
+        checkCuda(cudaStreamSynchronize(_stream), "post-process synchronize");
+    }
+
     int _width;
     int _height;
     std::vector<Cuda::Primitive> _primitives;
@@ -659,6 +716,7 @@ class CudaRenderSession
     DeviceBuffer<float4> _deviceBloomA;
     DeviceBuffer<float4> _deviceBloomB;
     DeviceBuffer<float4> _deviceAccumulation;
+    std::unique_ptr<DeviceBuffer<float4>> _deviceShutterAccumulation;
     DeviceBuffer<unsigned char> _deviceOutput;
     std::vector<uint32_t> _hostPixels;
     bool _hostPixelsPinned = false;
@@ -671,7 +729,7 @@ class CudaRenderSession
 void writeOutput(const RenderContext &context, int width, int height, const std::vector<uint32_t> &pixels)
 {
     if (!context.options.outputPath.empty())
-        writeImageFile(context.options.outputPath, width, height, pixels);
+        writeImageFileAtomic(context.options.outputPath, width, height, pixels);
     else if (!context.gui)
         writePPM(std::cout, width, height, pixels);
 }
@@ -791,8 +849,79 @@ void CUDARenderer::run(const RenderContext &context)
         if (startFrame < 0 || endFrame < startFrame)
             throw std::invalid_argument("Invalid animation frame range");
 
+        const double fps = context.options.animationFps;
+        const ShutterSettings shutter{context.options.shutterAngle, context.options.shutterSamples};
+        const bool motionBlur = shutter.angle > 0.0f && shutter.samples > 1;
+        const int subframes = motionBlur ? shutter.samples : 1;
+        const int totalFrames = endFrame - startFrame + 1;
+        const std::string pattern =
+            context.options.outputPath.empty() ? "frame-%04d.ppm" : context.options.outputPath;
+
+        auto frameSeed = [&](int frame) {
+            return context.options.seed + static_cast<uint32_t>(frame) * 0x9e3779b9u;
+        };
+        auto subframeSeed = [&](int frame, int subframe) {
+            uint32_t seed = frameSeed(frame);
+
+            if (subframes > 1)
+                seed += static_cast<uint32_t>(subframe) * 0x85ebca6bu;
+            return seed;
+        };
+
+        auto writeMetadata = [&]() {
+            SequenceMetadata metadata;
+
+            metadata.scenePath = context.options.scenePath;
+            metadata.renderer = context.options.rendererName;
+            metadata.width = context.options.width;
+            metadata.height = context.options.height;
+            metadata.samples = context.options.frames;
+            metadata.seed = context.options.seed;
+            metadata.fps = fps;
+            metadata.startFrame = startFrame;
+            metadata.endFrame = endFrame;
+            metadata.shutterAngle = shutter.angle;
+            metadata.shutterSamples = shutter.samples;
+            metadata.postProcess = context.options.postProcess;
+
+            for (int frame = startFrame; frame <= endFrame; ++frame)
+            {
+                const double frameTime = context.animation->timeAtFrame(frame, fps);
+                std::shared_ptr<Camera> camera = context.animation->cameraAt(frameTime);
+
+                if (context.options.lensRadiusOverride >= 0.0f)
+                    camera->setLensRadius(context.options.lensRadiusOverride);
+                if (context.options.focusDistanceOverride > 0.0f)
+                    camera->setFocusDistance(context.options.focusDistanceOverride);
+
+                const std::string path = formatFramePath(pattern, frame);
+
+                metadata.frames.push_back(
+                    makeFrameMetadata(frame, frameTime, path, frameSeed(frame), *camera, frameFileExists(path)));
+            }
+
+            const std::string metadataPath = sequenceMetadataPath(pattern);
+
+            writeSequenceMetadata(metadataPath, metadata);
+            std::clog << "Wrote sequence metadata -> " << metadataPath << std::endl;
+        };
+
+        int firstRendered = startFrame;
+
+        if (context.options.resume)
+        {
+            while (firstRendered <= endFrame && frameFileExists(formatFramePath(pattern, firstRendered)))
+                ++firstRendered;
+
+            if (firstRendered > endFrame)
+            {
+                std::clog << "All animation frames already exist; leaving metadata unchanged." << std::endl;
+                return;
+            }
+        }
+
         std::shared_ptr<Camera> firstCamera =
-            context.animation->cameraAt(context.animation->timeAtFrame(startFrame, context.options.animationFps));
+            context.animation->cameraAt(context.animation->timeAtFrame(firstRendered, fps));
         firstCamera->initialize(context.options.width, context.options.height, firstCamera->getLookAt(),
                                 firstCamera->getLookFrom(), firstCamera->getVerticalFovDegree());
 
@@ -802,46 +931,75 @@ void CUDARenderer::run(const RenderContext &context)
             firstCamera->setFocusDistance(context.options.focusDistanceOverride);
 
         const SceneSnapshot snapshot = buildSceneSnapshot(*context.scene, *firstCamera);
-        const uint32_t frameSeed =
-            context.options.seed + static_cast<uint32_t>(startFrame) * 0x9e3779b9u;
-        CudaRenderSession session(snapshot, context.options.postProcess, frameSeed);
+        CudaRenderSession session(snapshot, context.options.postProcess, subframeSeed(firstRendered, 0));
+        const auto sequenceStart = std::chrono::steady_clock::now();
+        int completedFrames = 0;
 
         for (int frame = startFrame; frame <= endFrame; ++frame)
         {
-            std::shared_ptr<Camera> camera =
-                context.animation->cameraAt(context.animation->timeAtFrame(frame, context.options.animationFps));
-            camera->initialize(context.options.width, context.options.height, camera->getLookAt(),
-                               camera->getLookFrom(), camera->getVerticalFovDegree());
+            const std::string path = formatFramePath(pattern, frame);
+            const double frameTime = context.animation->timeAtFrame(frame, fps);
 
-            if (context.options.lensRadiusOverride >= 0.0f)
-                camera->setLensRadius(context.options.lensRadiusOverride);
-            if (context.options.focusDistanceOverride > 0.0f)
-                camera->setFocusDistance(context.options.focusDistanceOverride);
-
-            if (frame != startFrame)
+            if (context.options.resume && frameFileExists(path))
             {
+                ++completedFrames;
+                std::clog << "Skipped existing animation frame " << frame << " -> " << path << std::endl;
+                continue;
+            }
+
+            if (motionBlur)
+                session.beginShutter();
+
+            for (int subframe = 0; subframe < subframes; ++subframe)
+            {
+                std::shared_ptr<Camera> camera = context.animation->cameraAt(
+                    shutterSampleTime(frameTime, fps, shutter, subframe));
+
+                camera->initialize(context.options.width, context.options.height, camera->getLookAt(),
+                                   camera->getLookFrom(), camera->getVerticalFovDegree());
+
+                if (context.options.lensRadiusOverride >= 0.0f)
+                    camera->setLensRadius(context.options.lensRadiusOverride);
+                if (context.options.focusDistanceOverride > 0.0f)
+                    camera->setFocusDistance(context.options.focusDistanceOverride);
+
                 session.updateCamera(makeCameraData(*camera));
-                session.setSeed(context.options.seed + static_cast<uint32_t>(frame) * 0x9e3779b9u);
+                session.setSeed(subframeSeed(frame, subframe));
+
+                constexpr int batchSize = 16;
+
+                for (int start = 0; start < context.options.frames; start += batchSize)
+                {
+                    const int count = std::min(batchSize, context.options.frames - start);
+
+                    session.renderBatch(start, count);
+                }
+
+                if (motionBlur)
+                    session.accumulateShutter();
             }
 
-            constexpr int batchSize = 16;
-
-            for (int start = 0; start < context.options.frames; start += batchSize)
-            {
-                const int count = std::min(batchSize, context.options.frames - start);
-
-                session.renderBatch(start, count);
-            }
-
-            if (context.options.postProcess.bloom)
+            if (motionBlur)
+                session.refreshShutterOutput(context.options.frames * subframes);
+            else if (context.options.postProcess.bloom)
                 session.refreshOutput(context.options.frames);
 
             const std::vector<uint32_t> &pixels = session.copyImage();
-            const std::string path = formatFramePath(context.options.outputPath, frame);
 
-            writeImageFile(path, session.width(), session.height(), pixels);
-            std::clog << "\rRendered animation frame " << frame << "/" << endFrame << " -> " << path << std::endl;
+            writeImageFileAtomic(path, session.width(), session.height(), pixels);
+            ++completedFrames;
+
+            const double elapsed =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - sequenceStart).count();
+            const double average = completedFrames > 0 ? elapsed / completedFrames : 0.0;
+            const double eta = average * (totalFrames - completedFrames);
+
+            std::clog << "[" << completedFrames << "/" << totalFrames << "] frame " << frame << " -> " << path
+                      << " (elapsed " << formatDuration(elapsed) << ", ETA " << formatDuration(eta) << ")"
+                      << std::endl;
         }
+
+        writeMetadata();
         return;
     }
 

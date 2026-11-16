@@ -8,11 +8,13 @@
 #include "App.hpp"
 #include "plugins/renderers/IRenderer.hpp"
 #include "plugins/renderers/RendererRegistry.hpp"
+#include "render/ImageWriter.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -27,7 +29,8 @@ const char *const USAGE =
     "[--renderer cpu|cuda] [--width W] [--height H] [--samples N] [--frames N] [--threads N] "
     "[--seed N] [--device N] [--lens-radius R] [--focus-distance D] [--exposure E] "
     "[--tonemap none|reinhard|aces] [--bloom [--bloom-threshold T] [--bloom-intensity I] "
-    "[--bloom-radius R]] [--animation [--start-frame N] [--end-frame N] [--fps F]] "
+    "[--bloom-radius R]] [--animation [--start-frame N] [--end-frame N] [--fps F] "
+    "[--shutter-angle A] [--shutter-samples N] [--resume] [--validate]] "
     "[--output out.ppm|out.png|frame-%04d.png] [--list-renderers] [--list-guis]";
 
 std::string normalizeGuiName(std::string name)
@@ -230,6 +233,10 @@ App::App(int ac, char **av)
                                       {"start-frame", required_argument, NULL, 26},
                                       {"end-frame", required_argument, NULL, 27},
                                       {"fps", required_argument, NULL, 28},
+                                      {"shutter-angle", required_argument, NULL, 29},
+                                      {"shutter-samples", required_argument, NULL, 30},
+                                      {"resume", 0, NULL, 31},
+                                      {"validate", 0, NULL, 32},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -337,6 +344,24 @@ App::App(int ac, char **av)
         case 28:
             _fps = parsePositiveDouble(optarg, "fps");
             break;
+        case 29:
+            _shutterAngle = parseNonNegativeFloat(optarg, "shutter angle");
+
+            if (_shutterAngle >= 360.0f)
+            {
+                std::cerr << "Shutter angle must be less than 360 degrees." << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+            break;
+        case 30:
+            _shutterSamples = parsePositiveInt(optarg, "shutter samples");
+            break;
+        case 31:
+            _resume = true;
+            break;
+        case 32:
+            _validate = true;
+            break;
         case '?':
         default:
             std::cerr << "Unknown or incomplete option." << std::endl;
@@ -399,14 +424,17 @@ void App::run(void)
             camera->setFocusDistance(_focusDistance);
 
         std::shared_ptr<CameraAnimation> animation = _parser->getParsedAnimation();
-        const bool animationRequested = _animation || _startFrame >= 0 || _endFrame >= 0 || _fps > 0.0;
+        const bool animationRequested = _animation || _startFrame >= 0 || _endFrame >= 0 || _fps > 0.0 ||
+                                        _shutterAngle >= 0.0f || _shutterSamples > 0;
         int startFrame = 0;
         int endFrame = 0;
         double animationFps = 24.0;
+        float shutterAngle = 0.0f;
+        int shutterSamples = 1;
 
         if (animationRequested)
         {
-            if (_interface != Interface::CLI)
+            if (_interface != Interface::CLI && !_validate)
             {
                 std::cerr << "Animation rendering is only available with --cli." << std::endl;
                 std::exit(EXIT_FAILURE);
@@ -435,6 +463,25 @@ void App::run(void)
                 std::cerr << "End frame must not be before the start frame." << std::endl;
                 std::exit(EXIT_FAILURE);
             }
+
+            shutterAngle = animation->getShutter().angle;
+            shutterSamples = animation->getShutter().samples;
+
+            if (_shutterAngle >= 0.0f)
+                shutterAngle = _shutterAngle;
+            if (_shutterSamples > 0)
+                shutterSamples = _shutterSamples;
+
+            if (shutterAngle < 0.0f || shutterAngle >= 360.0f)
+            {
+                std::cerr << "Shutter angle must be in [0, 360) degrees." << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+            if (shutterSamples <= 0)
+            {
+                std::cerr << "Shutter samples must be positive." << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
         }
 
         const RendererEntry *rendererEntry = findRenderer(_rendererName);
@@ -443,6 +490,50 @@ void App::run(void)
             std::cerr << "Unknown renderer: " << _rendererName << std::endl;
             printRendererNames(std::cerr);
             std::exit(EXIT_FAILURE);
+        }
+
+        if (_validate)
+        {
+            std::cout << "Scene: " << _filepath << std::endl;
+            std::cout << "Renderer: " << rendererEntry->name << std::endl;
+            std::cout << "Resolution: " << _width << "x" << _height << std::endl;
+            std::cout << "Samples: " << _frames << std::endl;
+
+            if (animationRequested)
+            {
+                const std::string pattern = _output.empty() ? "frame-%04d.ppm" : _output;
+                const std::string firstPath = formatFramePath(pattern, startFrame);
+                const std::string lastPath = formatFramePath(pattern, endFrame);
+
+                std::cout << std::fixed << std::setprecision(3);
+                std::cout << "Animation: " << animation->getFrameCount(animationFps) << " frames at "
+                          << animationFps << " fps, duration " << animation->getDuration() << " s" << std::endl;
+                std::cout << "Frame range: " << startFrame << "-" << endFrame << std::endl;
+                std::cout << "Output pattern: " << pattern << std::endl;
+                std::cout << "First frame: " << firstPath << std::endl;
+                std::cout << "Last frame: " << lastPath << std::endl;
+                std::cout << "Shutter: " << shutterAngle << " deg, " << shutterSamples << " samples" << std::endl;
+            }
+            else
+            {
+                std::cout << "Output: " << (_output.empty() ? "stdout" : _output) << std::endl;
+
+                if (animation)
+                {
+                    const ShutterSettings &sceneShutter = animation->getShutter();
+
+                    std::cout << std::fixed << std::setprecision(3);
+                    std::cout << "Animation available: " << animation->getFrameCount() << " frames at "
+                              << animation->getFps() << " fps, duration " << animation->getDuration() << " s"
+                              << std::endl;
+                    std::cout << "Shutter: " << sceneShutter.angle << " deg, " << sceneShutter.samples
+                              << " samples" << std::endl;
+                    std::cout << "Pass --animation to render it." << std::endl;
+                }
+            }
+
+            std::cout << "Validation: ok" << std::endl;
+            return;
         }
 
         std::shared_ptr<IRenderer> renderer;
@@ -481,8 +572,16 @@ void App::run(void)
         context.options.startFrame = startFrame;
         context.options.endFrame = endFrame;
         context.options.animationFps = animationFps;
+
+        if (animationRequested && context.options.outputPath.empty())
+            context.options.outputPath = "frame-%04d.ppm";
+        context.options.shutterAngle = shutterAngle;
+        context.options.shutterSamples = shutterSamples;
         context.options.lensRadiusOverride = _lensRadius;
         context.options.focusDistanceOverride = _focusDistance;
+        context.options.resume = _resume;
+        context.options.scenePath = _filepath;
+        context.options.rendererName = rendererEntry->name;
 
         if (_interface == Interface::GUI)
         {

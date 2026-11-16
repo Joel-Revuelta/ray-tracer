@@ -53,6 +53,10 @@ class App
     int _startFrame = -1;
     int _endFrame = -1;
     double _fps = 0.0;
+    float _shutterAngle = -1.0f;
+    int _shutterSamples = 0;
+    bool _resume = false;
+    bool _validate = false;
 };
 
 } // namespace RayTracer

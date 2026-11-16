@@ -56,6 +56,44 @@ void RayTracer::writeImageFile(const std::string &path, int width, int height, c
         writePPMFile(path, width, height, pixels);
 }
 
+void RayTracer::writeImageFileAtomic(const std::string &path, int width, int height,
+                                     const std::vector<uint32_t> &pixels)
+{
+    if (path.empty())
+        throw std::invalid_argument("Output path must not be empty");
+
+    const std::filesystem::path destination(path);
+    const std::string temporaryName =
+        destination.stem().string() + ".tmp" + destination.extension().string();
+    const std::filesystem::path temporary =
+        destination.parent_path().empty() ? std::filesystem::path(temporaryName)
+                                          : destination.parent_path() / temporaryName;
+
+    writeImageFile(temporary.string(), width, height, pixels);
+
+    std::error_code error;
+
+    std::filesystem::rename(temporary, destination, error);
+    if (error)
+    {
+        std::filesystem::remove(temporary, error);
+        throw std::runtime_error("Failed to finalize output file: " + path);
+    }
+}
+
+bool RayTracer::frameFileExists(const std::string &path)
+{
+    std::error_code error;
+    const bool exists = std::filesystem::exists(path, error);
+
+    if (error || !exists || !std::filesystem::is_regular_file(path, error) || error)
+        return false;
+
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
+
+    return !error && size > 0;
+}
+
 std::string RayTracer::formatFramePath(const std::string &pattern, int frame)
 {
     if (frame < 0)

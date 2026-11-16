@@ -22,6 +22,8 @@ void launchRender(const SceneView &scene, int sampleStart, int sampleCount, floa
 void launchPostProcess(const SceneView &scene, const float4 *accumulation, int renderedSamples, float4 *bloomA,
                        float4 *bloomB, unsigned char *output, cudaStream_t stream);
 
+void launchAccumulateShutter(const float4 *source, float4 *destination, int count, cudaStream_t stream);
+
 } // namespace Cuda
 } // namespace RayTracer
 

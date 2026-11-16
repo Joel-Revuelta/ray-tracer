@@ -39,11 +39,15 @@ float lerp(float first, float second, float amount)
 }
 } // namespace
 
-CameraAnimation::CameraAnimation(std::vector<CameraKeyframe> keyframes, int fps)
-    : _keyframes(std::move(keyframes)), _fps(fps)
+CameraAnimation::CameraAnimation(std::vector<CameraKeyframe> keyframes, int fps, ShutterSettings shutter)
+    : _keyframes(std::move(keyframes)), _fps(fps), _shutter(shutter)
 {
     if (_fps <= 0)
         throw std::invalid_argument("Animation FPS must be positive");
+    if (!std::isfinite(_shutter.angle) || _shutter.angle < 0.0f || _shutter.angle >= 360.0f)
+        throw std::invalid_argument("Animation shutter angle must be in [0, 360) degrees");
+    if (_shutter.samples <= 0)
+        throw std::invalid_argument("Animation shutter sample count must be positive");
     if (_keyframes.size() < 2)
         throw std::invalid_argument("Animation requires at least two camera keyframes");
     if (std::fabs(_keyframes.front().time) > 1e-9)
@@ -152,4 +156,20 @@ double CameraAnimation::timeAtFrame(int frame, double fps) const
 const std::vector<CameraKeyframe> &CameraAnimation::getKeyframes(void) const
 {
     return _keyframes;
+}
+
+const ShutterSettings &CameraAnimation::getShutter(void) const
+{
+    return _shutter;
+}
+
+double RayTracer::shutterSampleTime(double frameTime, double fps, const ShutterSettings &shutter, int sample)
+{
+    if (shutter.angle <= 0.0f || shutter.samples <= 1)
+        return frameTime;
+
+    const double exposure = (static_cast<double>(shutter.angle) / 360.0) / fps;
+    const double offset = (static_cast<double>(sample) + 0.5) / static_cast<double>(shutter.samples);
+
+    return frameTime - exposure * 0.5 + offset * exposure;
 }

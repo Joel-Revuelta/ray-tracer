@@ -100,7 +100,9 @@ bloom: `sakura_shrine` at exposure `1.25`, `brass_orrery` at `0.85`,
 `sakura_shrine`, `brass_orrery` and `tidal_bloom` include camera-only
 `animation` blocks. Still renders are unchanged; pass `--animation` to play the
 timeline. `--start-frame`, `--end-frame` and `--fps` select a sub-range and can
-override the scene frame rate.
+override the scene frame rate. `--shutter-angle` and `--shutter-samples` add
+camera motion blur, `--resume` skips frames already on disk, and `--validate`
+prints the resolved settings without rendering.
 
 ```bash
 # Brass Orrery: 8-second arc at 24 fps, full sequence
@@ -115,6 +117,12 @@ mkdir -p frames
   --width 640 --height 360 --samples 8 \
   --start-frame 0 --end-frame 23 --fps 12 \
   --output 'frames/sakura-%04d.ppm'
+
+# Half-frame motion blur, resumable after an interruption
+./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cuda \
+  --width 1280 --height 720 --samples 64 --animation \
+  --shutter-angle 180 --shutter-samples 8 --resume \
+  --output 'frames/sakura-%04d.png'
 ```
 
 Assemble PNG frames with `ffmpeg` after rendering, or use
@@ -123,6 +131,13 @@ Assemble PNG frames with `ffmpeg` after rendering, or use
 ```bash
 SCENE=sakura_shrine SAMPLES=64 WIDTH=1280 HEIGHT=720 ./scenes/render_animation.sh
 FFMPEG=1 ./scenes/render_animation.sh brass_orrery
+```
+
+All render scripts accept `RAYTRACER_BIN` when the executable lives outside the
+default `./raytracer` location:
+
+```bash
+RAYTRACER_BIN=./build/raytracer ./scenes/render_hd.sh
 ```
 
 ## Material showcase renders

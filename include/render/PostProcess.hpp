@@ -12,9 +12,12 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace RayTracer
 {
+
+class Vec3D;
 
 enum class ToneMapping : int
 {
@@ -106,6 +109,13 @@ inline std::uint8_t postProcessToByte(float linear, const PostProcessSettings &s
 
     return static_cast<std::uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
 }
+
+/** Applies the CPU bright-pass and separable Gaussian bloom to linear HDR data. */
+void applyBloomCPU(std::vector<Vec3D> &hdr, int width, int height, const PostProcessSettings &settings);
+
+/** Post-processes linear HDR pixels into RGBA bytes, including optional bloom. */
+std::vector<std::uint32_t> postProcessToRGBA(std::vector<Vec3D> hdr, int width, int height,
+                                             const PostProcessSettings &settings);
 
 } // namespace RayTracer
 

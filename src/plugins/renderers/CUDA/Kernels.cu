@@ -1754,6 +1754,34 @@ void launchRender(const SceneView &scene, int sampleStart, int sampleCount, floa
                                              reinterpret_cast<uchar4 *>(output));
 }
 
+namespace
+{
+__global__ void accumulateShutterKernel(const float4 *source, float4 *destination, int count)
+{
+    const int index = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+
+    if (index >= count)
+        return;
+
+    const float4 value = source[index];
+    const float4 accumulated = destination[index];
+
+    destination[index] = make_float4(accumulated.x + value.x, accumulated.y + value.y, accumulated.z + value.z,
+                                     accumulated.w + value.w);
+}
+} // namespace
+
+void launchAccumulateShutter(const float4 *source, float4 *destination, int count, cudaStream_t stream)
+{
+    if (count <= 0)
+        return;
+
+    constexpr int blockSize = 256;
+    const int gridSize = (count + blockSize - 1) / blockSize;
+
+    accumulateShutterKernel<<<gridSize, blockSize, 0, stream>>>(source, destination, count);
+}
+
 void launchPostProcess(const SceneView &scene, const float4 *accumulation, int renderedSamples, float4 *bloomA,
                        float4 *bloomB, unsigned char *output, cudaStream_t stream)
 {

@@ -56,6 +56,18 @@ find_package(Threads REQUIRED)
 
 option(RAYTRACER_ENABLE_GUI "Build the SFML GUI plugin when SFML 3 is available" ON)
 option(RAYTRACER_ENABLE_OPENGL_GUI "Build the GLFW/OpenGL GUI plugin" ON)
+option(RAYTRACER_IN_SOURCE_OUTPUT
+    "Write the executable and plugins to the repository root instead of the build tree" ON)
+
+# Keep the historical in-source layout by default so ./raytracer and ./plugins
+# keep working. CI and multi-build workflows can switch to an isolated layout.
+if (RAYTRACER_IN_SOURCE_OUTPUT)
+    set(RAYTRACER_RUNTIME_DIR "${CMAKE_BINARY_DIR}/..")
+    set(RAYTRACER_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/../plugins")
+else()
+    set(RAYTRACER_RUNTIME_DIR "${CMAKE_BINARY_DIR}")
+    set(RAYTRACER_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/plugins")
+endif()
 if (RAYTRACER_ENABLE_GUI)
     find_package(SFML 3.0 COMPONENTS Graphics Window System QUIET)
 endif()
@@ -133,7 +145,7 @@ if (RAYTRACER_ENABLE_CUDA)
             CUDA_STANDARD 20
             CUDA_STANDARD_REQUIRED ON
             CUDA_ARCHITECTURES "${RAYTRACER_CUDA_ARCH}"
-            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
+            LIBRARY_OUTPUT_DIRECTORY "${RAYTRACER_PLUGIN_OUTPUT_DIR}"
             PREFIX ""
         )
         message(STATUS "CUDA renderer enabled (CUDA ${CUDAToolkit_VERSION}, architectures ${RAYTRACER_CUDA_ARCH})")
@@ -148,7 +160,7 @@ if (RAYTRACER_ENABLE_GUI AND SFML_FOUND)
     add_library(raytracer_gui SHARED ${SOURCES_GUI})
     target_link_libraries(raytracer_gui PRIVATE raytracer_core SFML::Graphics SFML::Window SFML::System)
     set_target_properties(raytracer_gui PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
+        LIBRARY_OUTPUT_DIRECTORY "${RAYTRACER_PLUGIN_OUTPUT_DIR}"
         PREFIX ""
     )
 elseif (RAYTRACER_ENABLE_GUI)
@@ -160,7 +172,7 @@ if (RAYTRACER_ENABLE_OPENGL_GUI AND OpenGL_FOUND AND glfw3_FOUND AND GLEW_FOUND)
     add_library(raytracer_gui_opengl SHARED src/plugins/GUI/OpenGL.cpp)
     target_link_libraries(raytracer_gui_opengl PRIVATE raytracer_core glfw GLEW::GLEW OpenGL::GL)
     set_target_properties(raytracer_gui_opengl PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
+        LIBRARY_OUTPUT_DIRECTORY "${RAYTRACER_PLUGIN_OUTPUT_DIR}"
         PREFIX ""
     )
     message(STATUS "OpenGL GUI enabled (GLFW ${glfw3_VERSION}, GLEW ${GLEW_VERSION})")
@@ -310,7 +322,7 @@ add_custom_target(transformations DEPENDS raytracer_transformation_translation r
 
 # Set output directories for binaries and libraries
 set_target_properties(raytracer PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/.."
+    RUNTIME_OUTPUT_DIRECTORY "${RAYTRACER_RUNTIME_DIR}"
 )
 
 set_target_properties(
@@ -334,7 +346,7 @@ set_target_properties(
     raytracer_transformation_rotation
     raytracer_renderer_cpu
     PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../plugins"
+        LIBRARY_OUTPUT_DIRECTORY "${RAYTRACER_PLUGIN_OUTPUT_DIR}"
         PREFIX ""
 )
 
@@ -348,7 +360,7 @@ add_test(
 )
 set_tests_properties(renderer_regressions PROPERTIES
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    ENVIRONMENT "RAYTRACER_PLUGIN_DIR=${CMAKE_BINARY_DIR}/../plugins"
+    ENVIRONMENT "RAYTRACER_PLUGIN_DIR=${RAYTRACER_PLUGIN_OUTPUT_DIR}"
 )
 add_test(
     NAME cli_cpu_smoke
@@ -696,6 +708,126 @@ add_test(
             --animation --start-frame 0 --end-frame 999
 )
 add_test(
+    NAME parser_rejects_invalid_animation_start
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_start.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_start.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_animation_single
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_single.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_single.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_animation_fps
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_fps.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_fps.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_animation_pose
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_pose.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_pose.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_animation_missing_camera
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_missing_camera.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_missing_camera.ppm
+)
+add_test(
+    NAME cli_rejects_invalid_animation_fps
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --fps 0
+)
+add_test(
+    NAME cli_rejects_animation_start_after_end
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --animation --start-frame 5 --end-frame 2
+)
+add_test(
+    NAME cli_rejects_animation_bad_output_pattern
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --animation --end-frame 0
+            --output ${CMAKE_BINARY_DIR}/invalid-animation-%s.png
+)
+add_test(
+    NAME cli_rejects_animation_missing_output_dir
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --animation --end-frame 0
+            --output /nonexistent/raytracer-animation-%02d.ppm
+)
+add_test(
+    NAME cpu_cuda_parity
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/cpu_cuda_parity.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(cpu_cuda_parity PROPERTIES
+    SKIP_RETURN_CODE 77
+    LABELS "parity"
+    WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR}
+)
+add_test(
+    NAME animation_shutter_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/animation_shutter.cfg
+            --cli --renderer cpu --width 32 --height 18 --samples 1
+            --animation --start-frame 12 --end-frame 12
+            --output ${CMAKE_BINARY_DIR}/animation_shutter_smoke-%02d.ppm
+)
+add_test(
+    NAME deterministic_motion_blur
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_motion_blur.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_invalid_animation_shutter_angle
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_shutter_angle.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_shutter_angle.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_animation_shutter_samples
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_animation_shutter_samples.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_animation_shutter_samples.ppm
+)
+add_test(
+    NAME cli_rejects_invalid_shutter_angle
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --shutter-angle 360
+)
+add_test(
+    NAME cli_rejects_invalid_shutter_samples
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --shutter-samples 0
+)
+add_test(
+    NAME validate_still_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
+            --cli --renderer cpu --width 320 --height 180 --samples 8
+            --output ${CMAKE_BINARY_DIR}/validate_still.png --validate
+)
+add_test(
+    NAME validate_animation_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --renderer cpu --width 320 --height 180 --samples 8 --animation
+            --shutter-angle 180 --shutter-samples 4
+            --output ${CMAKE_BINARY_DIR}/validate_animation-%04d.png --validate
+)
+add_test(
+    NAME cli_rejects_validate_bad_pattern
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --output ${CMAKE_BINARY_DIR}/validate-%s.png --validate
+)
+add_test(
     NAME cli_rejects_invalid_bloom_radius
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --width 16 --height 9 --frames 1
@@ -725,9 +857,11 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
     frozen_cathedral_smoke deterministic_scene_pack_render
     bloom_smoke deterministic_bloom_render
-    animation_smoke implicit_animation_smoke deterministic_animation_render
+    animation_smoke implicit_animation_smoke animation_shutter_smoke
+    deterministic_animation_render deterministic_motion_blur
+    validate_still_smoke validate_animation_smoke
     png_output_smoke
-    PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..)
+    PROPERTIES WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR})
 set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_transform parser_rejects_invalid_obj
     parser_rejects_invalid_lens parser_rejects_invalid_focus
@@ -737,17 +871,81 @@ set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_prefab_instances_in_prefabs parser_rejects_float_overflow
     parser_rejects_uv_overflow cli_rejects_invalid_bloom_radius
     parser_rejects_invalid_animation_order parser_rejects_invalid_animation_fov
-    cli_rejects_missing_animation cli_rejects_invalid_animation_range PROPERTIES
+    cli_rejects_missing_animation cli_rejects_invalid_animation_range
+    parser_rejects_invalid_animation_start parser_rejects_invalid_animation_single
+    parser_rejects_invalid_animation_fps parser_rejects_invalid_animation_pose
+    parser_rejects_invalid_animation_missing_camera
+    cli_rejects_invalid_animation_fps cli_rejects_animation_start_after_end
+    cli_rejects_animation_bad_output_pattern
+    cli_rejects_animation_missing_output_dir
+    parser_rejects_invalid_animation_shutter_angle
+    parser_rejects_invalid_animation_shutter_samples
+    cli_rejects_invalid_shutter_angle cli_rejects_invalid_shutter_samples
+    cli_rejects_validate_bad_pattern PROPERTIES
     WILL_FAIL TRUE
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
+    WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR}
 )
 set_tests_properties(parser_rejects_invalid_roughness PROPERTIES
     WILL_FAIL TRUE
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
+    WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR}
 )
 set_tests_properties(parser_rejects_negative_material PROPERTIES
     WILL_FAIL TRUE
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/..
+    WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR}
+)
+
+# Test labels keep local and CI runs selectable: ctest -L animation, -L parity,
+# -L negative, and so on. A test may carry more than one label.
+set_tests_properties(renderer_regressions PROPERTIES LABELS "unit")
+set_tests_properties(
+    cli_cpu_smoke list_renderers list_guis post_process_smoke roughness_smoke
+    threads_smoke transform_smoke mesh_smoke mesh_smooth_normals mesh_flat_fallback
+    dof_smoke dof_cli_override soft_shadow_smoke texture_smoke obj_materials_smoke
+    environment_smoke mtl_materials_smoke group_transform_smoke prefab_instances_smoke
+    sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
+    frozen_cathedral_smoke bloom_smoke validate_still_smoke validate_animation_smoke
+    PROPERTIES LABELS "smoke"
+)
+set_tests_properties(animation_smoke implicit_animation_smoke animation_shutter_smoke PROPERTIES
+    LABELS "smoke;animation"
+)
+set_tests_properties(deterministic_motion_blur PROPERTIES LABELS "scene;animation")
+set_tests_properties(png_output_smoke PROPERTIES LABELS "output;smoke")
+set_tests_properties(
+    deterministic_cpu_render seed_deterministic_cpu_render deterministic_dof_render
+    deterministic_soft_shadow_render deterministic_texture_render
+    deterministic_obj_materials_render deterministic_environment_render
+    deterministic_mtl_materials_render deterministic_prefabs_render
+    deterministic_scene_pack_render deterministic_bloom_render
+    PROPERTIES LABELS "scene"
+)
+set_tests_properties(bvh_matches_linear mesh_bvh_matches_linear PROPERTIES
+    LABELS "scene;parity"
+)
+set_tests_properties(deterministic_animation_render PROPERTIES LABELS "scene;animation")
+set_tests_properties(
+    parser_rejects_negative_material parser_rejects_invalid_roughness
+    parser_rejects_invalid_transform parser_rejects_invalid_obj parser_rejects_invalid_lens
+    parser_rejects_invalid_focus parser_rejects_invalid_area_light parser_rejects_invalid_texture
+    parser_rejects_invalid_material_group parser_rejects_invalid_environment
+    parser_rejects_float_overflow parser_rejects_uv_overflow parser_rejects_invalid_mtl
+    parser_rejects_unknown_prefab parser_rejects_prefab_instances_in_prefabs
+    cli_rejects_invalid_bloom_radius cli_rejects_invalid_threads cli_rejects_invalid_seed
+    PROPERTIES LABELS "negative"
+)
+set_tests_properties(
+    parser_rejects_invalid_animation_order parser_rejects_invalid_animation_fov
+    cli_rejects_missing_animation cli_rejects_invalid_animation_range
+    parser_rejects_invalid_animation_start parser_rejects_invalid_animation_single
+    parser_rejects_invalid_animation_fps parser_rejects_invalid_animation_pose
+    parser_rejects_invalid_animation_missing_camera cli_rejects_invalid_animation_fps
+    cli_rejects_animation_start_after_end cli_rejects_animation_bad_output_pattern
+    cli_rejects_animation_missing_output_dir
+    parser_rejects_invalid_animation_shutter_angle
+    parser_rejects_invalid_animation_shutter_samples
+    cli_rejects_invalid_shutter_angle cli_rejects_invalid_shutter_samples
+    cli_rejects_validate_bad_pattern
+    PROPERTIES LABELS "negative;animation"
 )
 
 # Install a self-contained bundle: executable and core in bin/, plugins in

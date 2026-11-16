@@ -28,7 +28,8 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
 - **Headless CLI** — binary PPM or PNG output, stdout support, configurable
   resolution/samples, exposure and tonemapping.
 - **Camera animation** — keyframed position/look-at/FOV/lens/focus timelines,
-  deterministic numbered frame sequences, and CPU/CUDA playback from the CLI.
+  deterministic numbered frame sequences, camera motion blur, resumable
+  rendering and JSON sequence metadata, with CPU/CUDA playback from the CLI.
 - **Visual pipeline** — exact sRGB output, optional Reinhard/ACES tonemapping,
   and scene background gradients for reflections.
 - **Materials** — diffuse, emissive, flat-colour, Fresnel glass and GGX-rough
@@ -160,8 +161,17 @@ cmake --build build -j"$(nproc)"
 ctest --test-dir build --output-on-failure
 ```
 
-The executable is written to the repository root as `./raytracer`, the shared
-core library is kept in `build/`, and plugins are written to `plugins/`.
+By default the executable is written to the repository root as `./raytracer`,
+the shared core library stays in `build/`, and plugins are written to
+`plugins/`. For CI or when keeping several build directories, configure with
+`-DRAYTRACER_IN_SOURCE_OUTPUT=OFF`; the executable and plugins then stay inside
+the build tree:
+
+```bash
+cmake -S . -B build -DRAYTRACER_IN_SOURCE_OUTPUT=OFF
+cmake --build build -j"$(nproc)"
+./build/raytracer --list-renderers
+```
 
 Install a self-contained bundle with:
 
@@ -192,7 +202,9 @@ cmake -S . -B build -DCUDAToolkit_ROOT=/usr/local/cuda-13.4
 cmake -S . -B build -DRAYTRACER_CUDA_ARCH=86
 ```
 
-Run the binary from the repository root so that `./plugins/` resolves correctly.
+With the default layout, run `./raytracer` from the repository root so that
+`./plugins/` resolves correctly. Isolated builds can run from anywhere; plugin
+lookup starts next to the executable.
 
 ## Quick start
 
@@ -225,8 +237,10 @@ ffmpeg -framerate 24 -i 'frames/orrery-%04d.png' \
 ```
 
 `--start-frame`, `--end-frame` and `--fps` select a sub-range and override the
-scene frame rate. Animation is CLI-only; still renders of the same scene are
-unchanged.
+scene frame rate. Add `--shutter-angle 180 --shutter-samples 8` for camera
+motion blur. `--resume` skips completed frames, and `--validate` prints the
+resolved frame range and output pattern without rendering. Animation is
+CLI-only; still renders of the same scene are unchanged.
 
 Open the interactive SFML window:
 
@@ -306,6 +320,10 @@ Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
 | `--start-frame <N>` | First animation frame, inclusive. | `0` |
 | `--end-frame <N>` | Last animation frame, inclusive. | last frame |
 | `--fps <F>` | Override the scene animation frame rate. | scene value |
+| `--shutter-angle <A>` | Camera shutter opening in degrees; `0` disables blur. | scene value |
+| `--shutter-samples <N>` | Deterministic motion-blur subframe count. | scene value |
+| `--resume` | Skip animation frames that already exist. | off |
+| `--validate` | Parse and print the resolved render settings, then exit. | off |
 | `--output <file>` | Output PPM/PNG path or animation frame pattern. | stdout; `frame-%04d.ppm` for animation |
 | `--list-renderers` | List renderer plugins and exit. | |
 | `--list-guis` | List GUI backends and exit. | |
@@ -323,6 +341,9 @@ Important details:
   Animated renders default to `frame-%04d.ppm` in the current directory.
 - In GUI mode, no file is written unless `--output` is provided. Animation is
   rejected in GUI mode.
+- Animation frames are written atomically and produce a JSON metadata sidecar.
+  Use `--resume` to complete an interrupted sequence and `--validate` to check
+  the resolved settings first.
 - Errors exit with status `1` and do not write an image.
 - `--list-renderers` and `--help` exit with status `0`.
 

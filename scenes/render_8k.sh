@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+RAYTRACER_BIN="${RAYTRACER_BIN:-./raytracer}"
+if [ ! -x "$RAYTRACER_BIN" ] && [ -x "./build/raytracer" ]; then
+    RAYTRACER_BIN="./build/raytracer"
+fi
+
 WIDTH="${WIDTH:-7680}"
 HEIGHT="${HEIGHT:-4320}"
 FRAMES="${FRAMES:-2048}"
@@ -19,7 +24,7 @@ mkdir -p "$OUT_DIR"
 for scene in "${SCENES[@]}"; do
     echo "Rendering ${scene} at ${WIDTH}x${HEIGHT} with ${FRAMES} frames using ${RENDERER}..."
     start=$(date +%s)
-    ./raytracer --path "scenes/${scene}.cfg" --cli --renderer "$RENDERER" \
+    "$RAYTRACER_BIN" --path "scenes/${scene}.cfg" --cli --renderer "$RENDERER" \
         --width "$WIDTH" --height "$HEIGHT" --frames "$FRAMES" \
         --output "${OUT_DIR}/${scene}.ppm"
     end=$(date +%s)

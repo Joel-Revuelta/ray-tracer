@@ -52,6 +52,13 @@ struct RenderOptions
     int startFrame;
     int endFrame;
     double animationFps;
+    float shutterAngle;
+    int shutterSamples;
+    float lensRadiusOverride;
+    float focusDistanceOverride;
+    bool resume;
+    std::string scenePath;
+    std::string rendererName;
 };
 
 struct RenderContext
@@ -295,14 +302,22 @@ black.
 Both renderers play the same `CameraAnimation` timeline and share the per-frame
 seed formula `seed + frame * 0x9e3779b9u`.
 
-- The CPU renderer creates a fresh `Renderer` per frame with the interpolated
-  camera. This reuses the immutable scene graph and avoids rebuilding geometry;
-  allocation cost is small relative to tracing.
+- The CPU renderer creates a fresh `Renderer` per subframe with the interpolated
+  camera and reads its linear HDR average. This reuses the immutable scene graph
+  and avoids rebuilding geometry; allocation cost is small relative to tracing.
 - The CUDA renderer keeps one `CudaRenderSession` alive and updates only
-  `CameraData` and the seed between frames. Device memory for the BVH, meshes
-  and textures is allocated once.
-- Both write through `formatFramePath` and `writeImageFile`, so `.ppm` and
-  `.png` sequences use identical names and numbering.
+  `CameraData` and the seed between subframes. Device memory for the BVH,
+  meshes and textures is allocated once.
+- Motion blur accumulates subframes in linear HDR and post-processes once.
+  CUDA uses a lazily allocated device shutter buffer and an accumulation
+  kernel; shutter-off sessions keep their previous memory use.
+- Both write through `formatFramePath` and `writeImageFileAtomic`, so `.ppm`
+  and `.png` sequences use identical names and numbering, and interrupted
+  writes never leave partial final frames.
+- `--resume` skips frames whose final output already exists. The CUDA session
+  is initialized from the first frame that will actually render.
+- A JSON sidecar records the resolved settings and per-frame camera poses; both
+  renderers produce the same schema.
 - Animation is CLI-only. GUI renderers reject animation flags so interactive
   camera control cannot fight the timeline.
 - CPU/CUDA sequences match within normal Monte Carlo noise when the sample

@@ -26,6 +26,12 @@ struct CameraKeyframe
     float focusDistance = 0.0f;
 };
 
+struct ShutterSettings
+{
+    float angle = 0.0f;
+    int samples = 1;
+};
+
 /**
  * Camera-only animation timeline. Position and look-at use Catmull-Rom
  * interpolation; FOV, lens radius and focus distance are interpolated
@@ -34,7 +40,7 @@ struct CameraKeyframe
 class CameraAnimation
 {
   public:
-    CameraAnimation(std::vector<CameraKeyframe> keyframes, int fps);
+    CameraAnimation(std::vector<CameraKeyframe> keyframes, int fps, ShutterSettings shutter = {});
 
     std::shared_ptr<Camera> cameraAt(double time) const;
     double getDuration(void) const;
@@ -43,11 +49,20 @@ class CameraAnimation
     int getFrameCount(double fps) const;
     double timeAtFrame(int frame, double fps) const;
     const std::vector<CameraKeyframe> &getKeyframes(void) const;
+    const ShutterSettings &getShutter(void) const;
 
   private:
     std::vector<CameraKeyframe> _keyframes;
     int _fps;
+    ShutterSettings _shutter;
 };
+
+/**
+ * Returns the deterministic time of one shutter sample for a frame. The
+ * exposure interval is centered on the frame time and the sample offsets are
+ * stratified so CPU and CUDA use exactly the same subframe times.
+ */
+double shutterSampleTime(double frameTime, double fps, const ShutterSettings &shutter, int sample);
 
 } // namespace RayTracer
 

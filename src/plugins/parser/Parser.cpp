@@ -44,6 +44,18 @@ void requireNonNegative(double value, const std::string &name)
         throw std::runtime_error(name + " must not be negative");
 }
 
+double settingAsDouble(const libconfig::Setting &setting, const std::string &name)
+{
+    if (!setting.isNumber())
+        throw std::runtime_error(name + " must be a number");
+
+    if (setting.getType() == libconfig::Setting::TypeFloat)
+        return static_cast<double>(setting);
+    if (setting.getType() == libconfig::Setting::TypeInt64)
+        return static_cast<double>(static_cast<long long>(setting));
+    return static_cast<double>(static_cast<int>(setting));
+}
+
 void requireNonZeroVector(const Vec3D &vector, const std::string &name)
 {
     if (!std::isfinite(vector.lengthSquared()) || vector.lengthSquared() < 1e-12f)
@@ -288,18 +300,7 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
 
     if (animationSetting.exists("fps"))
     {
-        const libconfig::Setting &fpsSetting = animationSetting.lookup("fps");
-
-        if (!fpsSetting.isNumber())
-            throw std::runtime_error("Animation fps must be a positive integer");
-
-        if (fpsSetting.getType() == libconfig::Setting::TypeFloat)
-            fpsValue = static_cast<double>(fpsSetting);
-        else if (fpsSetting.getType() == libconfig::Setting::TypeInt64)
-            fpsValue = static_cast<double>(static_cast<long long>(fpsSetting));
-        else
-            fpsValue = static_cast<double>(static_cast<int>(fpsSetting));
-
+        fpsValue = settingAsDouble(animationSetting.lookup("fps"), "Animation fps");
         requireFinite(fpsValue, "Animation fps");
         if (fpsValue <= 0.0 || fpsValue != std::floor(fpsValue) ||
             fpsValue > static_cast<double>(std::numeric_limits<int>::max()))
@@ -307,6 +308,29 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
     }
 
     const int fps = static_cast<int>(fpsValue);
+    ShutterSettings shutter;
+
+    if (animationSetting.exists("shutter"))
+    {
+        const libconfig::Setting &shutterSetting = animationSetting.lookup("shutter");
+
+        if (shutterSetting.exists("angle"))
+        {
+            const double angle = settingAsDouble(shutterSetting.lookup("angle"), "Animation shutter angle");
+
+            requireFinite(angle, "Animation shutter angle");
+            if (angle < 0.0 || angle >= 360.0)
+                throw std::runtime_error("Animation shutter angle must be in [0, 360) degrees");
+            shutter.angle = static_cast<float>(angle);
+        }
+
+        if (shutterSetting.exists("samples"))
+        {
+            shutter.samples = shutterSetting.lookup("samples");
+            if (shutter.samples <= 0)
+                throw std::runtime_error("Animation shutter sample count must be positive");
+        }
+    }
 
     const libconfig::Setting &keyframesSetting = animationSetting.lookup("camera");
 
@@ -326,7 +350,7 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
     for (int i = 0; i < keyframesSetting.getLength(); ++i)
     {
         const libconfig::Setting &keyframeSetting = keyframesSetting[i];
-        const double time = keyframeSetting.lookup("time");
+        const double time = settingAsDouble(keyframeSetting.lookup("time"), "Animation keyframe time");
 
         requireFinite(time, "Animation keyframe time");
         if (time < 0.0)
@@ -342,7 +366,7 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
             lookAt = parsePoint(keyframeSetting.lookup("rotation"));
         if (keyframeSetting.exists("fieldOfView"))
         {
-            const double value = keyframeSetting.lookup("fieldOfView");
+            const double value = settingAsDouble(keyframeSetting.lookup("fieldOfView"), "Animation field of view");
 
             requireFinite(value, "Animation field of view");
             if (value <= 0.0 || value >= 180.0)
@@ -351,14 +375,14 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
         }
         if (keyframeSetting.exists("lensRadius"))
         {
-            const double value = keyframeSetting.lookup("lensRadius");
+            const double value = settingAsDouble(keyframeSetting.lookup("lensRadius"), "Animation lens radius");
 
             requireNonNegative(value, "Animation lens radius");
             lensRadius = static_cast<float>(value);
         }
         if (keyframeSetting.exists("focusDistance"))
         {
-            const double value = keyframeSetting.lookup("focusDistance");
+            const double value = settingAsDouble(keyframeSetting.lookup("focusDistance"), "Animation focus distance");
 
             requirePositive(value, "Animation focus distance");
             focusDistance = static_cast<float>(value);
@@ -369,7 +393,7 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
         previousTime = time;
     }
 
-    return std::make_shared<CameraAnimation>(std::move(keyframes), fps);
+    return std::make_shared<CameraAnimation>(std::move(keyframes), fps, shutter);
 }
 
 /**

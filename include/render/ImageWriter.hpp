@@ -17,6 +17,8 @@ namespace RayTracer
 
 void writePNGFile(const std::string &path, int width, int height, const std::vector<uint32_t> &pixels);
 void writeImageFile(const std::string &path, int width, int height, const std::vector<uint32_t> &pixels);
+void writeImageFileAtomic(const std::string &path, int width, int height, const std::vector<uint32_t> &pixels);
+bool frameFileExists(const std::string &path);
 
 /**
  * Expands a frame path pattern. Supports one printf-style integer conversion

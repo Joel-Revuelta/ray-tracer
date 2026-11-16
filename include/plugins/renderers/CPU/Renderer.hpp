@@ -46,6 +46,10 @@ class Renderer
     void run(void);
     void render(void);
 
+    /** Renders the configured samples and returns the linear HDR average. */
+    std::vector<Color3D> renderHDR(void);
+    std::vector<Color3D> getHDRImage(void) const;
+
     void setFrameIteration(int frameIteration);
     void setFrameIterations(int frameIterations);
     void setFrameIterationsScale(float frameIterationsScale);
@@ -100,7 +104,7 @@ class Renderer
     void initialize(void);
 
     // Raytracing methods
-    void renderFrame(void);
+    void renderFrame(bool present = true);
     void updateImage(int completedSamples);
     Color4D getPixelColor(uint32_t seed, int x, int y);
     Color3D computeLightContribution(const HitPayload &payload, const IMaterial &material,

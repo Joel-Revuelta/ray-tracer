@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+RAYTRACER_BIN="${RAYTRACER_BIN:-./raytracer}"
+if [ ! -x "$RAYTRACER_BIN" ] && [ -x "./build/raytracer" ]; then
+    RAYTRACER_BIN="./build/raytracer"
+fi
+
 SCENE="${SCENE:-${1:-brass_orrery}}"
 SAMPLES="${SAMPLES:-128}"
 WIDTH="${WIDTH:-1280}"
@@ -11,6 +16,10 @@ RENDERER="${RENDERER:-cpu}"
 FPS="${FPS:-}"
 START_FRAME="${START_FRAME:-}"
 END_FRAME="${END_FRAME:-}"
+SHUTTER_ANGLE="${SHUTTER_ANGLE:-}"
+SHUTTER_SAMPLES="${SHUTTER_SAMPLES:-}"
+RESUME="${RESUME:-0}"
+VALIDATE="${VALIDATE:-1}"
 FFMPEG="${FFMPEG:-0}"
 OUT_DIR="${OUT_DIR:-animations/${SCENE}}"
 PATTERN="${PATTERN:-${OUT_DIR}/frame-%04d.png}"
@@ -42,6 +51,15 @@ fi
 if [ -n "$FPS" ]; then
     RANGE_FLAGS+=(--fps "$FPS")
 fi
+if [ -n "$SHUTTER_ANGLE" ]; then
+    RANGE_FLAGS+=(--shutter-angle "$SHUTTER_ANGLE")
+fi
+if [ -n "$SHUTTER_SAMPLES" ]; then
+    RANGE_FLAGS+=(--shutter-samples "$SHUTTER_SAMPLES")
+fi
+if [ "$RESUME" = "1" ]; then
+    RANGE_FLAGS+=(--resume)
+fi
 
 mkdir -p "$OUT_DIR"
 
@@ -52,7 +70,14 @@ fi
 
 echo "Rendering ${SCENE} at ${WIDTH}x${HEIGHT}, ${SAMPLES} samples, using the ${RENDERER} renderer..."
 
-./raytracer --path "scenes/${SCENE}.cfg" --cli --renderer "$RENDERER" \
+if [ "$VALIDATE" = "1" ]; then
+    "$RAYTRACER_BIN" --path "scenes/${SCENE}.cfg" --cli --renderer "$RENDERER" \
+        --width "$WIDTH" --height "$HEIGHT" --samples "$SAMPLES" \
+        ${TONE_FLAGS[@]+"${TONE_FLAGS[@]}"} --animation \
+        ${RANGE_FLAGS[@]+"${RANGE_FLAGS[@]}"} --output "$PATTERN" --validate >/dev/null
+fi
+
+"$RAYTRACER_BIN" --path "scenes/${SCENE}.cfg" --cli --renderer "$RENDERER" \
     --width "$WIDTH" --height "$HEIGHT" --samples "$SAMPLES" \
     ${TONE_FLAGS[@]+"${TONE_FLAGS[@]}"} --animation \
     ${RANGE_FLAGS[@]+"${RANGE_FLAGS[@]}"} --output "$PATTERN"

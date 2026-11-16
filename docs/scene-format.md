@@ -94,6 +94,7 @@ or `--fps`).
 animation:
 {
     fps = 24;
+    shutter = { angle = 180.0; samples = 8; };
 
     camera = (
         {
@@ -116,6 +117,11 @@ animation:
 
 - `fps` is an optional positive integer frame rate. It defaults to `24` and can
   be overridden per render with `--fps F`.
+- `shutter` is optional and controls camera motion blur. `angle` is the shutter
+  opening in degrees in `[0, 360)`; `0` or an omitted block disables blur, and
+  `180` is a half-frame exposure. `samples` is the number of deterministic
+  subframe times and defaults to `1`. Both fields can be overridden with
+  `--shutter-angle` and `--shutter-samples`.
 - `camera` is a list of at least two keyframes.
 - `time` is in seconds and the first keyframe must be exactly `0.0`. Times must
   be non-negative and strictly increasing.
@@ -138,6 +144,12 @@ outside the timeline are clamped to the first or last keyframe.
 If the first keyframe repeats the top-level camera pose and settings, frame `0`
 renders identically to the still image. The three animated hero scenes follow
 that convention.
+
+Motion blur samples the shutter interval around each frame time, from
+`-angle/720` to `+angle/720` of a frame. The subframe offsets are stratified, so
+CPU and CUDA render exactly the same poses, and samples outside the timeline are
+clamped to the first or last keyframe. The render cost scales with
+`shutter.samples`; shutter-off renders are unchanged.
 
 Animation is camera-only in this version. Object, light and prefab transforms
 remain static for the whole sequence, which keeps the scene, BVH and CUDA
@@ -744,6 +756,7 @@ The parser rejects:
 - a negative camera lens radius or a non-positive focus distance,
 - a camera position equal to its look-at point,
 - an animation fps that is not a positive integer,
+- a shutter angle outside `[0, 360)` or a non-positive shutter sample count,
 - an animation with fewer than two keyframes, a first keyframe not at time
   zero, or non-increasing keyframe times,
 - negative material indices, or indices outside the material list.

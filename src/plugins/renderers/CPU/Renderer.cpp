@@ -40,66 +40,6 @@ float powerHeuristicPdf(float first, float second)
     return total > 0.0f ? firstSquared / total : 0.0f;
 }
 
-float colorLuminance(const Color3D &color)
-{
-    return 0.2126f * color.getX() + 0.7152f * color.getY() + 0.0722f * color.getZ();
-}
-
-void applyBloom(std::vector<Color3D> &hdr, int width, int height, const PostProcessSettings &settings)
-{
-    if (!settings.bloom || width <= 0 || height <= 0)
-        return;
-
-    const int radius = std::clamp(settings.bloomRadius, 1, BLOOM_MAX_RADIUS);
-    const std::array<float, BLOOM_MAX_RADIUS * 2 + 1> weights = bloomKernel(radius);
-    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-    std::vector<Color3D> bright(count);
-    std::vector<Color3D> horizontal(count);
-    std::vector<Color3D> vertical(count);
-
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        if (colorLuminance(hdr[i]) > settings.bloomThreshold)
-            bright[i] = hdr[i];
-    }
-
-    for (int y = 0; y < height; ++y)
-    {
-        for (int x = 0; x < width; ++x)
-        {
-            Color3D value(0.0f);
-
-            for (int offset = -radius; offset <= radius; ++offset)
-            {
-                const int sampleX = std::clamp(x + offset, 0, width - 1);
-                value += bright[static_cast<std::size_t>(y) * width + static_cast<std::size_t>(sampleX)] *
-                         weights[static_cast<std::size_t>(offset + BLOOM_MAX_RADIUS)];
-            }
-
-            horizontal[static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)] = value;
-        }
-    }
-
-    for (int y = 0; y < height; ++y)
-    {
-        for (int x = 0; x < width; ++x)
-        {
-            Color3D value(0.0f);
-
-            for (int offset = -radius; offset <= radius; ++offset)
-            {
-                const int sampleY = std::clamp(y + offset, 0, height - 1);
-                value += horizontal[static_cast<std::size_t>(sampleY) * width + static_cast<std::size_t>(x)] *
-                         weights[static_cast<std::size_t>(offset + BLOOM_MAX_RADIUS)];
-            }
-
-            vertical[static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)] = value;
-        }
-    }
-
-    for (std::size_t i = 0; i < count; ++i)
-        hdr[i] += vertical[i] * settings.bloomIntensity;
-}
 } // namespace
 
 class RenderPool
@@ -390,7 +330,7 @@ void Renderer::render(void)
             break;
     }
     if (!_outputPath.empty())
-        writeImageFile(_outputPath, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
+        writeImageFileAtomic(_outputPath, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
     else if (_outStream)
         writePPM(*_outStream, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
 
@@ -402,7 +342,7 @@ void Renderer::render(void)
 /**
  * Renders a frame and accumulates the color data for sampling.
  */
-void Renderer::renderFrame(void)
+void Renderer::renderFrame(bool present)
 {
     const int width = getCamera()->getImageWidth();
     const int height = getCamera()->getImageHeight();
@@ -511,6 +451,9 @@ void Renderer::renderFrame(void)
     if (_stop)
         return;
 
+    if (!present)
+        return;
+
     updateImage(_frameIteration);
 
     if (_gui)
@@ -542,10 +485,47 @@ void Renderer::updateImage(int completedSamples)
         hdr[i] = Color3D(accumulated.getX(), accumulated.getY(), accumulated.getZ()) * inverseSamples;
     }
 
-    applyBloom(hdr, width, height, _postProcess);
+    _imageData = postProcessToRGBA(std::move(hdr), width, height, _postProcess);
+}
+
+std::vector<Color3D> Renderer::getHDRImage(void) const
+{
+    if (!getCamera() || _frameIterations <= 0)
+        return {};
+
+    const int width = getCamera()->getImageWidth();
+    const int height = getCamera()->getImageHeight();
+    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+
+    if (_imageAccumulationData.size() < count)
+        return {};
+
+    std::vector<Color3D> hdr(count);
+    const float inverseSamples = 1.0f / static_cast<float>(_frameIterations);
 
     for (std::size_t i = 0; i < count; ++i)
-        _imageData[i] = Utils::convertToRGBA(Color4D(hdr[i], 1.0f), _postProcess);
+    {
+        const Color4D &accumulated = _imageAccumulationData[i];
+
+        hdr[i] = Color3D(accumulated.getX(), accumulated.getY(), accumulated.getZ()) * inverseSamples;
+    }
+    return hdr;
+}
+
+std::vector<Color3D> Renderer::renderHDR(void)
+{
+    _stop.store(false);
+    _reset.store(false);
+    setFrameIteration(1);
+
+    while (_frameIteration <= _frameIterations)
+    {
+        renderFrame(false);
+        _frameIteration++;
+        if (_stop)
+            break;
+    }
+    return getHDRImage();
 }
 
 void Renderer::refreshImage(void)

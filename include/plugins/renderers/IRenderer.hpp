@@ -34,8 +34,13 @@ struct RenderOptions
     int startFrame = 0;
     int endFrame = 0;
     double animationFps = 24.0;
+    float shutterAngle = 0.0f;
+    int shutterSamples = 1;
     float lensRadiusOverride = -1.0f;
     float focusDistanceOverride = -1.0f;
+    bool resume = false;
+    std::string scenePath;
+    std::string rendererName;
 };
 
 struct RenderContext

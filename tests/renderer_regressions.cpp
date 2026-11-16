@@ -274,6 +274,36 @@ int checkCameraAnimation(void)
         !closeTo(static_cast<float>(animation.timeAtFrame(1000, 24.0)), 2.0f))
         return fail("animation frame time mapping is wrong");
 
+    try
+    {
+        animation.cameraAt(std::numeric_limits<double>::quiet_NaN());
+        return fail("animation accepted a non-finite time");
+    }
+    catch (const std::invalid_argument &)
+    {
+    }
+
+    try
+    {
+        animation.getFrameCount(std::numeric_limits<double>::max());
+        return fail("animation accepted an overflowing frame count");
+    }
+    catch (const std::invalid_argument &)
+    {
+    }
+
+    const ShutterSettings shutter{180.0f, 4};
+
+    if (!closeTo(static_cast<float>(shutterSampleTime(1.0, 24.0, shutter, 0)), 0.9921875f, 1e-6f) ||
+        !closeTo(static_cast<float>(shutterSampleTime(1.0, 24.0, shutter, 1)), 0.9973958f, 1e-6f) ||
+        !closeTo(static_cast<float>(shutterSampleTime(1.0, 24.0, shutter, 2)), 1.0026042f, 1e-6f) ||
+        !closeTo(static_cast<float>(shutterSampleTime(1.0, 24.0, shutter, 3)), 1.0078125f, 1e-6f))
+        return fail("shutter sample times are wrong");
+
+    if (!closeTo(static_cast<float>(shutterSampleTime(1.0, 24.0, ShutterSettings{0.0f, 4}, 0)), 1.0f) ||
+        !closeTo(static_cast<float>(shutterSampleTime(1.0, 24.0, ShutterSettings{180.0f, 1}, 0)), 1.0f))
+        return fail("disabled shutter did not preserve the frame time");
+
     auto expectThrow = [](const std::vector<CameraKeyframe> &keys, int fps, const std::string &label) {
         try
         {
@@ -316,6 +346,24 @@ int checkCameraAnimation(void)
                        Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f},
                       {1.0, Vec3D(1.0f, 0.0f, -5.0f), Vec3D(0.0f, 0.0f, 0.0f), 60.0f, 0.0f, 0.0f}},
                      24, "a non-finite camera position"))
+        return 1;
+
+    auto expectShutterThrow = [&](ShutterSettings shutter, const std::string &label) {
+        try
+        {
+            const CameraAnimation invalid(keyframes, 24, shutter);
+            (void)invalid;
+        }
+        catch (const std::invalid_argument &)
+        {
+            return true;
+        }
+        std::cerr << "renderer_regressions: animation accepted " << label << std::endl;
+        return false;
+    };
+
+    if (!expectShutterThrow(ShutterSettings{360.0f, 4}, "a full shutter angle") ||
+        !expectShutterThrow(ShutterSettings{180.0f, 0}, "zero shutter samples"))
         return 1;
     return 0;
 }

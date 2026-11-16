@@ -47,6 +47,9 @@ cmake --build build -j"$(nproc)"
 Useful configurations:
 
 ```bash
+# Keep the executable and plugins inside the build tree (CI, multiple builds)
+cmake -S . -B build -DRAYTRACER_IN_SOURCE_OUTPUT=OFF
+
 # CPU-only build
 cmake -S . -B build -DRAYTRACER_ENABLE_CUDA=OFF
 
@@ -61,9 +64,12 @@ cmake -S . -B build
 cmake --build build -j"$(nproc)"
 ```
 
-The executable is written to the repository root. Plugins are written to
+By default the executable is written to the repository root, plugins to
 `plugins/`, and `libraytracer_core.so` stays in `build/`. Run the executable from
-the repository root so that `./plugins/` resolves.
+the repository root so that `./plugins/` resolves. With
+`-DRAYTRACER_IN_SOURCE_OUTPUT=OFF` the executable lands in `build/` and plugins
+in `build/plugins/`; plugin lookup starts next to the executable, so the binary
+can be run from anywhere.
 
 ## Repository layout
 
@@ -358,8 +364,13 @@ struct RenderOptions
     int startFrame;
     int endFrame;
     double animationFps;
+    float shutterAngle;
+    int shutterSamples;
     float lensRadiusOverride;
     float focusDistanceOverride;
+    bool resume;
+    std::string scenePath;
+    std::string rendererName;
 };
 
 struct RenderContext
@@ -476,21 +487,37 @@ const double time = animation->timeAtFrame(frame, fps);
 `timeAtFrame` returns `frame / fps` clamped to the last keyframe, and
 `getFrameCount` returns `ceil(duration * fps)` (at least one frame).
 
+`shutterSampleTime(frameTime, fps, shutter, sample)` returns the stratified
+subframe times for camera motion blur. The interval is centered on the frame
+time and spans `shutter.angle / 360 / fps` seconds; `cameraAt` clamps times
+outside the timeline.
+
 Sequence rendering keeps still rendering untouched:
 
-- **CPU** constructs a `Renderer` per frame with the interpolated `Camera` and
-  writes `formatFramePath(outputPath, frame)`. The scene graph is shared; no
-  primitives are rebuilt.
+- **CPU** constructs a `Renderer` per subframe and calls `renderHDR()` to get
+  the linear HDR average without per-subframe bloom or file output. Subframes
+  are averaged into one frame buffer, post-processed once, and written
+  atomically.
 - **CUDA** builds the `SceneSnapshot` and `CudaRenderSession` once from the
-  first frame. Later frames call `updateCamera(makeCameraData(camera))`, which
-  synchronises the previous batch and clears the accumulation buffer, plus
-  `setSeed`. The BVH, meshes, textures and lights stay resident on the device.
-- The per-frame seed is `seed + frame * 0x9e3779b9u`, so sequences are
-  deterministic and independent of thread count.
+  first rendered frame. Every rendered subframe calls
+  `updateCamera(makeCameraData(camera))` (which clears accumulation) and
+  `setSeed`. With motion blur enabled, `beginShutter` allocates a device
+  accumulation buffer and `accumulateShutter` adds each subframe's samples;
+  `refreshShutterOutput` runs the existing bloom/post-process pass over the
+  accumulated buffer. The extra buffer is allocated lazily, so shutter-off
+  sessions keep their previous memory use.
+- The per-frame seed is `seed + frame * 0x9e3779b9u`; additional shutter
+  subframes add `subframe * 0x85ebca6bu`. Sequences are deterministic and
+  independent of thread count.
+- `--resume` skips frames whose final output already exists. The CUDA session
+  is initialized from the first frame that will actually be rendered.
 - `formatFramePath` accepts one `d`/`i`/`u` printf conversion, escapes `%%`,
   and appends a padded `-NNNN` suffix when the pattern has no conversion.
-- `writeImageFile` dispatches `.png` to `stbi_write_png` and everything else to
-  the PPM writer.
+- `writeImageFileAtomic` writes PPM/PNG through a temporary file and renames it
+  into place. `writeImageFile` remains the non-atomic primitive.
+- `writeSequenceMetadata` writes the JSON sidecar described in
+  [cli.md](cli.md#animation). `sequenceMetadataPath` derives its name from the
+  output pattern.
 
 Animation is camera-only. Do not mutate primitives or lights between frames:
 that would invalidate the immutable scene snapshot and the CUDA BVH.
@@ -602,6 +629,24 @@ cmake -S . -B build
 cmake --build build -j"$(nproc)"
 ```
 
+Run the full suite or a labeled subset:
+
+```bash
+ctest --test-dir build --output-on-failure
+ctest --test-dir build -L animation
+ctest --test-dir build -L negative
+ctest --test-dir build -L parity
+```
+
+Labels are `unit`, `smoke`, `scene`, `animation`, `output`, `negative` and
+`parity`. The parity label includes the CPU/CUDA comparison; it skips with
+status `77` when no CUDA device is available.
+
+CI runs headless GCC and Clang Release builds, an ASan/UBSan Debug build, and an
+optional self-hosted CUDA job enabled with the repository variable
+`RAYTRACER_CUDA_CI=true`. GUI builds remain a manual verification step because
+SFML 3 is not packaged on the default runner.
+
 Renderer discovery:
 
 ```bash
@@ -620,6 +665,12 @@ CUDA smoke test:
 ```bash
 ./raytracer --path scenes/showcase.cfg --cli --renderer cuda \
   --width 320 --height 180 --frames 8 --output /tmp/cuda.ppm
+```
+
+CPU/CUDA parity (still and animated frame):
+
+```bash
+bash tests/cpu_cuda_parity.sh ./raytracer . build
 ```
 
 BVH and transform checks:
@@ -667,6 +718,21 @@ Animation and PNG output:
   --start-frame 0 --end-frame 11 --output '/tmp/orrery-%04d.png'
 bash tests/deterministic_animation.sh ./raytracer . build
 bash tests/png_output.sh ./raytracer . build
+```
+
+Motion blur, metadata and resume:
+
+```bash
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cpu \
+  --width 320 --height 180 --samples 8 --animation \
+  --shutter-angle 180 --shutter-samples 4 \
+  --start-frame 0 --end-frame 11 --output '/tmp/orrery-%04d.png'
+bash tests/deterministic_motion_blur.sh ./raytracer . build
+./raytracer --path scenes/brass_orrery.cfg --cli --animation \
+  --output '/tmp/orrery-%04d.png' --validate
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cpu \
+  --width 320 --height 180 --samples 8 --animation --resume \
+  --output '/tmp/orrery-%04d.png'
 ```
 
 Texture check:

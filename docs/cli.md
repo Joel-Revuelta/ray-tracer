@@ -42,6 +42,10 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--start-frame` | non-negative integer | First frame of an animation range, inclusive. | `0` |
 | `--end-frame` | non-negative integer | Last frame of an animation range, inclusive. | last frame |
 | `--fps` | positive float | Override the scene animation frame rate. | scene value |
+| `--shutter-angle` | float in `[0, 360)` | Camera shutter opening in degrees; `0` disables motion blur. | scene value |
+| `--shutter-samples` | positive integer | Deterministic subframe count for motion blur. | scene value |
+| `--resume` | — | Skip animation frames whose output files already exist. | off |
+| `--validate` | — | Parse the scene/animation, print a summary and exit without rendering. | off |
 | `--output` | path or pattern | PPM/PNG output file, or a frame pattern for animation. | stdout in CLI mode; `frame-%04d.ppm` for animation |
 | `--list-guis` | — | Print GUI backends and exit `0`. | |
 | `--help`, `-h` | — | Print usage and exit `0`. | |
@@ -60,7 +64,8 @@ Camera animations are declared in the scene file; see
 this version.
 
 - `--animation` renders the scene animation.
-- `--start-frame`, `--end-frame` and `--fps` also imply `--animation`.
+- `--start-frame`, `--end-frame`, `--fps`, `--shutter-angle` and
+  `--shutter-samples` also imply `--animation`.
 - `--start-frame` and `--end-frame` are inclusive and zero-based. The default
   range is every frame.
 - Frame count is `ceil(duration * fps)`. The per-frame time is `frame / fps`.
@@ -72,6 +77,27 @@ this version.
   count.
 - `--lens-radius` and `--focus-distance` override the keyframed values for every
   frame. Leave them unset to use the animation timeline.
+- `--shutter-angle 0` disables motion blur, even when the scene enables it.
+  Otherwise, motion blur renders `--shutter-samples` deterministic subframes per
+  frame and averages them in linear HDR before post-processing. Render cost
+  scales with the sample count.
+- `--resume` skips frames whose final output file already exists and is
+  non-empty. Frames are written through a temporary file and renamed into place,
+  so interrupted renders never leave a partial final image. If every frame
+  already exists, the existing metadata sidecar is left untouched.
+- `--validate` prints the resolved resolution, samples, duration, frame count,
+  output pattern and shutter settings, then exits without rendering. It also
+  reports an available animation when no animation flags were passed.
+
+For an animation output pattern such as `frames/orrery-%04d.png`, the renderer
+also writes `frames/orrery.json` after the run. Keep the frame conversion in
+the filename so the sidecar name is predictable. The sidecar records a schema
+version, the scene, renderer, resolution, samples, seed, FPS, frame range,
+shutter and post-process settings, plus the interpolated camera pose, path and
+seed for every frame. It is updated when `--resume` completes a partially
+rendered sequence.
+
+The renderer prints per-frame progress with elapsed time and an ETA.
 
 Output paths support one printf-style integer conversion, such as `%d` or
 `%04d`. A path without a conversion gets a zero-padded `-NNNN` suffix before
@@ -90,6 +116,21 @@ mkdir -p frames
   --width 640 --height 360 --samples 8 \
   --start-frame 0 --end-frame 47 --fps 12 \
   --output 'frames/sakura-%04d.ppm'
+
+# Half-frame camera motion blur with 8 subframes
+./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cuda \
+  --width 1280 --height 720 --samples 64 --animation \
+  --shutter-angle 180 --shutter-samples 8 \
+  --output 'frames/sakura-%04d.png'
+
+# Validate first, then resume an interrupted sequence
+./raytracer --path scenes/brass_orrery.cfg --cli --animation \
+  --shutter-angle 180 --shutter-samples 8 \
+  --output 'frames/orrery-%04d.png' --validate
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --samples 128 --animation --resume \
+  --shutter-angle 180 --shutter-samples 8 \
+  --output 'frames/orrery-%04d.png'
 ```
 
 ### Output
@@ -101,9 +142,10 @@ mkdir -p frames
 - The output format follows the extension: `.ppm` writes binary `P6`, `.png`
   writes 8-bit RGBA. Other extensions fall back to PPM.
 - CLI mode with `--output` writes one file per render, or one numbered file per
-  animation frame.
+  animation frame. Final files are written atomically via a temporary file.
 - CLI mode without `--output` writes a still PPM to standard output. Animation
-  defaults to `frame-%04d.ppm` in the current directory.
+  defaults to `frame-%04d.ppm` in the current directory and writes a
+  `frame.json` metadata sidecar.
 - GUI mode writes an image only when `--output` is provided; interactive
   `P` screenshots remain timestamped PPM files.
 - Parent directories are not created automatically.
@@ -232,6 +274,10 @@ RENDERER=cuda FRAMES=4096 OUT_DIR=/tmp/cuda-8k ./scenes/render_8k.sh solar_eclip
 
 ## Render script environment variables
 
+All render scripts accept `RAYTRACER_BIN` to point at a built executable. It
+defaults to `./raytracer`, then falls back to `./build/raytracer` when the
+in-source layout is not present.
+
 ### `scenes/render_hd.sh`
 
 | Variable | Default |
@@ -265,6 +311,10 @@ RENDERER=cuda FRAMES=4096 OUT_DIR=/tmp/cuda-8k ./scenes/render_8k.sh solar_eclip
 | `FPS` | scene value |
 | `START_FRAME` | `0` |
 | `END_FRAME` | last frame |
+| `SHUTTER_ANGLE` | scene value |
+| `SHUTTER_SAMPLES` | scene value |
+| `RESUME` | `0`; set to `1` to skip existing frames |
+| `VALIDATE` | `1`; set to `0` to skip the pre-render validation pass |
 | `OUT_DIR` | `animations/<scene>` |
 | `PATTERN` | `<OUT_DIR>/frame-%04d.png` |
 | `FFMPEG` | `0`; set to `1` to assemble an MP4 |
@@ -289,6 +339,9 @@ See [performance.md](performance.md) for benchmark methodology and numbers.
 | `Scene has no animation block: ...` | Add an `animation` block or drop the animation flags. |
 | `Animation frame range ... is outside ...` | Check `--start-frame`/`--end-frame` against the scene duration and `--fps`. |
 | `Animation rendering is only available with --cli.` | Sequence rendering is headless-only. |
+| `Shutter angle must be less than 360 degrees.` | Use an angle in `[0, 360)`; `0` disables motion blur. |
+| `Shutter samples must be positive.` | Use `--shutter-samples 1` or more. |
+| `Failed to finalize metadata file: ...` | Check that the output directory exists and is writable. |
 | `Unknown renderer: <name>` | Use `--list-renderers` to see valid names. |
 | `Renderer '<name>' is unavailable: ...` | The plugin is missing or the runtime/device is unavailable. |
 | `Cannot open output file: ...` | Ensure the parent directory exists and is writable. |
