@@ -95,6 +95,9 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformPo
 
     if (sceneToAdd.get() == _scene.get())
         throw std::invalid_argument("Cannot merge a scene into itself");
+    if (!sceneToAdd->getInstanceGroups().empty() || !sceneToAdd->getLightsById().empty())
+        throw std::runtime_error(
+            "Cannot compose a scene with named instances or lights; define those names at the top level");
 
     const TransformData transform = makeTransform(pose);
 
@@ -156,7 +159,21 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformPo
             throw std::runtime_error("Cannot compose a scene: a light does not implement clone()");
 
         copy->applyTransform(transform);
-        _scene->addLight(copy);
+
+        if (instanceId.empty())
+        {
+            _scene->addLight(copy);
+            continue;
+        }
+
+        // Animated prefab instances keep an untransformed prototype so every
+        // frame can rebuild the light from the current instance transform.
+        std::shared_ptr<ILight> base = light->clone();
+
+        if (!base)
+            throw std::runtime_error("Cannot compose a scene: a light does not implement clone()");
+
+        _scene->addInstanceLight(instanceId, std::move(base), std::move(copy));
     }
 }
 

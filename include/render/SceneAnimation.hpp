@@ -47,6 +47,10 @@ struct Vec3Track
     }
 
     Vec3D at(double time) const;
+
+    // Scale tracks use linear interpolation to avoid Catmull-Rom overshoot
+    // through zero or into negative values.
+    Vec3D atLinear(double time) const;
 };
 
 struct FloatTrack

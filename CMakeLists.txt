@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(raytracer)
 
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 # Optimised builds are the sensible default for a CPU/GPU renderer. Users can
 # still request Debug/RelWithDebInfo explicitly.
@@ -95,6 +96,29 @@ add_library(raytracer_core SHARED
     src/Camera.cpp
     src/plugins/materials/AMaterial.cpp
 )
+set(RAYTRACER_PUBLIC_INCLUDE_DIRS
+    "include|raytracer"
+    "include/utils|raytracer/utils"
+    "include/scene|raytracer/scene"
+    "include/factory|raytracer/factory"
+    "include/exceptions|raytracer/exceptions"
+    "include/plugins/lights|raytracer/plugins/lights"
+    "include/plugins/materials|raytracer/plugins/materials"
+    "include/plugins/parser|raytracer/plugins/parser"
+    "include/plugins/primitives|raytracer/plugins/primitives"
+    "include/plugins/transformations|raytracer/plugins/transformations"
+    "include/plugins/renderers|raytracer/plugins/renderers"
+    "third_party/stb|raytracer/stb"
+)
+foreach(entry IN LISTS RAYTRACER_PUBLIC_INCLUDE_DIRS)
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 buildDirectory)
+    list(GET parts 1 installDirectory)
+    target_include_directories(raytracer_core PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/${buildDirectory}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${installDirectory}>)
+endforeach()
+target_include_directories(raytracer_core PUBLIC ${LIBCONFIG++_INCLUDE_DIRS})
 target_link_libraries(raytracer_core PUBLIC
     ${CMAKE_THREAD_LIBS_INIT}
     ${CMAKE_DL_LIBS}
@@ -109,6 +133,13 @@ target_link_libraries(raytracer PRIVATE raytracer_core)
 # the CLI (plugin ABI coefficients, per-hit material overrides, texture decode).
 add_executable(raytracer_regressions tests/renderer_regressions.cpp)
 target_link_libraries(raytracer_regressions PRIVATE raytracer_core)
+
+# Deliberately versionless plugin used to exercise the loader's ABI rejection.
+add_library(raytracer_test_plugin_noabi SHARED tests/noabi_plugin.cpp)
+set_target_properties(raytracer_test_plugin_noabi PROPERTIES PREFIX "")
+
+add_executable(raytracer_abi_test tests/plugin_abi_test.cpp)
+target_link_libraries(raytracer_abi_test PRIVATE raytracer_core)
 
 # CPU renderer plugin
 add_library(raytracer_renderer_cpu SHARED
@@ -375,12 +406,19 @@ set_tests_properties(renderer_regressions PROPERTIES
     ENVIRONMENT "RAYTRACER_PLUGIN_DIR=${RAYTRACER_PLUGIN_OUTPUT_DIR}"
 )
 add_test(
+    NAME plugin_abi_mismatch_rejected
+    COMMAND $<TARGET_FILE:raytracer_abi_test> $<TARGET_FILE:raytracer_test_plugin_noabi>
+)
+set_tests_properties(plugin_abi_mismatch_rejected PROPERTIES LABELS "negative;unit")
+add_test(
     NAME cli_cpu_smoke
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --width 32 --height 18 --frames 1
             --output ${CMAKE_BINARY_DIR}/cli_cpu_smoke.ppm
 )
 add_test(NAME list_renderers COMMAND $<TARGET_FILE:raytracer> --list-renderers)
+add_test(NAME help_exits_successfully COMMAND $<TARGET_FILE:raytracer> --help)
+set_tests_properties(help_exits_successfully PROPERTIES PASS_REGULAR_EXPRESSION "Usage:")
 add_test(
     NAME deterministic_cpu_render
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_render.sh $<TARGET_FILE:raytracer>
@@ -423,6 +461,30 @@ add_test(
             --threads 2 --seed 7 --output ${CMAKE_BINARY_DIR}/threads_smoke.ppm
 )
 add_test(NAME list_guis COMMAND $<TARGET_FILE:raytracer> --list-guis)
+
+# GUI backends are event-driven, so exercise their startup and first frame
+# under a virtual display when xvfb-run is available. A clean timeout is the
+# expected result; crashes and plugin load failures are not.
+find_program(XVFB_RUN_EXECUTABLE xvfb-run)
+if (XVFB_RUN_EXECUTABLE)
+    if (TARGET raytracer_gui)
+        add_test(
+            NAME gui_sfml_smoke
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a ${CMAKE_SOURCE_DIR}/tests/gui_smoke.sh
+                    $<TARGET_FILE:raytracer> ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg sfml
+        )
+        set_tests_properties(gui_sfml_smoke PROPERTIES LABELS "smoke;gui" TIMEOUT 20)
+    endif()
+    if (TARGET raytracer_gui_opengl)
+        add_test(
+            NAME gui_opengl_smoke
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a ${CMAKE_SOURCE_DIR}/tests/gui_smoke.sh
+                    $<TARGET_FILE:raytracer> ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg opengl
+        )
+        set_tests_properties(gui_opengl_smoke PROPERTIES LABELS "smoke;gui" TIMEOUT 20)
+    endif()
+endif()
+
 add_test(
     NAME bvh_matches_linear
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bvh_parity.sh $<TARGET_FILE:raytracer>
@@ -610,6 +672,12 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/lagoon_mist_smoke.ppm
 )
 add_test(
+    NAME mixed_material_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/mixed_material.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --output ${CMAKE_BINARY_DIR}/mixed_material_smoke.ppm
+)
+add_test(
     NAME motion_blur_smoke
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/motion_blur.cfg
             --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
@@ -620,6 +688,12 @@ add_test(
     NAME deterministic_mtl_materials_render
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_mtl_materials.sh $<TARGET_FILE:raytracer>
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_negative_color
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_negative_color.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_negative_color.ppm
 )
 add_test(
     NAME parser_rejects_invalid_atmosphere_density
@@ -914,6 +988,12 @@ add_test(
 )
 set_tests_properties(atmosphere_regressions PROPERTIES LABELS "scene;atmosphere")
 add_test(
+    NAME parser_fuzz_smoke
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/parser_fuzz_smoke.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(parser_fuzz_smoke PROPERTIES LABELS "negative;parser")
+add_test(
     NAME malformed_scene_corpus
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/malformed_scene_corpus.sh $<TARGET_FILE:raytracer>
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
@@ -1067,6 +1147,30 @@ add_test(
             --cli --renderer cpu --threads -1 --width 16 --height 9 --frames 1
 )
 add_test(
+    NAME parser_rejects_nested_named_instance
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_nested_named_instance.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_nested_named_instance.ppm
+)
+add_test(
+    NAME parser_rejects_unknown_key
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_unknown_key.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_unknown_key.ppm
+)
+add_test(
+    NAME cli_rejects_oversized_resolution
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/mixed_material.cfg
+            --cli --renderer cpu --width 20000 --height 20000 --frames 1
+            --output ${CMAKE_BINARY_DIR}/oversized.ppm
+)
+add_test(
+    NAME cli_rejects_invalid_output_extension
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/mixed_material.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_output.jpg
+)
+add_test(
     NAME cli_rejects_invalid_seed
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --seed -1 --width 16 --height 9 --frames 1
@@ -1087,13 +1191,14 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     bloom_smoke deterministic_bloom_render
     animation_smoke implicit_animation_smoke animation_shutter_smoke scene_animation_smoke
     deterministic_animation_render deterministic_motion_blur deterministic_scene_animation
-    golden_images atmosphere_regressions malformed_scene_corpus benchmark_report
-    material_maps_smoke mtl_maps_smoke primitives_extra_smoke scatter_field_smoke
+    golden_images atmosphere_regressions malformed_scene_corpus parser_fuzz_smoke benchmark_report
+    material_maps_smoke mtl_maps_smoke mixed_material_smoke primitives_extra_smoke scatter_field_smoke
     misty_shrine_smoke volumetric_cathedral_smoke lagoon_mist_smoke motion_blur_smoke
     validate_still_smoke validate_animation_smoke
     png_output_smoke
     PROPERTIES WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR})
-set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
+set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed cli_rejects_invalid_output_extension
+    cli_rejects_oversized_resolution
     parser_rejects_invalid_transform parser_rejects_invalid_obj
     parser_rejects_invalid_lens parser_rejects_invalid_focus
     parser_rejects_invalid_area_light parser_rejects_invalid_texture
@@ -1122,7 +1227,8 @@ set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_scene_animation_empty
     parser_rejects_invalid_scene_animation_duplicate
     parser_rejects_invalid_box parser_rejects_invalid_disk
-    parser_rejects_invalid_scatter parser_rejects_invalid_atmosphere_density
+    parser_rejects_invalid_scatter parser_rejects_nested_named_instance parser_rejects_unknown_key parser_rejects_negative_color
+    parser_rejects_invalid_atmosphere_density
     parser_rejects_invalid_atmosphere_anisotropy parser_rejects_invalid_atmosphere_type
     parser_rejects_invalid_height_fog parser_rejects_invalid_atmosphere_distance PROPERTIES
     WILL_FAIL TRUE
@@ -1147,7 +1253,7 @@ set_tests_properties(
     environment_smoke mtl_materials_smoke group_transform_smoke prefab_instances_smoke
     sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
     frozen_cathedral_smoke bloom_smoke validate_still_smoke validate_animation_smoke
-    material_maps_smoke mtl_maps_smoke primitives_extra_smoke scatter_field_smoke
+    material_maps_smoke mtl_maps_smoke mixed_material_smoke primitives_extra_smoke scatter_field_smoke
     misty_shrine_smoke volumetric_cathedral_smoke lagoon_mist_smoke motion_blur_smoke
     PROPERTIES LABELS "smoke"
 )
@@ -1179,6 +1285,7 @@ set_tests_properties(
     parser_rejects_float_overflow parser_rejects_uv_overflow parser_rejects_invalid_mtl
     parser_rejects_unknown_prefab parser_rejects_prefab_instances_in_prefabs
     cli_rejects_invalid_bloom_radius cli_rejects_invalid_threads cli_rejects_invalid_seed
+    cli_rejects_invalid_output_extension cli_rejects_oversized_resolution
     PROPERTIES LABELS "negative"
 )
 set_tests_properties(
@@ -1201,7 +1308,7 @@ set_tests_properties(
 )
 set_tests_properties(
     parser_rejects_invalid_box parser_rejects_invalid_disk parser_rejects_invalid_scatter
-    parser_rejects_invalid_atmosphere_density parser_rejects_invalid_atmosphere_anisotropy
+    parser_rejects_nested_named_instance parser_rejects_unknown_key parser_rejects_negative_color parser_rejects_invalid_atmosphere_density parser_rejects_invalid_atmosphere_anisotropy
     parser_rejects_invalid_atmosphere_type parser_rejects_invalid_height_fog
     parser_rejects_invalid_atmosphere_distance
     PROPERTIES LABELS "negative;scene"
@@ -1249,9 +1356,25 @@ if (TARGET raytracer_renderer_cuda)
     list(APPEND RAYTRACER_PLUGIN_TARGETS raytracer_renderer_cuda)
 endif()
 
+# Every loadable plugin exports the ABI version symbol checked by DLManager.
+foreach(plugin_target IN LISTS RAYTRACER_PLUGIN_TARGETS)
+    target_sources(${plugin_target} PRIVATE src/plugins/PluginABI.cpp)
+endforeach()
+
 install(TARGETS raytracer RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(TARGETS raytracer_core LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS raytracer_core EXPORT raytracerTargets LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(TARGETS ${RAYTRACER_PLUGIN_TARGETS} LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins)
 install(DIRECTORY scenes/ DESTINATION ${CMAKE_INSTALL_DATADIR}/raytracer/scenes)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/raytracer)
+install(DIRECTORY third_party/stb/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/raytracer/stb FILES_MATCHING PATTERN "*.h")
+install(EXPORT raytracerTargets FILE raytracerTargets.cmake NAMESPACE RayTracer::
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/cmake/raytracer)
+configure_package_config_file(
+    ${CMAKE_SOURCE_DIR}/cmake/raytracerConfig.cmake.in
+    ${CMAKE_BINARY_DIR}/raytracerConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/cmake/raytracer)
+install(FILES ${CMAKE_BINARY_DIR}/raytracerConfig.cmake
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/cmake/raytracer)
 set_target_properties(raytracer raytracer_core PROPERTIES INSTALL_RPATH "$ORIGIN")
 set_target_properties(${RAYTRACER_PLUGIN_TARGETS} PROPERTIES INSTALL_RPATH "$ORIGIN/..")

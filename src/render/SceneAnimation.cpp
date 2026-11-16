@@ -88,6 +88,23 @@ Vec3D Vec3Track::at(double time) const
                       segmentAmount(first, second, time));
 }
 
+Vec3D Vec3Track::atLinear(double time) const
+{
+    if (keyframes.empty())
+        return Vec3D(0.0f);
+
+    if (keyframes.size() == 1 || time <= keyframes.front().time)
+        return keyframes.front().value;
+    if (time >= keyframes.back().time)
+        return keyframes.back().value;
+
+    const std::size_t segment = findSegment(keyframes, time);
+    const Vec3Keyframe &first = keyframes[segment];
+    const Vec3Keyframe &second = keyframes[segment + 1];
+
+    return first.value + (second.value - first.value) * segmentAmount(first, second, time);
+}
+
 float FloatTrack::at(double time) const
 {
     if (keyframes.empty())
@@ -204,6 +221,35 @@ SceneAnimation::SceneAnimation(std::vector<InstanceTrack> instances, std::vector
     }
 }
 
+namespace
+{
+float clampAnimatedScale(float value)
+{
+    if (!std::isfinite(value))
+        return 1.0f;
+
+    const float magnitude = std::max(std::fabs(value), 1e-4f);
+
+    return std::copysign(magnitude, value);
+}
+} // namespace
+
+namespace
+{
+bool transformsEqual(const TransformData &left, const TransformData &right)
+{
+    constexpr float epsilon = 1e-6f;
+
+    for (int i = 0; i < 9; ++i)
+        if (std::fabs(left.linear[i] - right.linear[i]) > epsilon)
+            return false;
+    for (int i = 0; i < 3; ++i)
+        if (std::fabs(left.translation[i] - right.translation[i]) > epsilon)
+            return false;
+    return true;
+}
+} // namespace
+
 bool SceneAnimation::apply(Scene &scene, double time) const
 {
     const double clampedTime = clampTime(time, _duration);
@@ -220,7 +266,9 @@ bool SceneAnimation::apply(Scene &scene, double time) const
 
         const TransformPose &base = group->front()->getPose();
         const Vec3D translation = track.position.empty() ? base.translation : track.position.at(clampedTime);
-        const Vec3D scale = track.scale.empty() ? base.scale : track.scale.at(clampedTime);
+        const Vec3D rawScale = track.scale.empty() ? base.scale : track.scale.atLinear(clampedTime);
+        const Vec3D scale(clampAnimatedScale(rawScale.getX()), clampAnimatedScale(rawScale.getY()),
+                          clampAnimatedScale(rawScale.getZ()));
         TransformData transform;
 
         if (track.rotation.empty())
@@ -232,9 +280,24 @@ bool SceneAnimation::apply(Scene &scene, double time) const
         else
             transform = makeTransform(translation, track.rotation.at(clampedTime), scale);
 
+        bool transformChanged = false;
+
         for (const std::shared_ptr<InstancePrimitive> &instance : *group)
-            instance->setTransform(transform);
-        instancesChanged = true;
+        {
+            if (!transformsEqual(instance->getTransform(), transform))
+            {
+                instance->setTransform(transform);
+                transformChanged = true;
+            }
+        }
+
+        if (transformChanged)
+        {
+            // Lights cloned from an animated prefab follow the same transform
+            // as the instance primitives.
+            scene.updateInstanceLights(track.target, transform);
+            instancesChanged = true;
+        }
     }
 
     for (const LightTrack &track : _lights)

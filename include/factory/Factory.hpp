@@ -11,6 +11,7 @@
 #include <DLManager.hpp>
 #include <Primitive.hpp>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -25,6 +26,7 @@ class Factory
 
     template <typename T, typename... Args> std::shared_ptr<T> create(const std::string &type, Args... args)
     {
+        std::lock_guard<std::mutex> lock(_mutex);
         auto it = _map.find(type);
 
         if (it == _map.end())
@@ -39,6 +41,7 @@ class Factory
 
   private:
     static DLManager _dlManager;
+    static std::mutex _mutex;
     std::unordered_map<std::string, std::string> _map;
 };
 

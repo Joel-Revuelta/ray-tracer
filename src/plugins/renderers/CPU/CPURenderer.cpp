@@ -107,6 +107,12 @@ void CPURenderer::run(const RenderContext &context)
         int completedFrames = 0;
         int renderedFrames = 0;
 
+        // Reuse the renderer and its worker pool across frames/subframes. The
+        // camera, scene and seed are updated before each HDR render.
+        Renderer renderer(context.options.frames, context.scene, context.camera, nullptr, "",
+                          context.options.postProcess,
+                          static_cast<std::size_t>(std::max(context.options.threads, 0)), 0);
+
         for (int frame = startFrame; frame <= endFrame; ++frame)
         {
             const std::string path = writeFrames ? formatFramePath(pattern, frame) : std::string();
@@ -152,9 +158,9 @@ void CPURenderer::run(const RenderContext &context)
                 if (subframes > 1)
                     seed += static_cast<uint32_t>(subframe) * 0x85ebca6bu;
 
-                Renderer renderer(context.options.frames, context.scene, camera, nullptr, "",
-                                  context.options.postProcess,
-                                  static_cast<std::size_t>(std::max(context.options.threads, 0)), seed);
+                renderer.setCamera(camera);
+                renderer.setSeed(seed);
+
                 const std::vector<Color3D> hdr = renderer.renderHDR();
 
                 if (hdr.size() != pixelCount)

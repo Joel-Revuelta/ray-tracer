@@ -141,6 +141,19 @@ for scene in material_maps mtl_maps primitives_extra scatter_field misty_shrine 
     compare "${out_dir}/${scene}-cpu.ppm" "${out_dir}/${scene}-cuda.ppm" "${scene}"
 done
 
+# Mixed per-triangle material overrides: the mesh fallback is diffuse, while
+# one group is metallic. Both renderers must use the resolved group material.
+for renderer in cpu cuda; do
+    if ! "${executable}" --path "${source_dir}/tests/mixed_material.cfg" --cli \
+        --renderer "${renderer}" --width 160 --height 90 --samples 128 --seed 5 \
+        --output "${out_dir}/mixed-material-${renderer}.ppm" \
+        >"${out_dir}/mixed-material-${renderer}.log" 2>&1; then
+        cat "${out_dir}/mixed-material-${renderer}.log" >&2
+        exit 1
+    fi
+done
+compare "${out_dir}/mixed-material-cpu.ppm" "${out_dir}/mixed-material-cuda.ppm" "mixed material mesh"
+
 # Object and light motion blur at a mid-animation frame.
 for renderer in cpu cuda; do
     if ! "${executable}" --path "${source_dir}/scenes/motion_blur.cfg" --cli \

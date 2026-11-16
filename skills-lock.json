@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "skills": {
+    "cpp-coding-standards": {
+      "source": "affaan-m/ECC",
+      "commit": "d2ef2680594f9a17526a6e1a2e18b3d242c5d17b",
+      "sourceType": "github",
+      "skillPath": "skills/cpp-coding-standards/SKILL.md",
+      "computedHash": "324ceea2c562f3eff848d258ba84318caf1e353ccce862e85ab4275486e72f1e"
+    },
+    "cpp-pro": {
+      "source": "Jeffallan/claude-skills",
+      "commit": "67c1961b180dc92cf08983344627109e983e8f51",
+      "sourceType": "github",
+      "skillPath": "skills/cpp-pro/SKILL.md",
+      "computedHash": "8faa7333cfab2a9e43a7f04745c865d180f64a6ec121236b0794a0e315c239cc"
+    },
+    "modern-cpp": {
+      "source": "trailofbits/skills",
+      "commit": "149d7b21f4067765b82e67029730b42d228ef4b4",
+      "sourceType": "github",
+      "skillPath": "plugins/modern-cpp/skills/modern-cpp/SKILL.md",
+      "computedHash": "33d005f91709c390b9bfe1da5fe5268307f04855afc967d5b7fb544f501b7425"
+    }
+  }
+}

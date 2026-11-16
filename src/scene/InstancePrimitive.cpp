@@ -88,10 +88,13 @@ bool InstancePrimitive::hit(const Ray &ray, HitPayload &payload, size_t i) const
 
 std::shared_ptr<IPrimitive> InstancePrimitive::clone(void) const
 {
-    std::shared_ptr<IPrimitive> child = _child ? _child->clone() : nullptr;
+    if (!_child)
+        return nullptr;
+
+    std::shared_ptr<IPrimitive> child = _child->clone();
 
     if (!child)
-        child = _child;
+        return nullptr;
 
     std::shared_ptr<InstancePrimitive> copy =
         _hasPose ? std::make_shared<InstancePrimitive>(child, _pose)

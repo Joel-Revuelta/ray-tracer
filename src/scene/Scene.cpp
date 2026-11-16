@@ -280,6 +280,47 @@ void Scene::addInstanceGroup(const std::string &id, const InstanceGroup &instanc
     _instanceGroups.emplace(id, instances);
 }
 
+void Scene::addInstanceLight(const std::string &groupId, std::shared_ptr<ILight> base,
+                             std::shared_ptr<ILight> current)
+{
+    if (groupId.empty())
+        throw std::invalid_argument("Instance light group id must not be empty");
+    if (!base || !current)
+        throw std::invalid_argument("Cannot add a null instance light");
+    if (_instanceGroups.find(groupId) == _instanceGroups.end())
+        throw std::runtime_error("Cannot add a light to unknown instance group: " + groupId);
+
+    InstanceLight binding;
+
+    binding.groupId = groupId;
+    binding.base = std::move(base);
+    binding.lightIndex = _lights.size();
+    _lights.push_back(std::move(current));
+    _instanceLights.push_back(std::move(binding));
+}
+
+bool Scene::updateInstanceLights(const std::string &groupId, const TransformData &transform)
+{
+    bool updated = false;
+
+    for (InstanceLight &binding : _instanceLights)
+    {
+        if (binding.groupId != groupId)
+            continue;
+
+        std::shared_ptr<ILight> current = binding.base->clone();
+
+        if (!current)
+            throw std::runtime_error("Animated prefab light does not implement clone()");
+
+        current->applyTransform(transform);
+        _lights[binding.lightIndex] = std::move(current);
+        updated = true;
+    }
+
+    return updated;
+}
+
 void Scene::associateLight(const std::string &id, std::shared_ptr<ILight> light)
 {
     if (id.empty())

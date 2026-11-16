@@ -26,6 +26,15 @@ enum Interface
 namespace RayTracer
 {
 
+/**
+ * Internal control-flow exception used by App instead of std::exit(). The
+ * executable catches it at the top level and returns the requested status.
+ */
+struct AppExit
+{
+    int code = 0;
+};
+
 class App
 {
   public:

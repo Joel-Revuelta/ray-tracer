@@ -7,6 +7,7 @@
 
 #include "MeshLoader.hpp"
 #include "render/Tangent.hpp"
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <cmath>
@@ -24,6 +25,11 @@ using namespace RayTracer;
 namespace
 {
 constexpr std::size_t MAX_TRIANGLES = 4000000;
+constexpr std::size_t MAX_VERTICES = 8000000;
+constexpr std::size_t MAX_TEXTURE_COORDS = 8000000;
+constexpr std::size_t MAX_NORMALS = 8000000;
+constexpr std::size_t MAX_FACE_VERTICES = 1000000;
+constexpr std::size_t MAX_LINE_LENGTH = 1048576;
 constexpr float DEGENERATE_EPSILON = 1e-12f;
 
 struct UV
@@ -123,6 +129,171 @@ FaceVertex parseFaceVertex(const std::string &token, std::size_t vertexCount, st
     return vertex;
 }
 
+struct Point2
+{
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+float cross2(const Point2 &a, const Point2 &b, const Point2 &c)
+{
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+bool pointInTriangle(const Point2 &point, const Point2 &a, const Point2 &b, const Point2 &c)
+{
+    constexpr float epsilon = 1e-9f;
+    const float d1 = cross2(a, b, point);
+    const float d2 = cross2(b, c, point);
+    const float d3 = cross2(c, a, point);
+    const bool hasNegative = d1 < -epsilon || d2 < -epsilon || d3 < -epsilon;
+    const bool hasPositive = d1 > epsilon || d2 > epsilon || d3 > epsilon;
+
+    return !(hasNegative && hasPositive);
+}
+
+std::vector<std::array<std::size_t, 3>> fanTriangulate(std::size_t count)
+{
+    std::vector<std::array<std::size_t, 3>> result;
+
+    if (count < 3)
+        return result;
+    result.reserve(count - 2);
+    for (std::size_t i = 1; i + 1 < count; ++i)
+        result.push_back({0, i, i + 1});
+    return result;
+}
+
+/**
+ * Ear-clips a simple polygon. Concave polygons are common in OBJ files; a fan
+ * from vertex 0 can emit overlapping triangles.
+ */
+std::vector<std::array<std::size_t, 3>> triangulateFace(const std::vector<Vec3D> &vertices,
+                                                        const std::vector<FaceVertex> &face)
+{
+    const std::size_t count = face.size();
+
+    if (count <= 3)
+        return fanTriangulate(count);
+
+    std::vector<Vec3D> polygon;
+
+    polygon.reserve(count);
+    for (const FaceVertex &vertex : face)
+        polygon.push_back(vertices[vertex.position]);
+
+    Vec3D normal(0.0f);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const Vec3D &a = polygon[i];
+        const Vec3D &b = polygon[(i + 1) % count];
+
+        normal.setX(normal.getX() + (a.getY() - b.getY()) * (a.getZ() + b.getZ()));
+        normal.setY(normal.getY() + (a.getZ() - b.getZ()) * (a.getX() + b.getX()));
+        normal.setZ(normal.getZ() + (a.getX() - b.getX()) * (a.getY() + b.getY()));
+    }
+
+    if (!std::isfinite(normal.lengthSquared()) || normal.lengthSquared() < DEGENERATE_EPSILON)
+        return fanTriangulate(count);
+
+    int axis = 0;
+    float maximum = std::fabs(normal.getX());
+
+    if (std::fabs(normal.getY()) > maximum)
+    {
+        axis = 1;
+        maximum = std::fabs(normal.getY());
+    }
+    if (std::fabs(normal.getZ()) > maximum)
+        axis = 2;
+
+    std::vector<Point2> points;
+
+    points.reserve(count);
+    for (const Vec3D &vertex : polygon)
+    {
+        if (axis == 0)
+            points.push_back(Point2{vertex.getY(), vertex.getZ()});
+        else if (axis == 1)
+            points.push_back(Point2{vertex.getX(), vertex.getZ()});
+        else
+            points.push_back(Point2{vertex.getX(), vertex.getY()});
+    }
+
+    float area2 = 0.0f;
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const Point2 &a = points[i];
+        const Point2 &b = points[(i + 1) % count];
+
+        area2 += a.x * b.y - b.x * a.y;
+    }
+
+    if (std::fabs(area2) < 1e-9f)
+        return fanTriangulate(count);
+
+    const float orientation = area2 > 0.0f ? 1.0f : -1.0f;
+    std::vector<std::size_t> indices(count);
+    std::vector<std::array<std::size_t, 3>> triangles;
+
+    for (std::size_t i = 0; i < count; ++i)
+        indices[i] = i;
+    triangles.reserve(count - 2);
+
+    while (indices.size() > 3)
+    {
+        const std::size_t size = indices.size();
+        bool found = false;
+
+        for (std::size_t i = 0; i < size; ++i)
+        {
+            const std::size_t previous = indices[(i + size - 1) % size];
+            const std::size_t current = indices[i];
+            const std::size_t next = indices[(i + 1) % size];
+
+            if (cross2(points[previous], points[current], points[next]) * orientation <= 1e-9f)
+                continue;
+
+            bool contains = false;
+
+            for (std::size_t j = 0; j < size; ++j)
+            {
+                const std::size_t candidate = indices[j];
+
+                if (candidate == previous || candidate == current || candidate == next)
+                    continue;
+                if (pointInTriangle(points[candidate], points[previous], points[current], points[next]))
+                {
+                    contains = true;
+                    break;
+                }
+            }
+            if (contains)
+                continue;
+
+            triangles.push_back({previous, current, next});
+            indices.erase(indices.begin() + static_cast<std::ptrdiff_t>(i));
+            found = true;
+            break;
+        }
+
+        if (!found)
+        {
+            // Non-simple or numerically degenerate polygons fall back to the
+            // historical fan so the loader still produces a usable mesh.
+            for (std::size_t i = 1; i + 1 < indices.size(); ++i)
+                triangles.push_back({indices[0], indices[i], indices[i + 1]});
+            return triangles;
+        }
+    }
+
+    if (indices.size() == 3)
+        triangles.push_back({indices[0], indices[1], indices[2]});
+    return triangles;
+}
+
 bool addTriangle(MeshAsset &asset, const Vec3D &v0, const Vec3D &v1, const Vec3D &v2, const Vec3D &n0,
                  const Vec3D &n1, const Vec3D &n2, const UV &uv0, const UV &uv1, const UV &uv2,
                  int materialGroup)
@@ -175,6 +346,9 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
 
+        if (line.size() > MAX_LINE_LENGTH)
+            fail(path, lineNumber, "line is too long");
+
         const std::size_t comment = line.find('#');
 
         if (comment != std::string::npos)
@@ -188,6 +362,9 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
 
         if (tag == "v")
         {
+            if (vertices.size() >= MAX_VERTICES)
+                throw std::runtime_error(path + ": mesh exceeds the vertex limit");
+
             double x = 0.0;
             double y = 0.0;
             double z = 0.0;
@@ -248,6 +425,9 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
 
         if (tag == "vt")
         {
+            if (textureCoords.size() >= MAX_TEXTURE_COORDS)
+                throw std::runtime_error(path + ": mesh exceeds the texture-coordinate limit");
+
             double u = 0.0;
             double v = 0.0;
 
@@ -261,6 +441,9 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
 
         if (tag == "vn")
         {
+            if (normals.size() >= MAX_NORMALS)
+                throw std::runtime_error(path + ": mesh exceeds the normal limit");
+
             double x = 0.0;
             double y = 0.0;
             double z = 0.0;
@@ -287,20 +470,26 @@ std::shared_ptr<const MeshAsset> RayTracer::loadObjMesh(const std::string &path)
         std::string token;
 
         while (stream >> token)
+        {
+            if (face.size() >= MAX_FACE_VERTICES)
+                fail(path, lineNumber, "face has too many vertices");
             face.push_back(
                 parseFaceVertex(token, vertices.size(), textureCoords.size(), normals.size(), path, lineNumber));
+        }
 
         if (face.size() < 3)
             fail(path, lineNumber, "face must have at least three vertices");
 
-        for (std::size_t i = 1; i + 1 < face.size(); ++i)
+        const std::vector<std::array<std::size_t, 3>> triangles = triangulateFace(vertices, face);
+
+        for (const std::array<std::size_t, 3> &triangle : triangles)
         {
             if (asset->triangles.size() >= MAX_TRIANGLES)
                 throw std::runtime_error(path + ": mesh exceeds the triangle limit");
 
-            const FaceVertex &a = face[0];
-            const FaceVertex &b = face[i];
-            const FaceVertex &c = face[i + 1];
+            const FaceVertex &a = face[triangle[0]];
+            const FaceVertex &b = face[triangle[1]];
+            const FaceVertex &c = face[triangle[2]];
             const Vec3D &v0 = vertices[a.position];
             const Vec3D &v1 = vertices[b.position];
             const Vec3D &v2 = vertices[c.position];

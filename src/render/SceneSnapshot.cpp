@@ -146,3 +146,57 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
 
     return snapshot;
 }
+
+bool RayTracer::refreshSceneSnapshot(SceneSnapshot &snapshot, const Scene &scene, const Camera &camera)
+{
+    snapshot.camera = makeCameraData(camera);
+    snapshot.lights = collectLights(scene);
+    snapshot.meshMaterialMaps.clear();
+    snapshot.primitives.clear();
+    snapshot.primitives.reserve(scene.getPrimitives().size());
+
+    std::unordered_map<const MeshAsset *, std::uint32_t> meshIndices;
+
+    meshIndices.reserve(snapshot.meshes.size());
+    for (std::uint32_t i = 0; i < snapshot.meshes.size(); ++i)
+    {
+        if (snapshot.meshes[i])
+            meshIndices.emplace(snapshot.meshes[i].get(), i);
+    }
+
+    for (const auto &primitive : scene.getPrimitives())
+    {
+        PrimitiveData data;
+
+        if (!primitive->getData(data))
+            throw std::runtime_error("A primitive does not support renderer-neutral snapshots");
+
+        if (data.type == PrimitiveType::MESH)
+        {
+            const std::shared_ptr<const MeshAsset> asset = primitive->getMeshAsset();
+
+            if (!asset)
+                return false;
+
+            const auto found = meshIndices.find(asset.get());
+
+            if (found == meshIndices.end())
+                return false;
+            data.meshIndex = found->second;
+
+            const std::shared_ptr<const std::vector<int>> materialMap = primitive->getMeshMaterialMap();
+
+            if (materialMap && !materialMap->empty())
+            {
+                data.meshMaterialMapStart = static_cast<int>(snapshot.meshMaterialMaps.size());
+                data.meshMaterialMapCount = static_cast<int>(materialMap->size());
+                snapshot.meshMaterialMaps.insert(snapshot.meshMaterialMaps.end(), materialMap->begin(),
+                                                 materialMap->end());
+            }
+        }
+
+        snapshot.primitives.push_back(data);
+    }
+
+    return true;
+}

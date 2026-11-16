@@ -53,6 +53,9 @@ class Scene : public IPrimitive
     void addMaterial(std::shared_ptr<IMaterial> material);
     void addPrimitive(std::shared_ptr<IPrimitive> primitive);
     void addInstanceGroup(const std::string &id, const InstanceGroup &instances);
+    void addInstanceLight(const std::string &groupId, std::shared_ptr<ILight> base,
+                          std::shared_ptr<ILight> current);
+    bool updateInstanceLights(const std::string &groupId, const TransformData &transform);
     void associateLight(const std::string &id, std::shared_ptr<ILight> light);
 
     const Lights &getLights(void) const;
@@ -71,6 +74,13 @@ class Scene : public IPrimitive
     void setMaterialIndex(const uint &index) override;
 
   private:
+    struct InstanceLight
+    {
+        std::string groupId;
+        std::shared_ptr<ILight> base;
+        std::size_t lightIndex = 0;
+    };
+
     void clearAcceleration(void);
     bool hitBVH(int nodeIndex, const Ray &ray, HitPayload &record) const;
 
@@ -78,6 +88,7 @@ class Scene : public IPrimitive
     Materials _materials;
     Primitives _primitives;
     std::unordered_map<std::string, InstanceGroup> _instanceGroups;
+    std::vector<InstanceLight> _instanceLights;
     std::unordered_map<std::string, std::shared_ptr<ILight>> _lightsById;
     Background _background;
     Atmosphere _atmosphere;

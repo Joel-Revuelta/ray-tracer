@@ -6,6 +6,7 @@
 */
 
 #include "plugins/renderers/CUDA/CudaKernels.hpp"
+#include "render/DielectricStack.hpp"
 #include <cstddef>
 #include <cuda_runtime.h>
 #include <math.h>
@@ -172,8 +173,13 @@ __device__ inline Vec3 randomOnUnitSphere(unsigned int &state)
 {
     while (true)
     {
-        Vec3 value = makeVec3(randomFloat(state) * 2.0f - 1.0f, randomFloat(state) * 2.0f - 1.0f,
-                              randomFloat(state) * 2.0f - 1.0f);
+        // Keep the draw order explicit: multiple randomFloat(state) calls in
+        // one expression would have an unspecified evaluation order and are
+        // unsequenced modifications of state.
+        const float z = randomFloat(state) * 2.0f - 1.0f;
+        const float y = randomFloat(state) * 2.0f - 1.0f;
+        const float x = randomFloat(state) * 2.0f - 1.0f;
+        const Vec3 value = makeVec3(x, y, z);
         const float lenSquared = lengthSquared(value);
 
         if (lenSquared >= 1.0f || lenSquared < 1e-12f)
@@ -265,6 +271,8 @@ __device__ inline float atmosphereOpticalDepth(const Atmosphere &atmosphere, con
 
     const float depth = -expm1f(-vertical * distance) / vertical;
 
+    if (isinf(depth))
+        return depth > 0.0f ? INFINITY : 0.0f;
     return isfinite(depth) && depth > 0.0f ? base * depth : 0.0f;
 }
 
@@ -506,7 +514,7 @@ __device__ bool intersectPlane(const Primitive &primitive, const Ray &ray, float
 
     const float distance = dot(primitive.normal, sub(primitive.point, ray.origin)) / denominator;
 
-    if (distance < 0.0f || distance >= bestDistance)
+    if (distance <= RAY_EPSILON || distance >= bestDistance)
         return false;
 
     bestDistance = distance;
@@ -550,7 +558,7 @@ __device__ bool intersectCylinder(const Primitive &primitive, const Ray &ray, fl
             {
                 const float distance = roots[i];
 
-                if (distance < 0.0f || distance >= bestDistance)
+                if (distance <= RAY_EPSILON || distance >= bestDistance)
                     continue;
 
                 const Vec3 hitPosition = rayAt(ray, distance);
@@ -584,7 +592,7 @@ __device__ bool intersectCylinder(const Primitive &primitive, const Ray &ray, fl
 
         const float distance = dot(capNormals[cap], sub(capCenters[cap], ray.origin)) / denominator;
 
-        if (distance < 0.0f || distance >= bestDistance)
+        if (distance <= RAY_EPSILON || distance >= bestDistance)
             continue;
 
         const Vec3 hitPosition = rayAt(ray, distance);
@@ -623,7 +631,7 @@ __device__ bool intersectCylinder(const Primitive &primitive, const Ray &ray, fl
 __device__ void tryConeBody(const Primitive &primitive, const Ray &ray, float distance, float k2, float &bestDistance,
                             Vec3 &bestNormal, int &bestIndex, int index, bool &found)
 {
-    if (distance < 0.0f || distance >= bestDistance)
+    if (distance <= RAY_EPSILON || distance >= bestDistance)
         return;
 
     const Vec3 hitPosition = rayAt(ray, distance);
@@ -687,7 +695,7 @@ __device__ bool intersectCone(const Primitive &primitive, const Ray &ray, float 
     {
         const float distance = (baseY - ray.origin.y) / ray.direction.y;
 
-        if (distance >= 0.0f && distance < bestDistance)
+        if (distance > RAY_EPSILON && distance < bestDistance)
         {
             const Vec3 hitPosition = rayAt(ray, distance);
             const float dx = hitPosition.x - primitive.center.x;
@@ -1736,7 +1744,9 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
     Vec3 accumulated = makeVec3(0.0f, 0.0f, 0.0f);
     Vec3 throughput = makeVec3(1.0f, 1.0f, 1.0f);
     float backgroundWeight = 1.0f;
-    bool insideDielectric = false;
+    DielectricStack dielectricStack;
+
+    dielectricReset(dielectricStack);
 
     for (int bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
@@ -1892,8 +1902,10 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
                 break;
 
             const float cosi = clamp01(-dot(incident, normal));
-            const float etaI = insideDielectric ? material.ior : 1.0f;
-            const float etaT = insideDielectric ? 1.0f : material.ior;
+            const int stackPosition = dielectricFind(dielectricStack, primitiveIndex);
+            const bool exiting = stackPosition >= 0;
+            const float etaI = exiting ? material.ior : dielectricSurroundingIor(dielectricStack);
+            const float etaT = exiting ? dielectricExteriorIor(dielectricStack, stackPosition) : material.ior;
             const float eta = etaI / etaT;
             const float k = 1.0f - eta * eta * (1.0f - cosi * cosi);
             const float ratio = (etaI - etaT) / (etaI + etaT);
@@ -1907,7 +1919,11 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
             else
             {
                 nextDirection = normalize(add(scale(incident, eta), scale(normal, eta * cosi - sqrtf(k))));
-                insideDielectric = !insideDielectric;
+
+                if (exiting)
+                    dielectricRemove(dielectricStack, primitiveIndex);
+                else if (!dielectricPush(dielectricStack, primitiveIndex, material.ior))
+                    break;
             }
 
             if (lengthSquared(nextDirection) < 1e-12f)

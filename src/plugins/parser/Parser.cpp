@@ -23,6 +23,9 @@ using namespace RayTracer;
 
 namespace
 {
+constexpr std::size_t MAX_ANIMATION_KEYFRAMES = 100000;
+constexpr std::size_t MAX_ANIMATION_TRACKS = 10000;
+
 void requireFinite(double value, const std::string &name)
 {
     // The renderer stores geometry in float, so a finite double that overflows
@@ -57,6 +60,57 @@ double settingAsDouble(const libconfig::Setting &setting, const std::string &nam
     return static_cast<double>(static_cast<int>(setting));
 }
 
+int settingAsInt(const libconfig::Setting &setting, const std::string &name, int minimum, int maximum)
+{
+    const double value = settingAsDouble(setting, name);
+
+    requireFinite(value, name);
+    if (value != std::floor(value) || value < static_cast<double>(minimum) ||
+        value > static_cast<double>(maximum))
+        throw std::runtime_error(name + " must be an integer between " + std::to_string(minimum) + " and " +
+                                 std::to_string(maximum));
+    return static_cast<int>(value);
+}
+
+uint32_t settingAsUInt32(const libconfig::Setting &setting, const std::string &name)
+{
+    const double value = settingAsDouble(setting, name);
+
+    requireFinite(value, name);
+    if (value != std::floor(value) || value < 0.0 ||
+        value > static_cast<double>(std::numeric_limits<uint32_t>::max()))
+        throw std::runtime_error(name + " must be an unsigned 32-bit integer");
+    return static_cast<uint32_t>(value);
+}
+
+void rejectUnknownKeys(const libconfig::Setting &setting, const std::string &context,
+                       std::initializer_list<const char *> allowed)
+{
+    if (!setting.isGroup())
+        return;
+
+    for (int i = 0; i < setting.getLength(); ++i)
+    {
+        const std::string name = setting[i].getName();
+
+        if (name.empty())
+            continue;
+
+        bool known = false;
+
+        for (const char *candidate : allowed)
+        {
+            if (name == candidate)
+            {
+                known = true;
+                break;
+            }
+        }
+        if (!known)
+            throw std::runtime_error(context + ": unknown setting '" + name + "'");
+    }
+}
+
 void requireNonZeroVector(const Vec3D &vector, const std::string &name)
 {
     if (!std::isfinite(vector.lengthSquared()) || vector.lengthSquared() < 1e-12f)
@@ -85,10 +139,9 @@ float roughnessFromShininess(float shininess)
 
 uint parseMaterialIndex(const libconfig::Setting &setting)
 {
-    const int index = setting.lookup("material");
+    const int index = settingAsInt(setting.lookup("material"), "Material index", 0,
+                                   static_cast<int>(std::numeric_limits<int>::max()));
 
-    if (index < 0)
-        throw std::runtime_error("Material index must not be negative");
     return static_cast<uint>(index);
 }
 
@@ -201,12 +254,18 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
     _sceneAnimation.reset();
     _materialCount = 0;
     _mtlMaterialIndices.clear();
+    _textureCache.clear();
+    _meshCache.clear();
+    _mtlCache.clear();
     _prefabScenes.clear();
     _parsingPrefab = false;
 
     try
     {
         initConfig(filename);
+        rejectUnknownKeys(_config.getRoot(), "Scene",
+                          {"camera", "animation", "materials", "prefabs", "primitives", "lights", "background",
+                           "atmosphere"});
         _camera = parseCamera(_config.lookup("camera"));
         if (_config.exists("animation"))
             _animation = parseAnimation(_config.lookup("animation"));
@@ -276,6 +335,9 @@ void Parser::initConfig(const std::string &filename)
  */
 std::shared_ptr<Camera> Parser::parseCamera(const libconfig::Setting &cameraSetting)
 {
+    rejectUnknownKeys(cameraSetting, "Camera",
+                      {"position", "rotation", "fieldOfView", "lensRadius", "focusDistance"});
+
     std::shared_ptr<Camera> camera = std::make_shared<Camera>(parsePoint(cameraSetting.lookup("rotation")),
                                                               parsePoint(cameraSetting.lookup("position")),
                                                               double(cameraSetting.lookup("fieldOfView")));
@@ -305,6 +367,8 @@ std::shared_ptr<Camera> Parser::parseCamera(const libconfig::Setting &cameraSett
  */
 std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting &animationSetting)
 {
+    rejectUnknownKeys(animationSetting, "Animation", {"fps", "shutter", "camera", "instances", "lights"});
+
     double fpsValue = 24.0;
 
     if (animationSetting.exists("fps"))
@@ -322,6 +386,8 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
     if (animationSetting.exists("shutter"))
     {
         const libconfig::Setting &shutterSetting = animationSetting.lookup("shutter");
+
+        rejectUnknownKeys(shutterSetting, "Animation shutter", {"angle", "samples"});
 
         if (shutterSetting.exists("angle"))
         {
@@ -345,6 +411,8 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
 
     if (!keyframesSetting.isList() || keyframesSetting.getLength() < 2)
         throw std::runtime_error("Animation requires at least two camera keyframes");
+    if (static_cast<std::size_t>(keyframesSetting.getLength()) > MAX_ANIMATION_KEYFRAMES)
+        throw std::runtime_error("Animation has too many camera keyframes");
 
     std::vector<CameraKeyframe> keyframes;
     keyframes.reserve(static_cast<std::size_t>(keyframesSetting.getLength()));
@@ -353,12 +421,16 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
     Point3D lookAt = _camera ? _camera->getLookAt() : Point3D(0.0f, 0.0f, 1.0f);
     float fieldOfView = _camera ? _camera->getVerticalFovDegree() : 60.0f;
     float lensRadius = _camera ? _camera->getLensRadius() : 0.0f;
-    float focusDistance = _camera ? _camera->getFocusDistance() : 0.0f;
+    float focusDistance = _camera && !_camera->isAutoFocus() ? _camera->getFocusDistance() : 0.0f;
     double previousTime = -1.0;
 
     for (int i = 0; i < keyframesSetting.getLength(); ++i)
     {
         const libconfig::Setting &keyframeSetting = keyframesSetting[i];
+
+        rejectUnknownKeys(keyframeSetting, "Camera keyframe",
+                          {"time", "position", "rotation", "fieldOfView", "lensRadius", "focusDistance"});
+
         const double time = settingAsDouble(keyframeSetting.lookup("time"), "Animation keyframe time");
 
         requireFinite(time, "Animation keyframe time");
@@ -415,6 +487,8 @@ std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Set
     if (!_animation)
         throw std::runtime_error("Scene animation requires a camera animation timeline");
 
+    rejectUnknownKeys(animationSetting, "Scene animation", {"fps", "shutter", "camera", "instances", "lights"});
+
     auto forEach = [](const libconfig::Setting &setting, auto callback) {
         if (setting.isList())
         {
@@ -429,9 +503,13 @@ std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Set
         Vec3Track track;
 
         forEach(trackSetting, [&](const libconfig::Setting &keyframe) {
+            rejectUnknownKeys(keyframe, name + " keyframe", {"time", "value"});
+
             const double time = settingAsDouble(keyframe.lookup("time"), name + " keyframe time");
 
             requireFinite(time, name + " keyframe time");
+            if (track.keyframes.size() >= MAX_ANIMATION_KEYFRAMES)
+                throw std::runtime_error(name + " has too many keyframes");
             track.keyframes.push_back(Vec3Keyframe{time, parsePoint(keyframe.lookup("value"))});
         });
         return track;
@@ -449,11 +527,15 @@ std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Set
         FloatTrack track;
 
         forEach(trackSetting, [&](const libconfig::Setting &keyframe) {
+            rejectUnknownKeys(keyframe, name + " keyframe", {"time", "value"});
+
             const double time = settingAsDouble(keyframe.lookup("time"), name + " keyframe time");
             const double value = settingAsDouble(keyframe.lookup("value"), name + " keyframe value");
 
             requireFinite(time, name + " keyframe time");
             requireFinite(value, name + " keyframe value");
+            if (track.keyframes.size() >= MAX_ANIMATION_KEYFRAMES)
+                throw std::runtime_error(name + " has too many keyframes");
             track.keyframes.push_back(FloatKeyframe{time, static_cast<float>(value)});
         });
         return track;
@@ -463,9 +545,13 @@ std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Set
         ColorTrack track;
 
         forEach(trackSetting, [&](const libconfig::Setting &keyframe) {
+            rejectUnknownKeys(keyframe, name + " keyframe", {"time", "value"});
+
             const double time = settingAsDouble(keyframe.lookup("time"), name + " keyframe time");
 
             requireFinite(time, name + " keyframe time");
+            if (track.keyframes.size() >= MAX_ANIMATION_KEYFRAMES)
+                throw std::runtime_error(name + " has too many keyframes");
             track.keyframes.push_back(ColorKeyframe{time, parseColor(keyframe.lookup("value"))});
         });
         return track;
@@ -481,6 +567,7 @@ std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Set
         forEach(instanceTracks, [&](const libconfig::Setting &trackSetting) {
             InstanceTrack track;
 
+            rejectUnknownKeys(trackSetting, "Instance animation track", {"target", "position", "rotation", "scale"});
             track.target = std::string(trackSetting.lookup("target").c_str());
             if (track.target.empty())
                 throw std::runtime_error("Instance animation target must not be empty");
@@ -494,6 +581,8 @@ std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Set
             if (trackSetting.exists("scale"))
                 track.scale = parseVec3Track(trackSetting.lookup("scale"), "Instance scale");
 
+            if (instances.size() >= MAX_ANIMATION_TRACKS)
+                throw std::runtime_error("Too many instance animation tracks");
             instances.push_back(std::move(track));
         });
     }
@@ -505,6 +594,8 @@ std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Set
         forEach(lightTracks, [&](const libconfig::Setting &trackSetting) {
             LightTrack track;
 
+            rejectUnknownKeys(trackSetting, "Light animation track",
+                              {"target", "intensity", "color", "position"});
             track.target = std::string(trackSetting.lookup("target").c_str());
             if (track.target.empty())
                 throw std::runtime_error("Light animation target must not be empty");
@@ -528,6 +619,8 @@ std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Set
                 track.position = parseVec3Track(trackSetting.lookup("position"), "Light position");
             }
 
+            if (lights.size() >= MAX_ANIMATION_TRACKS)
+                throw std::runtime_error("Too many light animation tracks");
             lights.push_back(std::move(track));
         });
     }
@@ -550,6 +643,12 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
     {
         std::shared_ptr<IMaterial> material;
         libconfig::Setting &setting = materialSetting[i];
+
+        rejectUnknownKeys(setting, std::string("Material '") + setting.getName() + "'",
+                          {"type", "ambientReflection", "diffuseReflection", "roughness", "ior", "color",
+                           "emissionColor", "intensity", "texture", "normalTexture", "roughnessTexture",
+                           "emissionTexture"});
+
         const std::string type = setting.lookup("type");
 
         if (type == "diffuse")
@@ -632,6 +731,8 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
  */
 void Parser::parseLights(SceneBuilder &sceneBuilder, const libconfig::Setting &lightSetting)
 {
+    rejectUnknownKeys(lightSetting, "Lights", {"ambient", "directional", "point", "spheres"});
+
     auto addLight = [&](std::shared_ptr<ILight> light, const libconfig::Setting &setting) {
         std::string id;
 
@@ -697,6 +798,9 @@ void Parser::parseLights(SceneBuilder &sceneBuilder, const libconfig::Setting &l
  */
 std::shared_ptr<ILight> Parser::parseDirectionalLight(const libconfig::Setting &directionalSetting)
 {
+    rejectUnknownKeys(directionalSetting, "Directional light",
+                      {"position", "color", "intensity", "id"});
+
     const Vec3D direction = parsePoint(directionalSetting.lookup("position"));
     const double intensity = directionalSetting.lookup("intensity");
 
@@ -718,6 +822,8 @@ std::shared_ptr<ILight> Parser::parseDirectionalLight(const libconfig::Setting &
  */
 std::shared_ptr<ILight> Parser::parsePointLight(const libconfig::Setting &pointSetting)
 {
+    rejectUnknownKeys(pointSetting, "Point light", {"position", "color", "intensity", "attenuation", "id"});
+
     const double intensity = pointSetting.lookup("intensity");
     const double attenuationConstant = pointSetting.lookup("attenuation.constant");
     const double attenuationLinear = pointSetting.lookup("attenuation.linear");
@@ -744,6 +850,9 @@ std::shared_ptr<ILight> Parser::parsePointLight(const libconfig::Setting &pointS
  */
 std::shared_ptr<ILight> Parser::parseSphereLight(const libconfig::Setting &sphereSetting)
 {
+    rejectUnknownKeys(sphereSetting, "Sphere light",
+                      {"position", "radius", "color", "intensity", "attenuation", "id"});
+
     const Vec3D position = parsePoint(sphereSetting.lookup("position"));
     const double radius = sphereSetting.lookup("radius");
     const double intensity = sphereSetting.lookup("intensity");
@@ -759,6 +868,8 @@ std::shared_ptr<ILight> Parser::parseSphereLight(const libconfig::Setting &spher
     if (sphereSetting.exists("attenuation"))
     {
         const libconfig::Setting &attenuation = sphereSetting.lookup("attenuation");
+
+        rejectUnknownKeys(attenuation, "Sphere light attenuation", {"constant", "linear", "quadratic"});
 
         attenuationConstant = attenuation.lookup("constant");
         attenuationLinear = attenuation.lookup("linear");
@@ -782,6 +893,8 @@ std::shared_ptr<ILight> Parser::parseSphereLight(const libconfig::Setting &spher
  */
 std::shared_ptr<ILight> Parser::parseAmbientLight(const libconfig::Setting &ambientSetting)
 {
+    rejectUnknownKeys(ambientSetting, "Ambient light", {"color", "intensity", "id"});
+
     const double intensity = ambientSetting.lookup("intensity");
 
     requireNonNegative(intensity, "Ambient light intensity");
@@ -801,6 +914,10 @@ std::shared_ptr<ILight> Parser::parseAmbientLight(const libconfig::Setting &ambi
  */
 void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &primitiveSetting)
 {
+    rejectUnknownKeys(primitiveSetting, "Primitives",
+                      {"spheres", "planes", "cylinders", "cones", "boxes", "disks", "meshes", "scatter", "instances",
+                       "scene"});
+
     for (int i = 0; primitiveSetting.exists("spheres")
         &&  i < primitiveSetting.lookup("spheres").getLength(); i++) {
         sceneBuilder.addPrimitive(parseSphere(primitiveSetting.lookup("spheres")[i]));
@@ -849,22 +966,22 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
         for (int i = 0; i < count; ++i)
         {
             const libconfig::Setting &group = scatter.isList() ? scatter[i] : scatter;
+
+            rejectUnknownKeys(group, "Scatter", {"prefab", "count", "seed", "area", "rotation", "scale"});
             const std::string prefabName = group.lookup("prefab");
             const auto prefab = _prefabScenes.find(prefabName);
 
             if (prefab == _prefabScenes.end())
                 throw std::runtime_error("Unknown scatter prefab: " + prefabName);
 
-            const int instances = group.exists("count") ? static_cast<int>(group.lookup("count")) : 1;
-            const int seedValue = group.exists("seed") ? static_cast<int>(group.lookup("seed")) : 0;
-            const uint32_t seed = static_cast<uint32_t>(seedValue);
-
-            if (instances <= 0 || instances > 4096)
-                throw std::runtime_error("Scatter count must be between 1 and 4096");
-            if (seedValue < 0)
-                throw std::runtime_error("Scatter seed must not be negative");
+            const int instances =
+                group.exists("count") ? settingAsInt(group.lookup("count"), "Scatter count", 1, 4096) : 1;
+            const uint32_t seed =
+                group.exists("seed") ? settingAsUInt32(group.lookup("seed"), "Scatter seed") : 0u;
 
             const libconfig::Setting &area = group.lookup("area");
+
+            rejectUnknownKeys(area, "Scatter area", {"min", "max"});
             const Vec3D areaMin = parseVector(area.lookup("min"));
             const Vec3D areaMax = parseVector(area.lookup("max"));
 
@@ -879,6 +996,7 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
             {
                 const libconfig::Setting &rotation = group.lookup("rotation");
 
+                rejectUnknownKeys(rotation, "Scatter rotation", {"min", "max"});
                 rotationMin = parseVector(rotation.lookup("min"));
                 rotationMax = parseVector(rotation.lookup("max"));
                 if (rotationMin.getX() > rotationMax.getX() || rotationMin.getY() > rotationMax.getY() ||
@@ -893,6 +1011,7 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
             {
                 const libconfig::Setting &scale = group.lookup("scale");
 
+                rejectUnknownKeys(scale, "Scatter scale", {"min", "max"});
                 scaleMin = static_cast<float>(settingAsDouble(scale.lookup("min"), "Scatter scale minimum"));
                 scaleMax = static_cast<float>(settingAsDouble(scale.lookup("max"), "Scatter scale maximum"));
                 requirePositive(scaleMin, "Scatter scale minimum");
@@ -944,6 +1063,8 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
         for (int i = 0; i < count; ++i)
         {
             const libconfig::Setting &instance = instances.isList() ? instances[i] : instances;
+
+            rejectUnknownKeys(instance, "Prefab instance", {"prefab", "id", "transform"});
             const std::string prefabName = instance.lookup("prefab");
             const auto prefab = _prefabScenes.find(prefabName);
 
@@ -972,6 +1093,9 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
     if (primitiveSetting.exists("scene"))
     {
         const libconfig::Setting &nestedScene = primitiveSetting.lookup("scene");
+
+        rejectUnknownKeys(nestedScene, "Nested scene",
+                          {"id", "transform", "materials", "primitives", "lights", "scene"});
         TransformPose pose;
 
         if (nestedScene.exists("transform"))
@@ -1004,6 +1128,9 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
     if (_sceneNestingDepth >= 32)
         throw std::runtime_error("Scene nesting is too deep (maximum depth is 32)");
 
+    rejectUnknownKeys(sceneSetting, "Nested scene",
+                      {"id", "transform", "materials", "primitives", "lights", "scene"});
+
     NestingGuard nestingGuard(_sceneNestingDepth);
     MaterialCountGuard materialCountGuard(_materialCount);
     MtlIndexGuard mtlIndexGuard(_mtlMaterialIndices);
@@ -1023,6 +1150,9 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
     if (sceneSetting.exists("scene"))
     {
         const libconfig::Setting &nestedScene = sceneSetting.lookup("scene");
+
+        rejectUnknownKeys(nestedScene, "Nested scene",
+                          {"id", "transform", "materials", "primitives", "lights", "scene"});
         TransformPose pose;
 
         if (nestedScene.exists("transform"))
@@ -1050,6 +1180,9 @@ void Parser::parsePrefabs(const libconfig::Setting &prefabsSetting)
     for (int i = 0; i < prefabsSetting.getLength(); ++i)
     {
         const libconfig::Setting &prefab = prefabsSetting[i];
+
+        rejectUnknownKeys(prefab, std::string("Prefab '") + prefab.getName() + "'",
+                          {"materials", "primitives", "lights", "scene"});
         const std::string name = prefab.getName();
 
         if (_prefabScenes.find(name) != _prefabScenes.end())
@@ -1068,6 +1201,7 @@ void Parser::parsePrefabs(const libconfig::Setting &prefabsSetting)
  */
 std::shared_ptr<IPrimitive> Parser::parseSphere(libconfig::Setting &sphereSetting)
 {
+    rejectUnknownKeys(sphereSetting, "Sphere", {"r", "position", "material", "transform"});
     const double radius = sphereSetting.lookup("r");
 
     requirePositive(radius, "Sphere radius");
@@ -1088,6 +1222,7 @@ std::shared_ptr<IPrimitive> Parser::parseSphere(libconfig::Setting &sphereSettin
  */
 std::shared_ptr<IPrimitive> Parser::parsePlane(libconfig::Setting &planeSetting)
 {
+    rejectUnknownKeys(planeSetting, "Plane", {"normal", "position", "material", "transform"});
     const Vec3D normal = parseVector(planeSetting.lookup("normal"));
 
     requireNonZeroVector(normal, "Plane normal");
@@ -1108,6 +1243,7 @@ std::shared_ptr<IPrimitive> Parser::parsePlane(libconfig::Setting &planeSetting)
  */
 std::shared_ptr<IPrimitive> Parser::parseCylinder(libconfig::Setting &cylinderSetting)
 {
+    rejectUnknownKeys(cylinderSetting, "Cylinder", {"r", "height", "center", "material", "transform"});
     const double radius = cylinderSetting.lookup("r");
     const double height = cylinderSetting.lookup("height");
 
@@ -1130,6 +1266,7 @@ std::shared_ptr<IPrimitive> Parser::parseCylinder(libconfig::Setting &cylinderSe
  */
 std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
 {
+    rejectUnknownKeys(coneSetting, "Cone", {"r", "h", "center", "material", "transform"});
     const double radius = coneSetting.lookup("r");
     const double height = coneSetting.lookup("h");
 
@@ -1145,6 +1282,7 @@ std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
 
 std::shared_ptr<IPrimitive> Parser::parseBox(libconfig::Setting &boxSetting)
 {
+    rejectUnknownKeys(boxSetting, "Box", {"min", "max", "material", "transform"});
     const Vec3D minimum = parseVector(boxSetting.lookup("min"));
     const Vec3D maximum = parseVector(boxSetting.lookup("max"));
 
@@ -1160,6 +1298,7 @@ std::shared_ptr<IPrimitive> Parser::parseBox(libconfig::Setting &boxSetting)
 
 std::shared_ptr<IPrimitive> Parser::parseDisk(libconfig::Setting &diskSetting)
 {
+    rejectUnknownKeys(diskSetting, "Disk", {"center", "normal", "radius", "innerRadius", "material", "transform"});
     const Vec3D center = parsePoint(diskSetting.lookup("center"));
     const Vec3D normal = parseVector(diskSetting.lookup("normal"));
     const double radius = diskSetting.lookup("radius");
@@ -1224,6 +1363,8 @@ std::shared_ptr<const MeshAsset> Parser::loadMesh(const std::string &path)
  */
 std::shared_ptr<IPrimitive> Parser::parseMesh(SceneBuilder &sceneBuilder, libconfig::Setting &meshSetting)
 {
+    rejectUnknownKeys(meshSetting, "Mesh", {"path", "material", "materialGroups", "transform"});
+
     const std::string path = resolveAssetPath(meshSetting.lookup("path"));
     const std::shared_ptr<const MeshAsset> asset = loadMesh(path);
     const uint fallbackMaterial = parseMaterialIndex(meshSetting);
@@ -1237,9 +1378,10 @@ std::shared_ptr<IPrimitive> Parser::parseMesh(SceneBuilder &sceneBuilder, libcon
         {
             const libconfig::Setting &group = groupSetting[i];
             const std::string name = group.getName();
-            const int materialIndex = static_cast<int>(group);
+            const int materialIndex = settingAsInt(group, "Material group '" + name + "' index", 0,
+                                                   static_cast<int>(std::numeric_limits<int>::max()));
 
-            if (materialIndex < 0 || static_cast<uint>(materialIndex) >= _materialCount)
+            if (static_cast<uint>(materialIndex) >= _materialCount)
                 throw std::runtime_error("Material group '" + name + "' references an invalid material index");
 
             groupMap[name] = static_cast<uint>(materialIndex);
@@ -1377,6 +1519,8 @@ Vec3D Parser::parseVector(const libconfig::Setting &vectorSetting)
  */
 TransformPose Parser::parseTransformPose(const libconfig::Setting &transformSetting)
 {
+    rejectUnknownKeys(transformSetting, "Transform", {"translate", "rotate", "scale"});
+
     Vec3D translation(0.0f);
     Vec3D rotation(0.0f);
     Vec3D scale(1.0f);
@@ -1445,14 +1589,16 @@ Color3D Parser::parseColor(const libconfig::Setting &colorSetting)
     const double g = colorSetting.lookup("g");
     const double b = colorSetting.lookup("b");
 
-    requireFinite(r, "Color red");
-    requireFinite(g, "Color green");
-    requireFinite(b, "Color blue");
+    requireNonNegative(r, "Color red");
+    requireNonNegative(g, "Color green");
+    requireNonNegative(b, "Color blue");
     return Color3D(r, g, b);
 }
 
 Background Parser::parseBackground(const libconfig::Setting &backgroundSetting)
 {
+    rejectUnknownKeys(backgroundSetting, "Background", {"texture", "zenith", "horizon", "ground", "intensity"});
+
     Background background;
 
     background.enabled = true;
@@ -1492,6 +1638,9 @@ Background Parser::parseBackground(const libconfig::Setting &backgroundSetting)
 
 Atmosphere Parser::parseAtmosphere(const libconfig::Setting &atmosphereSetting)
 {
+    rejectUnknownKeys(atmosphereSetting, "Atmosphere",
+                      {"type", "density", "color", "anisotropy", "groundY", "heightFalloff", "maxDistance"});
+
     Atmosphere atmosphere;
 
     if (!atmosphereSetting.exists("type"))

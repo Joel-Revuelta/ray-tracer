@@ -197,7 +197,7 @@ mkdir -p frames
 - Bloom is applied to the HDR image before exposure and tonemapping, with a
   shared Gaussian kernel on CPU and CUDA.
 - The output format follows the extension: `.ppm` writes binary `P6`, `.png`
-  writes 8-bit RGBA. Other extensions fall back to PPM.
+  writes 8-bit RGBA. Other extensions are rejected before rendering.
 - CLI mode with `--output` writes one file per render, or one numbered file per
   animation frame. Final files are written atomically via a temporary file.
 - CLI mode without `--output` writes a still PPM to standard output. Animation

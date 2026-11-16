@@ -39,3 +39,4 @@ Factory::Factory(void)
 }
 
 DLManager Factory::_dlManager;
+std::mutex Factory::_mutex;

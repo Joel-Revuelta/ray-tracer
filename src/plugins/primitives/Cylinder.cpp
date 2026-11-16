@@ -120,7 +120,7 @@ bool Cylinder::hit(const Ray &ray, HitPayload &payload, size_t i) const
 
             for (const float distance : roots)
             {
-                if (distance < 0.0f || distance >= bestDistance)
+                if (distance <= Ray::EPSILON || distance >= bestDistance)
                     continue;
 
                 const Vec3D hitPoint = ray.at(distance);
@@ -150,7 +150,7 @@ bool Cylinder::hit(const Ray &ray, HitPayload &payload, size_t i) const
             continue;
 
         const float distance = vec3DDot(capNormals[cap], capCenters[cap] - origin) / denominator;
-        if (distance < 0.0f || distance >= bestDistance)
+        if (distance <= Ray::EPSILON || distance >= bestDistance)
             continue;
 
         const Vec3D hitPoint = ray.at(distance);

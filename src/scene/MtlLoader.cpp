@@ -14,11 +14,15 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 using namespace RayTracer;
 
 namespace
 {
+constexpr std::size_t MAX_MTL_MATERIALS = 100000;
+constexpr std::size_t MAX_MTL_LINE_LENGTH = 1048576;
+
 [[noreturn]] void fail(const std::string &path, std::size_t line, const std::string &message)
 {
     throw std::runtime_error(path + ":" + std::to_string(line) + ": " + message);
@@ -68,6 +72,7 @@ std::vector<MtlMaterial> RayTracer::loadMtl(const std::string &path)
 
     const std::filesystem::path mtlPath(path);
     std::vector<MtlMaterial> materials;
+    std::unordered_set<std::string> names;
     MtlMaterial *current = nullptr;
     std::string line;
     std::size_t lineNumber = 0;
@@ -78,6 +83,9 @@ std::vector<MtlMaterial> RayTracer::loadMtl(const std::string &path)
 
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
+
+        if (line.size() > MAX_MTL_LINE_LENGTH)
+            fail(path, lineNumber, "line is too long");
 
         const std::size_t comment = line.find('#');
 
@@ -99,6 +107,10 @@ std::vector<MtlMaterial> RayTracer::loadMtl(const std::string &path)
 
             if (name.empty())
                 fail(path, lineNumber, "empty newmtl name");
+            if (materials.size() >= MAX_MTL_MATERIALS)
+                fail(path, lineNumber, "MTL file exceeds the material limit");
+            if (!names.insert(name).second)
+                fail(path, lineNumber, "duplicate newmtl name '" + name + "'");
 
             materials.emplace_back();
             current = &materials.back();
@@ -119,10 +131,6 @@ std::vector<MtlMaterial> RayTracer::loadMtl(const std::string &path)
             current->emission = parseColor(stream, path, lineNumber, "Ke");
         else if (tag == "Ns")
             current->shininess = std::clamp(parseFloat(stream, path, lineNumber, "Ns"), 0.0f, 1000.0f);
-        else if (tag == "d")
-            current->opacity = std::clamp(parseFloat(stream, path, lineNumber, "d"), 0.0f, 1.0f);
-        else if (tag == "Tr")
-            current->opacity = std::clamp(1.0f - parseFloat(stream, path, lineNumber, "Tr"), 0.0f, 1.0f);
         else if (tag == "map_Kd" || tag == "map_Ks" || tag == "map_Ke")
         {
             std::string mapPath;

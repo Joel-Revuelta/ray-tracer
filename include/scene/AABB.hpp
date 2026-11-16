@@ -116,6 +116,9 @@ struct AABB
 
     bool intersect(const Ray &ray, float maxDistance) const
     {
+        if (!valid())
+            return false;
+
         const Vec3D origin = ray.getOrigin();
         const Vec3D direction = ray.getDirection();
         float nearDistance = 0.0f;

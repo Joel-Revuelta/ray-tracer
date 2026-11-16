@@ -6,6 +6,8 @@
 */
 
 #include "DLManager.hpp"
+#include "plugins/PluginABI.hpp"
+#include <cstdint>
 #include <cstdlib>
 #include <system_error>
 #include <vector>
@@ -105,6 +107,7 @@ void DLManager::openLib(const std::string &libraryPath)
 
     currentHandle = handle;
     _libPath = libraryPath;
+    validateABI();
     handles.insert(std::make_pair(_libPath, currentHandle));
 }
 
@@ -125,6 +128,28 @@ void DLManager::closeLib(void)
     handles.clear();
     currentHandle = nullptr;
     _libPath.clear();
+}
+
+void DLManager::validateABI(void) const
+{
+    dlerror();
+
+    using AbiVersionFunction = unsigned int (*)(void);
+    AbiVersionFunction version =
+        reinterpret_cast<AbiVersionFunction>(dlsym(currentHandle, "raytracerPluginABIVersion"));
+    const char *error = dlerror();
+
+    if (error != nullptr)
+        throw std::runtime_error(error);
+    if (version == nullptr)
+        throw std::runtime_error("Plugin does not export an ABI version: " + _libPath);
+
+    const unsigned int pluginVersion = version();
+
+    if (pluginVersion != RayTracer::PLUGIN_ABI_VERSION)
+        throw std::runtime_error("Plugin ABI mismatch for " + _libPath + ": expected " +
+                                 std::to_string(RayTracer::PLUGIN_ABI_VERSION) + ", got " +
+                                 std::to_string(pluginVersion));
 }
 
 /**

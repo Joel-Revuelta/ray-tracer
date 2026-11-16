@@ -6,15 +6,14 @@
 */
 
 #include "OpenGL.hpp"
+#include "plugins/renderers/PPM.hpp"
 #include <GL/glew.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <deque>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -207,77 +206,6 @@ char keyToChar(int key)
     }
 }
 
-struct PPMImage
-{
-    std::size_t width = 0;
-    std::size_t height = 0;
-    std::vector<std::uint32_t> pixels;
-};
-
-PPMImage readPPM(const std::string &path)
-{
-    std::ifstream file(path, std::ios::binary);
-
-    if (!file)
-        throw std::runtime_error("Cannot open file: " + path);
-
-    std::string magic;
-    int width = 0;
-    int height = 0;
-    int maxValue = 0;
-
-    file >> magic >> width >> height >> maxValue;
-
-    if (magic != "P6")
-        throw std::runtime_error("Unsupported PPM format (expected binary P6): " + path);
-    if (width <= 0 || height <= 0)
-        throw std::runtime_error("Invalid dimensions in PPM file: " + path);
-    if (maxValue != 255)
-        throw std::runtime_error("Invalid max color value in PPM file: " + path);
-
-    char separator = '\0';
-
-    file.get(separator);
-    if (!std::isspace(static_cast<unsigned char>(separator)))
-        throw std::runtime_error("Malformed PPM header: " + path);
-    if (separator == '\r')
-    {
-        char lineFeed = '\0';
-
-        file.get(lineFeed);
-        if (lineFeed != '\n')
-            throw std::runtime_error("Malformed PPM line ending: " + path);
-    }
-
-    constexpr std::size_t MAX_PIXELS = 16000000;
-    const std::size_t pixelCount = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-
-    if (pixelCount > MAX_PIXELS)
-        throw std::runtime_error("PPM image is too large: " + path);
-
-    std::vector<std::uint8_t> rgb(pixelCount * 3u);
-
-    file.read(reinterpret_cast<char *>(rgb.data()), static_cast<std::streamsize>(rgb.size()));
-    if (file.gcount() != static_cast<std::streamsize>(rgb.size()))
-        throw std::runtime_error("Truncated PPM pixel data: " + path);
-
-    PPMImage image;
-    image.width = static_cast<std::size_t>(width);
-    image.height = static_cast<std::size_t>(height);
-    image.pixels.resize(pixelCount);
-
-    for (std::size_t i = 0; i < pixelCount; ++i)
-    {
-        const std::uint8_t r = rgb[i * 3u];
-        const std::uint8_t g = rgb[i * 3u + 1u];
-        const std::uint8_t b = rgb[i * 3u + 2u];
-
-        image.pixels[i] = (0xffu << 24u) | (static_cast<std::uint32_t>(b) << 16u) |
-                          (static_cast<std::uint32_t>(g) << 8u) | static_cast<std::uint32_t>(r);
-    }
-
-    return image;
-}
 } // namespace
 
 struct OpenGLGUI::Impl
@@ -609,7 +537,7 @@ OpenGLGUI::~OpenGLGUI(void) = default;
 
 void OpenGLGUI::loadPPM(const std::string &path)
 {
-    const PPMImage image = readPPM(path);
+    const PPMImage image = readPPMFile(path);
 
     glfwSetWindowSize(_impl->window, static_cast<int>(image.width), static_cast<int>(image.height));
     _impl->setImage(image.width, image.height, image.pixels);

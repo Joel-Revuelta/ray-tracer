@@ -43,6 +43,11 @@ float decodeTexel(float value, TextureColorSpace colorSpace)
     return colorSpace == TextureColorSpace::SRGB ? srgbToLinear(value) : value;
 }
 
+float sanitizeRadiance(float value)
+{
+    return std::isfinite(value) && value > 0.0f ? value : 0.0f;
+}
+
 bool readToken(std::istream &stream, std::string &token)
 {
     token.clear();
@@ -204,7 +209,8 @@ std::shared_ptr<const Texture> RayTracer::loadHDRTexture(const std::string &path
     pixels.reserve(texelCount);
 
     for (std::size_t i = 0; i < texelCount; ++i)
-        pixels.emplace_back(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]);
+        pixels.emplace_back(sanitizeRadiance(data[i * 3]), sanitizeRadiance(data[i * 3 + 1]),
+                            sanitizeRadiance(data[i * 3 + 2]));
 
     stbi_image_free(data);
     return std::make_shared<Texture>(width, height, std::move(pixels));
@@ -308,6 +314,8 @@ std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path
 
             if (file.gcount() != static_cast<std::streamsize>(sizeof(rgb)))
                 fail(path, "truncated binary texture data");
+            if (rgb[0] > maxValue || rgb[1] > maxValue || rgb[2] > maxValue)
+                fail(path, "pixel component exceeds the PPM maximum value");
 
             pixels.emplace_back(decodeTexel(static_cast<float>(rgb[0]) * inverseMaximum, colorSpace),
                                 decodeTexel(static_cast<float>(rgb[1]) * inverseMaximum, colorSpace),

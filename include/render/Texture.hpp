@@ -49,8 +49,10 @@ enum class TextureColorSpace
 };
 
 /**
- * Loads a binary P6 or ASCII P3 PPM file. Throws std::runtime_error with the
- * path and reason on malformed input.
+ * Loads a binary P6 or ASCII P3 PPM file. Header comments and arbitrary
+ * whitespace before the maximum value are accepted; the binary payload must
+ * follow the maximum value after exactly one whitespace separator. Throws
+ * std::runtime_error with the path and reason on malformed input.
  */
 std::shared_ptr<const Texture> loadPPMTexture(const std::string &path,
                                               TextureColorSpace colorSpace = TextureColorSpace::SRGB);

@@ -19,8 +19,8 @@ namespace RayTracer
  * Loads a Wavefront OBJ file into an immutable mesh asset.
  *
  * Supports `v` positions, `vt` texture coordinates, `vn` normals, `f` faces
- * (triangles and polygons, fan triangulated), `usemtl` material groups and
- * `mtllib` references. Objects, groups and smoothing declarations are ignored.
+ * (triangles and convex/concave polygons, ear-clipped), `usemtl` material
+ * groups and `mtllib` references. Objects, groups and smoothing declarations are ignored.
  * Throws std::runtime_error with the file and line on invalid input.
  */
 std::shared_ptr<const MeshAsset> loadObjMesh(const std::string &path);

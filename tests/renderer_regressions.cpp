@@ -8,19 +8,25 @@
 #include "Factory.hpp"
 #include "InstancePrimitive.hpp"
 #include "Parser.hpp"
+#include "plugins/renderers/CameraController.hpp"
 #include "Scene.hpp"
 #include "SceneBuilder.hpp"
+#include "MeshLoader.hpp"
 #include "TransformData.hpp"
 #include "render/Animation.hpp"
 #include "render/AtmosphereSampling.hpp"
+#include "render/DielectricStack.hpp"
 #include "render/Environment.hpp"
+#include "plugins/renderers/PPM.hpp"
 #include "render/ImageWriter.hpp"
 #include "render/SceneAnimation.hpp"
+#include "render/TemporaryPath.hpp"
 #include "render/Texture.hpp"
 #include "render/VideoWriter.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -155,6 +161,258 @@ int checkMtlMaps(const std::string &scenePath)
     return 0;
 }
 
+int checkSelfHitEpsilon(Factory &factory)
+{
+    const std::shared_ptr<IPrimitive> plane =
+        factory.create<IPrimitive>("Plane", Vec3D(0.0f, 1.0f, 0.0f), Vec3D(0.0f), 0u);
+    const Ray planeRay(Vec3D(0.0f), Vec3D(0.0f, 1.0f, 1.0f));
+
+    HitPayload planePayload;
+
+    if (plane->hit(planeRay, planePayload, 0))
+        return fail("plane accepted a zero-distance self-hit");
+
+    const std::shared_ptr<IPrimitive> cylinder =
+        factory.create<IPrimitive>("Cylinder", 1.0, Vec3D(0.0f), 2.0, 0u);
+    const Ray cylinderRay(Vec3D(1.0f, 1.0f, 0.0f), Vec3D(1.0f, 0.0f, 0.0f));
+
+    HitPayload cylinderPayload;
+
+    if (cylinder->hit(cylinderRay, cylinderPayload, 0))
+        return fail("cylinder accepted a zero-distance self-hit");
+
+    const std::shared_ptr<IPrimitive> cone =
+        factory.create<IPrimitive>("Cone", 1.0, Vec3D(0.0f), 2.0, 0u);
+    const Ray coneRay(Vec3D(1.0f, -2.0f, 0.0f), Vec3D(1.0f, 0.0f, 0.0f));
+
+    HitPayload conePayload;
+
+    if (cone->hit(coneRay, conePayload, 0))
+        return fail("cone accepted a zero-distance self-hit");
+
+    return 0;
+}
+
+int checkConcaveMesh(void)
+{
+    const char *path = "renderer_regressions_concave.obj";
+    std::ofstream file(path, std::ios::out | std::ios::binary);
+
+    if (!file)
+        return fail("could not create the concave OBJ");
+
+    file << "o concave\n";
+    file << "v 0 0 0\nv 3 0 0\nv 3 3 0\nv 2 3 0\n";
+    file << "v 2 1 0\nv 1 1 0\nv 1 3 0\nv 0 3 0\n";
+    file << "f 1 2 3 4 5 6 7 8\n";
+    file.close();
+
+    const std::shared_ptr<const MeshAsset> asset = loadObjMesh(path);
+
+    if (!asset || asset->triangles.size() != 6)
+        return fail("concave polygon was not triangulated into n-2 triangles");
+
+    float area = 0.0f;
+
+    for (const Triangle &triangle : asset->triangles)
+        area += 0.5f * vec3DCross(triangle.v1 - triangle.v0, triangle.v2 - triangle.v0).length();
+
+    if (std::fabs(area - 7.0f) > 1e-3f)
+        return fail("concave polygon triangulation has the wrong area");
+
+    return 0;
+}
+
+int checkVectorAccess(void)
+{
+    const Vec3D vector(1.0f, 2.0f, 3.0f);
+
+    if (!closeTo(vector.at(0), 1.0f) || !closeTo(vector.at(1), 2.0f) || !closeTo(vector.at(2), 3.0f))
+        return fail("checked vector access returned the wrong component");
+
+    try
+    {
+        (void)vector.at(3);
+        return fail("checked vector access accepted an out-of-range index");
+    }
+    catch (const VectorIndexOutOfBounds &)
+    {
+    }
+
+    return 0;
+}
+
+int checkPPMReader(void)
+{
+    const std::string binaryPath = makeTemporaryPath("renderer_regressions-ppm.ppm");
+
+    {
+        std::ofstream file(binaryPath, std::ios::binary);
+
+        if (!file)
+            return fail("could not create a binary PPM fixture");
+
+        file << "P6\n# header comment\n2 1\n255\n";
+        const unsigned char data[] = {1, 2, 3, 250, 251, 252};
+
+        file.write(reinterpret_cast<const char *>(data), sizeof(data));
+    }
+
+    const PPMImage binary = readPPMFile(binaryPath);
+
+    std::filesystem::remove(binaryPath);
+
+    if (binary.width != 2 || binary.height != 1 || binary.pixels.size() != 2)
+        return fail("PPM reader returned the wrong binary image shape");
+    if (binary.pixels[0] != 0xFF030201u || binary.pixels[1] != 0xFFFCFBFAu)
+        return fail("PPM reader returned the wrong binary pixel layout");
+
+    const std::string asciiPath = makeTemporaryPath("renderer_regressions-ppm-ascii.ppm");
+
+    {
+        std::ofstream file(asciiPath, std::ios::binary);
+
+        if (!file)
+            return fail("could not create an ASCII PPM fixture");
+
+        file << "P3\n1 1\n255\n10 20 30\n";
+    }
+
+    const PPMImage ascii = readPPMFile(asciiPath);
+
+    std::filesystem::remove(asciiPath);
+
+    if (ascii.width != 1 || ascii.height != 1 || ascii.pixels.size() != 1)
+        return fail("PPM reader returned the wrong ASCII image shape");
+    if (ascii.pixels[0] != 0xFF1E140Au)
+        return fail("PPM reader did not scale ASCII components correctly");
+
+    const std::string truncatedPath = makeTemporaryPath("renderer_regressions-ppm-truncated.ppm");
+
+    {
+        std::ofstream file(truncatedPath, std::ios::binary);
+
+        if (!file)
+            return fail("could not create a truncated PPM fixture");
+
+        file << "P6\n1 1\n255\n";
+        const unsigned char data[] = {1, 2};
+
+        file.write(reinterpret_cast<const char *>(data), sizeof(data));
+    }
+
+    try
+    {
+        (void)readPPMFile(truncatedPath);
+        std::filesystem::remove(truncatedPath);
+        return fail("PPM reader accepted truncated pixel data");
+    }
+    catch (const std::runtime_error &)
+    {
+    }
+
+    std::filesystem::remove(truncatedPath);
+    return 0;
+}
+
+int checkDielectricStack(void)
+{
+    DielectricStack stack;
+
+    dielectricReset(stack);
+
+    if (!closeTo(dielectricSurroundingIor(stack), 1.0f) || dielectricFind(stack, 7) >= 0)
+        return fail("empty dielectric stack has the wrong state");
+    if (!dielectricPush(stack, 7, 1.5f) || !closeTo(dielectricSurroundingIor(stack), 1.5f))
+        return fail("dielectric stack did not enter the first interface");
+    if (dielectricPush(stack, 7, 1.5f))
+        return fail("dielectric stack accepted a duplicate interface");
+    if (!dielectricPush(stack, 9, 1.2f) || !closeTo(dielectricSurroundingIor(stack), 1.2f))
+        return fail("dielectric stack did not enter the nested interface");
+    if (!closeTo(dielectricExteriorIor(stack, 1), 1.5f) || !closeTo(dielectricExteriorIor(stack, 0), 1.0f))
+        return fail("dielectric stack reported the wrong exterior IOR");
+
+    dielectricRemove(stack, 9);
+
+    if (dielectricFind(stack, 9) >= 0 || !closeTo(dielectricSurroundingIor(stack), 1.5f))
+        return fail("dielectric stack did not exit the nested interface");
+
+    dielectricRemove(stack, 7);
+
+    if (!closeTo(dielectricSurroundingIor(stack), 1.0f))
+        return fail("dielectric stack did not return to air");
+
+    for (int i = 0; i < DielectricStack::MAX_INTERFACES; ++i)
+    {
+        if (!dielectricPush(stack, i, 1.5f))
+            return fail("dielectric stack rejected a value below its capacity");
+    }
+    if (dielectricPush(stack, 99, 1.5f))
+        return fail("dielectric stack exceeded its capacity");
+
+    for (int i = 0; i < DielectricStack::MAX_INTERFACES; ++i)
+        dielectricRemove(stack, i);
+    if (!closeTo(dielectricSurroundingIor(stack), 1.0f))
+        return fail("dielectric stack was not empty after removing every interface");
+
+    return 0;
+}
+
+int checkTemporaryPaths(void)
+{
+    const std::string first = makeTemporaryPath("frame.ppm");
+    const std::string second = makeTemporaryPath("frame.ppm");
+
+    if (first == second)
+        return fail("temporary paths are not unique");
+    if (std::filesystem::path(first).extension() != ".ppm")
+        return fail("temporary path did not preserve the output extension");
+
+    return 0;
+}
+
+int checkCameraFocus(void)
+{
+    Camera camera(Vec3D(0.0f, 0.0f, 5.0f), Vec3D(0.0f), 60.0f);
+
+    if (!camera.isAutoFocus() || !closeTo(camera.getFocusDistance(), 5.0f, 1e-4f))
+        return fail("camera did not start in auto-focus mode");
+
+    camera.initialize(960, 540, Vec3D(0.0f, 0.0f, 10.0f), Vec3D(0.0f), 60.0f);
+    if (!camera.isAutoFocus() || !closeTo(camera.getFocusDistance(), 10.0f, 1e-4f))
+        return fail("auto-focus did not track the look-at distance");
+
+    camera.setFocusDistance(2.0f);
+    if (camera.isAutoFocus() || !closeTo(camera.getFocusDistance(), 2.0f, 1e-4f))
+        return fail("explicit focus distance was not stored");
+
+    camera.initialize(960, 540, Vec3D(0.0f, 0.0f, 20.0f), Vec3D(0.0f), 60.0f);
+    if (camera.isAutoFocus() || !closeTo(camera.getFocusDistance(), 2.0f, 1e-4f))
+        return fail("explicit focus distance did not survive re-initialisation");
+
+    camera.setFocusDistance(0.0f);
+    if (!camera.isAutoFocus())
+        return fail("zero focus distance did not restore auto-focus");
+
+    camera.initialize(960, 540, Vec3D(0.0f, 0.0f, 30.0f), Vec3D(0.0f), 60.0f);
+    if (!closeTo(camera.getFocusDistance(), 30.0f, 1e-4f))
+        return fail("restored auto-focus did not track the new look-at distance");
+
+    Camera resetCamera(Vec3D(0.0f, 0.0f, 5.0f), Vec3D(0.0f), 60.0f);
+    CameraController controller;
+
+    controller.captureInitial(resetCamera);
+    resetCamera.setFocusDistance(2.0f);
+    resetCamera.initialize(960, 540, Vec3D(0.0f, 0.0f, 8.0f), Vec3D(0.0f), 60.0f);
+
+    if (!controller.handleEvent('r', resetCamera))
+        return fail("camera reset did not report a change");
+    if (!resetCamera.isAutoFocus() || !closeTo(resetCamera.getFocusDistance(), 5.0f, 1e-4f))
+        return fail("camera reset did not restore the initial auto-focus state");
+
+    return 0;
+}
+
 int checkAtmosphereSampling(void)
 {
     Atmosphere none;
@@ -202,6 +460,24 @@ int checkAtmosphereSampling(void)
         return fail("height fog distance sampling failed");
     if (!(distance > 0.0f) || !std::isfinite(distance))
         return fail("height fog distance sampling returned an invalid distance");
+
+    // A downward exponential profile can overflow its optical depth. That
+    // must become opaque, not transparent.
+    Atmosphere steepHeight;
+
+    steepHeight.type = AtmosphereType::HEIGHT;
+    steepHeight.density = 1.0f;
+    steepHeight.groundY = 0.0f;
+    steepHeight.heightFalloff = 2.0f;
+    steepHeight.maxDistance = 1000.0f;
+
+    const float steepDepth =
+        atmosphereOpticalDepth(steepHeight, Vec3D(0.0f, 10.0f, 0.0f), Vec3D(0.0f, -1.0f, 0.0f), 1000.0f);
+
+    if (!std::isinf(steepDepth) || steepDepth < 0.0f)
+        return fail("overflowing height fog must have infinite optical depth");
+    if (atmosphereTransmittance(steepHeight, Vec3D(0.0f, 10.0f, 0.0f), Vec3D(0.0f, -1.0f, 0.0f), 1000.0f) != 0.0f)
+        return fail("overflowing height fog must be opaque");
 
     float integral = 0.0f;
     const int steps = 4096;
@@ -268,7 +544,27 @@ int checkCloneRequirement(Factory &factory)
     }
     catch (const std::runtime_error &)
     {
-        return 0;
+        SceneBuilder wrappedSourceBuilder;
+
+        wrappedSourceBuilder.addMaterial(
+            factory.create<IMaterial>("DiffuseMaterial", 0.2, 0.8, Color3D(1.0f, 1.0f, 1.0f)));
+        wrappedSourceBuilder.addPrimitive(std::make_shared<InstancePrimitive>(
+            std::make_shared<NonCloneablePrimitive>(), TransformData{}));
+        const std::shared_ptr<Scene> wrappedSource = wrappedSourceBuilder.build();
+        SceneBuilder wrappedDestinationBuilder;
+
+        wrappedDestinationBuilder.addMaterial(
+            factory.create<IMaterial>("DiffuseMaterial", 0.2, 0.8, Color3D(1.0f, 1.0f, 1.0f)));
+
+        try
+        {
+            wrappedDestinationBuilder.addScene(wrappedSource);
+        }
+        catch (const std::runtime_error &)
+        {
+            return 0;
+        }
+        return fail("instance composition accepted a child without clone()");
     }
 
     return fail("scene composition accepted a primitive without clone()");
@@ -350,6 +646,27 @@ int checkTextureColorSpace(void)
 
     if (!linear || !closeTo(linear->getPixels()[0].getX(), encoded, 1e-4f))
         return fail("linear PPM texels were sRGB-decoded");
+
+    const char *invalidPath = "renderer_regressions_invalid.ppm";
+    std::ofstream invalid(invalidPath, std::ios::out | std::ios::binary);
+
+    if (!invalid)
+        return fail("could not create the invalid PPM");
+
+    invalid << "P6\n1 1\n100\n";
+    invalid.put(static_cast<char>(200));
+    invalid.put(static_cast<char>(0));
+    invalid.put(static_cast<char>(0));
+    invalid.close();
+
+    try
+    {
+        (void)loadPPMTexture(invalidPath);
+        return fail("PPM accepted a component above its maximum value");
+    }
+    catch (const std::runtime_error &)
+    {
+    }
 
     return 0;
 }
@@ -487,6 +804,7 @@ int checkFramePathFormatting(void)
 {
     if (formatFramePath("frame-%04d.png", 7) != "frame-0007.png" ||
         formatFramePath("out/frame-%d.ppm", 12) != "out/frame-12.ppm" ||
+        formatFramePath("frame-%u.ppm", 7) != "frame-7.ppm" ||
         formatFramePath("100%%-%03d.png", 3) != "100%-003.png" ||
         formatFramePath("shot.png", 3) != "shot-0003.png" ||
         formatFramePath("shot", 42) != "shot-0042.ppm" ||
@@ -564,6 +882,7 @@ int checkSceneAnimation(void)
     InstanceTrack instanceTrack;
     instanceTrack.target = "mover";
     instanceTrack.position.keyframes = {{0.0, Vec3D(0.0f)}, {2.0, Vec3D(2.0f, 0.0f, 0.0f)}};
+    instanceTrack.scale.keyframes = {{0.0, Vec3D(100.0f)}, {1.0, Vec3D(1.0f)}, {2.0, Vec3D(1.0f)}};
 
     LightTrack lightTrack;
     lightTrack.target = "pulse";
@@ -584,6 +903,15 @@ int checkSceneAnimation(void)
         !closeTo(data.position.getX(), 2.0f, 1e-4f))
         return fail("scene animation did not interpolate the light values");
 
+    if (!animation.apply(*scene, 1.5))
+        return fail("scene animation did not report the scale change");
+    if (!isInvertibleTransform(instance->getTransform()))
+        return fail("scene animation produced a non-invertible scale");
+    if (!closeTo(instance->getTransform().linear[0], 1.0f, 1e-4f))
+        return fail("scene animation scale overshot its keyframes");
+    if (animation.apply(*scene, 1.5))
+        return fail("scene animation reported an unchanged transform as changed");
+
     try
     {
         const SceneAnimation invalid({}, {}, 0.0);
@@ -593,6 +921,45 @@ int checkSceneAnimation(void)
     catch (const std::invalid_argument &)
     {
     }
+    return 0;
+}
+
+int checkPrefabLightAnimation(void)
+{
+    Factory factory;
+    SceneBuilder prefabBuilder;
+
+    prefabBuilder.addMaterial(factory.create<IMaterial>("DiffuseMaterial", 0.2, 0.8, Color3D(1.0f)));
+    prefabBuilder.addPrimitive(factory.create<IPrimitive>("Sphere", 1.0, Vec3D(0.0f), 0));
+    prefabBuilder.addLight(
+        factory.create<ILight>("PointLight", Vec3D(0.0f, 1.0f, 0.0f), Color3D(1.0f), 1.0, 1.0, 0.0, 0.0));
+
+    const std::shared_ptr<Scene> prefab = prefabBuilder.build();
+    SceneBuilder builder;
+
+    builder.addScene(prefab, TransformPose{Vec3D(0.0f), Vec3D(0.0f), Vec3D(1.0f)}, "orbiter");
+
+    const std::shared_ptr<Scene> scene = builder.build();
+    InstanceTrack track;
+
+    track.target = "orbiter";
+    track.position.keyframes = {{0.0, Vec3D(0.0f)}, {1.0, Vec3D(5.0f, 0.0f, 0.0f)}};
+
+    const SceneAnimation animation({track}, {}, 1.0);
+
+    if (!animation.apply(*scene, 1.0))
+        return fail("prefab instance animation did not report a change");
+
+    const Lights &lights = scene->getLights();
+    LightData data;
+
+    if (lights.size() != 1 || !lights.front()->getData(data))
+        return fail("prefab light was not collected");
+    if (!closeTo(data.position.getX(), 5.0f, 1e-4f) || !closeTo(data.position.getY(), 1.0f, 1e-4f))
+        return fail("prefab light did not follow the animated instance");
+
+    if (animation.apply(*scene, 1.0))
+        return fail("prefab instance animation reported an unchanged transform");
     return 0;
 }
 
@@ -665,6 +1032,18 @@ int main(int ac, char **av)
         return status;
     if (const int status = checkMtlMaps(av[3]); status != 0)
         return status;
+    if (const int status = checkConcaveMesh(); status != 0)
+        return status;
+    if (const int status = checkPPMReader(); status != 0)
+        return status;
+    if (const int status = checkDielectricStack(); status != 0)
+        return status;
+    if (const int status = checkVectorAccess(); status != 0)
+        return status;
+    if (const int status = checkTemporaryPaths(); status != 0)
+        return status;
+    if (const int status = checkCameraFocus(); status != 0)
+        return status;
     if (const int status = checkAtmosphereSampling(); status != 0)
         return status;
     if (const int status = checkHDREnvironment(av[2]); status != 0)
@@ -672,6 +1051,8 @@ int main(int ac, char **av)
     if (const int status = checkMaterialOverride(factory); status != 0)
         return status;
     if (const int status = checkCloneRequirement(factory); status != 0)
+        return status;
+    if (const int status = checkSelfHitEpsilon(factory); status != 0)
         return status;
     if (const int status = checkTextureColorSpace(); status != 0)
         return status;
@@ -682,6 +1063,8 @@ int main(int ac, char **av)
     if (const int status = checkQuaternionTransform(); status != 0)
         return status;
     if (const int status = checkSceneAnimation(); status != 0)
+        return status;
+    if (const int status = checkPrefabLightAnimation(); status != 0)
         return status;
     if (const int status = checkVideoSettings(); status != 0)
         return status;

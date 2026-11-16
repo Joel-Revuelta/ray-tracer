@@ -31,7 +31,6 @@ struct MtlMaterial
     Color3D specular{0.0f, 0.0f, 0.0f};
     Color3D emission{0.0f, 0.0f, 0.0f};
     float shininess = 0.0f;
-    float opacity = 1.0f;
     std::string diffuseMap;
     std::string specularMap;
     std::string emissionMap;

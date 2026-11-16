@@ -7,6 +7,7 @@
 
 #include "plugins/renderers/CPU/Renderer.hpp"
 #include "render/AtmosphereSampling.hpp"
+#include "render/DielectricStack.hpp"
 #include "render/ImageWriter.hpp"
 #include "render/Tangent.hpp"
 #include "render/Texture.hpp"
@@ -518,6 +519,7 @@ std::vector<Color3D> Renderer::renderHDR(void)
 {
     _stop.store(false);
     _reset.store(false);
+    initialize();
     setFrameIteration(1);
 
     while (_frameIteration <= _frameIterations)
@@ -556,7 +558,7 @@ void Renderer::saveScreenshot(void)
                            .count();
     const std::string path = "raytracer-" + std::to_string(stamp) + ".ppm";
 
-    writePPMFile(path, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
+    writeImageFileAtomic(path, getCamera()->getImageWidth(), getCamera()->getImageHeight(), _imageData);
     std::clog << "\rSaved screenshot: " << path << std::endl;
 }
 
@@ -627,13 +629,15 @@ void Renderer::manageEvent(char evt)
  * @return The direction of the next ray to be traced.
  */
 Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed,
-                                         Color3D &throughput, const Color3D &surfaceColor, float roughness)
+                                         Color3D &throughput, const Color3D &surfaceColor,
+                                         IMaterial::MaterialType materialType, float roughness)
 {
     Vec3D rayDirection;
-    const auto &material =
-        getScene()->getMaterials().at(getScene()->getPrimitives()[payload.getHitIndex()]->getMaterialIndex());
 
-    switch (material->getType())
+    // The caller resolves per-triangle material overrides. Do not look up the
+    // primitive's fallback material here: mixed-material meshes must bounce
+    // with the same material that was shaded.
+    switch (materialType)
     {
     case IMaterial::DIFFUSE:
         // Cosine-weighted sampling is the correct distribution for a
@@ -716,7 +720,9 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
     Color3D accumulatedColor(0.0f);
     Color3D throughput(1.0f);
     uint32_t sampler = seed;
-    bool insideDielectric = false;
+    DielectricStack dielectricStack;
+
+    dielectricReset(dielectricStack);
     // float brightReduction = 1.5;
 
     const Camera &camera = *getCamera();
@@ -884,8 +890,11 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
 
                 const float cosi = std::clamp(-vec3DDot(incident, normal), 0.0f, 1.0f);
                 const float ior = material->getIndexOfRefraction();
-                const float etaI = insideDielectric ? ior : 1.0f;
-                const float etaT = insideDielectric ? 1.0f : ior;
+                const int hitIndex = payload.getHitIndex();
+                const int stackPosition = dielectricFind(dielectricStack, hitIndex);
+                const bool exiting = stackPosition >= 0;
+                const float etaI = exiting ? ior : dielectricSurroundingIor(dielectricStack);
+                const float etaT = exiting ? dielectricExteriorIor(dielectricStack, stackPosition) : ior;
                 const float eta = etaI / etaT;
                 const float k = 1.0f - eta * eta * (1.0f - cosi * cosi);
                 const float ratio = (etaI - etaT) / (etaI + etaT);
@@ -900,7 +909,11 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                 else
                 {
                     nextDirection = vec3DNormalize(eta * incident + (eta * cosi - std::sqrt(k)) * normal);
-                    insideDielectric = !insideDielectric;
+
+                    if (exiting)
+                        dielectricRemove(dielectricStack, hitIndex);
+                    else if (!dielectricPush(dielectricStack, hitIndex, ior))
+                        break;
                 }
 
                 if (vec3DIsNearZero(nextDirection))
@@ -1027,7 +1040,7 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
 
             // Handle set direction and origin for the next ray
             const Vec3D nextDirection =
-                computeNextRayDirection(ray, payload, sampler, throughput, surfaceColor, roughness);
+                computeNextRayDirection(ray, payload, sampler, throughput, surfaceColor, materialType, roughness);
 
             if (throughput.lengthSquared() < 1e-6f)
                 break;
@@ -1104,6 +1117,11 @@ void Renderer::setScene(std::shared_ptr<Scene> scene)
 void Renderer::setCamera(std::shared_ptr<Camera> camera)
 {
     _camera = std::move(camera);
+}
+
+void Renderer::setSeed(uint32_t seed)
+{
+    _seed = seed;
 }
 
 void Renderer::setFrameIterations(int frameIterations)

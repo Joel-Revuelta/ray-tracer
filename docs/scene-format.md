@@ -44,6 +44,22 @@ lights:
 };
 ```
 
+## Scene scale and precision
+
+World units are arbitrary, but the renderer uses absolute tolerances rather
+than deriving them from the scene bounds. Hit offsets and self-intersection
+tests use `Ray::EPSILON` (currently `1e-4` world units), while degenerate
+vectors use a much smaller squared-length threshold.
+
+- Keep geometry, camera distances and light positions roughly within the
+  `0.01` to `10000` unit range.
+- Avoid mixing microscopic and kilometre-scale features in one scene; single
+  precision coordinates lose relative accuracy at extreme scales.
+- Surfaces separated by less than about `1e-4` units can produce self-hits or
+  shadow acne.
+- The epsilon is deliberately not auto-scaled, so animation and mixed
+  prefab/built-in scenes remain deterministic across platforms.
+
 ## Camera
 
 ```libconfig
@@ -217,9 +233,10 @@ animation:
   Omitted channels leave the light at its current value.
 - Track keyframes start at `0.0`, use strictly increasing times, and must not
   exceed the camera animation duration.
-- Translation and scale use Catmull-Rom interpolation. Rotation is interpolated
-  with quaternion slerp along the shortest path; the scene format stays in
-  Euler degrees. Intensity and color use linear interpolation.
+- Translation uses Catmull-Rom interpolation. Scale uses linear interpolation
+  so it cannot overshoot through zero. Rotation is interpolated with quaternion
+  slerp along the shortest path; the scene format stays in Euler degrees.
+  Intensity and color use linear interpolation.
 - Scale keyframes must be finite and non-zero. Intensity and color keyframes
   must be finite and non-negative.
 - Animated instance transforms replace the instance's base transform for that
@@ -670,7 +687,8 @@ map_Ke ../textures/emission.ppm
   bright values for rougher surfaces.
 - `map_Ke` is imported as an emission map and multiplies `Ke`. If `Ke` is
   absent, a white emission colour is used so the map alone drives the glow.
-- `d` and `Tr` are accepted but not fully applied yet.
+- `d` and `Tr` are ignored; the material model has no opacity/transmission
+  component. Use dielectric materials for transparent surfaces.
 - Map options such as `-s`/`-o` are not supported.
 
 MTL materials are appended to the scene automatically. `usemtl` names match
@@ -758,6 +776,10 @@ are transformed in place:
 
 `scenes/group_transform.cfg` moves three spheres and a point light together.
 
+Named instances and lights are a top-level feature. A nested scene containing
+`id`-tagged instances or lights is rejected during composition, because scene
+composition does not preserve those names.
+
 ### Prefabs
 
 Top-level `prefabs` define reusable scene fragments. Each prefab may contain
@@ -809,6 +831,11 @@ per instance, so repeated instantiations do not share mutable state.
   significant for top-level definitions.
 
 `scenes/prefabs.cfg` instantiates one lamp prefab three times.
+
+A prefab's lights are cloned and receive the instance's initial transform.
+Animating the instance moves its primitives but not those cloned lights; use a
+top-level light and animate it alongside the instance when a moving light is
+required.
 
 ### Scatter
 

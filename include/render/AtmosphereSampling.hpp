@@ -48,6 +48,10 @@ inline float atmosphereOpticalDepth(const Atmosphere &atmosphere, const Vec3D &o
 
     const float depth = -std::expm1(-vertical * distance) / vertical;
 
+    // A downward exponential profile can overflow. That means the medium is
+    // optically infinite, not transparent.
+    if (std::isinf(depth))
+        return depth > 0.0f ? std::numeric_limits<float>::infinity() : 0.0f;
     return std::isfinite(depth) && depth > 0.0f ? base * depth : 0.0f;
 }
 

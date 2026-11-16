@@ -64,10 +64,9 @@ void Camera::initialize(int imageWidth, int imageHeight, Point3D lookAt, Point3D
     setLookAt(lookAt);
     setFocalDistance((lookFrom - lookAt).length());
 
-    // Keep an explicitly configured focus distance across re-initialisation
-    // (resolution changes, interactive camera moves). A zero value means the
-    // look-at distance is used.
-    if (_focusDistance <= 0.0f)
+    // Auto-focus follows the current look-at distance. An explicit focus
+    // distance survives re-initialisation (resolution changes, camera moves).
+    if (_autoFocus || _focusDistance <= 0.0f)
         _focusDistance = static_cast<float>(getFocalDistance());
 
     setAspectRatio(aspectRatioCompute());
@@ -116,38 +115,6 @@ void Camera::initialize(int imageWidth, int imageHeight, Point3D lookAt, Point3D
 
     // Compute the initial pixel position. Considering EQUAL PIXEL WIDTHS AND HEIGHTS.
     setInitialPixelPos(viewportUpperLeft + 0.5 * (getPixelWidthDistance() + getPixelHeightDistance()));
-}
-
-/**
- * Computes a random ray for a given pixel on the camera's image plane.
- *
- * @param seed The seed value for the random number generator.
- * @param x The x-coordinate of the pixel on the image plane.
- * @param y The y-coordinate of the pixel on the image plane.
- * @return A Ray object representing the computed random ray.
- */
-Ray Camera::randomPixelRayCompute(uint32_t &seed, const float &x, const float &y) const
-{
-    // Create seed for random number generation.
-
-    // Compute a random position (of the real world) inside the pixel.
-    //? Note: Weird things happening here, if using numericGeneratePseudoRandom, image seems rendered correctly but less
-    //? quality. If using numericGenerateRandom, image seems rendered with more quality but with some bias.
-    (void)seed;
-    // Vec3D pixelRandomPos = Vec3D(Utils::numericGenerateRandom<float>(0.0, 0.999) - 0.5,
-    // Utils::numericGenerateRandom<float>(0.0, 0.999) - 0.5, 0);
-    const float pixelRandomY = Utils::numericGeneratePseudoRandom<float>(seed, 0.0, 0.999) - 0.5;
-    const float pixelRandomX = Utils::numericGeneratePseudoRandom<float>(seed, 0.0, 0.999) - 0.5;
-    Vec3D pixelRandomPos = Vec3D(pixelRandomX, pixelRandomY, 0);
-
-    // Compute the real world position of the pixel.
-    Vec3D positionToHit = getInitialPixelPos() + ((x + pixelRandomPos.getX()) * getPixelWidthDistance()) +
-                          ((y + pixelRandomPos.getY()) * getPixelHeightDistance());
-
-    Vec3D rayDirection = positionToHit - getLookFrom();
-
-    // Return the ray.
-    return Ray(getLookFrom(), rayDirection);
 }
 
 /**
@@ -282,7 +249,8 @@ void Camera::setFocusDistance(const float focusDistance)
 
     // Zero restores automatic focus, which tracks the current look-at
     // distance. This is used by the camera reset control.
-    _focusDistance = focusDistance > 0.0f ? focusDistance : static_cast<float>(_focalDistance);
+    _autoFocus = focusDistance <= 0.0f;
+    _focusDistance = _autoFocus ? static_cast<float>(_focalDistance) : focusDistance;
 }
 
 int Camera::getImageWidth(void) const
@@ -373,4 +341,9 @@ float Camera::getLensRadius(void) const
 float Camera::getFocusDistance(void) const
 {
     return _focusDistance;
+}
+
+bool Camera::isAutoFocus(void) const
+{
+    return _autoFocus;
 }

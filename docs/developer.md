@@ -71,6 +71,15 @@ the repository root so that `./plugins/` resolves. With
 in `build/plugins/`; plugin lookup starts next to the executable, so the binary
 can be run from anywhere.
 
+## Platform notes
+
+The current implementation targets 64-bit little-endian POSIX systems
+(Linux is the tested platform). Plugin discovery uses `/proc/self/exe`, video
+streaming uses `fork`/`pipe`/`waitpid`, and PPM/PNG pixel packing assumes the
+little-endian `A<<24|B<<16|G<<8|R` layout. Moving to Windows, macOS or
+big-endian targets requires replacing those pieces; the renderers themselves
+are otherwise platform-neutral.
+
 ## Repository layout
 
 | Path | Purpose |
@@ -129,6 +138,7 @@ runtime code here, not in the executable, if plugins need it.
 
 - `dlopen`s libraries from `./plugins/`,
 - caches open handles,
+- checks the exported `raytracerPluginABIVersion` symbol before use,
 - resolves the exported `create` symbol with `dlsym`,
 - closes all libraries at shutdown.
 
@@ -141,7 +151,11 @@ extern "C" std::shared_ptr<RayTracer::SomeInterface> create(/* args */);
 The return type and argument list must match what `Factory::create<T>` expects.
 Object parameters such as `Vec3D` and `Color3D` are passed by value in the
 exported signature. Primitive, material, light and renderer plugins follow this
-pattern.
+pattern. `src/plugins/PluginABI.cpp` is linked into every plugin target and
+exports `raytracerPluginABIVersion()`; bump `RayTracer::PLUGIN_ABI_VERSION` in
+`include/plugins/PluginABI.hpp` whenever an exported signature or shared plugin
+type changes. The loader rejects stale plugins with a diagnostic instead of
+calling an incompatible factory.
 
 ### Scene and parser
 
@@ -340,8 +354,9 @@ prefab names are rejected.
 
 `MeshLoader` records `mtllib` paths in `MeshAsset::materialLibraries`, resolved
 relative to the OBJ. `loadMtl()` parses `newmtl`, `Ka`, `Kd`, `Ks`, `Ke`, `Ns`,
-`d`/`Tr`, `map_Kd`, `map_Ks` and `map_Ke`; every map resolves relative to the
-MTL file.
+`map_Kd`, `map_Ks` and `map_Ke`; every map resolves relative to the MTL file.
+Unsupported fields such as `d`/`Tr` (opacity) are ignored because the material
+model has no transmission/alpha component.
 
 The parser caches parsed MTL files and, per scene, appends unseen MTL materials
 as `PhongMaterial` instances. Mapping is approximate:
@@ -561,7 +576,9 @@ tracks alongside the camera timeline.
   keyframes use the Euler path directly so frame `0` remains byte-identical to
   the still render.
 - `SceneAnimation::apply` updates instance transforms and light values. It
-  reports whether instance transforms changed.
+  reports whether instance transforms actually changed; unchanged transforms
+  avoid a BVH refit. Translation uses Catmull-Rom, scale uses linear
+  interpolation with a positive magnitude floor, and rotation uses slerp.
 - Both renderers apply the timeline at every shutter subframe. Without motion
   blur the single subframe time is the frame time.
 - CPU rebuilds the scene BVH on the first subframe of a frame and calls
@@ -578,6 +595,10 @@ tracks alongside the camera timeline.
   lights. Materials, meshes, textures, environment and atmosphere are static.
 - Motion blur samples camera, instances and lights at the same subframe times.
 - Still renders never call `SceneAnimation::apply`.
+- Named instances/lights are not preserved by nested-scene composition; such
+  compositions are rejected instead of silently dropping animation targets.
+- Lights cloned from a prefab do not follow instance animation; animate a
+  top-level light alongside the instance if needed.
 
 ### Video output
 

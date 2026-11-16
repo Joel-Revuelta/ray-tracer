@@ -63,6 +63,7 @@ class DLManager
 
   private:
     void closeLib(void);
+    void validateABI(void) const;
 
     void *currentHandle;
     std::string _libPath;

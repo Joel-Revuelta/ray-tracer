@@ -49,7 +49,7 @@ bool Plane::hit(const Ray &ray, HitPayload &payload, size_t i) const
 
     float distance = vec3DDot(getNormal(), getPoint() - ray.getOrigin()) / denominator;
 
-    if (distance >= 0.0f && distance < payload.getHitDistance())
+    if (distance > Ray::EPSILON && distance < payload.getHitDistance())
     {
         const Vec3D hitPosition = ray.at(distance);
 

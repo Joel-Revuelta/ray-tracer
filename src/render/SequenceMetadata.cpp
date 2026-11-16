@@ -6,6 +6,7 @@
 */
 
 #include "render/SequenceMetadata.hpp"
+#include "render/TemporaryPath.hpp"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -78,10 +79,6 @@ double finiteNumber(double value)
     return std::isfinite(value) ? value : 0.0;
 }
 
-std::string temporaryPath(const std::filesystem::path &destination)
-{
-    return (destination.parent_path() / (destination.filename().string() + ".tmp")).string();
-}
 } // namespace
 
 std::string RayTracer::sequenceMetadataPath(const std::string &pattern)
@@ -238,17 +235,28 @@ void RayTracer::writeSequenceMetadata(const std::string &path, const SequenceMet
     json << "}\n";
 
     const std::filesystem::path destination(path);
-    const std::string temporary = temporaryPath(destination);
-    std::ofstream file(temporary, std::ios::out | std::ios::binary | std::ios::trunc);
+    const std::string temporary = makeTemporaryPath(path);
 
-    if (!file.is_open())
-        throw std::runtime_error("Cannot open metadata file: " + temporary);
+    try
+    {
+        std::ofstream file(temporary, std::ios::out | std::ios::binary | std::ios::trunc);
 
-    file << json.str();
+        if (!file.is_open())
+            throw std::runtime_error("Cannot open metadata file: " + temporary);
 
-    if (!file.good())
-        throw std::runtime_error("Failed to write metadata file: " + temporary);
-    file.close();
+        file << json.str();
+
+        if (!file.good())
+            throw std::runtime_error("Failed to write metadata file: " + temporary);
+        file.close();
+    }
+    catch (...)
+    {
+        std::error_code cleanupError;
+
+        std::filesystem::remove(temporary, cleanupError);
+        throw;
+    }
 
     std::error_code error;
 

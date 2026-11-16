@@ -25,6 +25,9 @@ using namespace RayTracer;
 
 namespace
 {
+constexpr int MAX_IMAGE_DIMENSION = 16384;
+constexpr std::uint64_t MAX_IMAGE_PIXELS = 100000000ull;
+
 const char *const USAGE =
     "Usage: ./raytracer --path <scene.cfg> --cli|--sfml|--gui sfml|opengl "
     "[--renderer cpu|cuda] [--width W] [--height H] [--samples N] [--frames N] [--threads N] "
@@ -70,7 +73,7 @@ int parsePositiveInt(const char *value, const char *name)
     {
         std::cerr << "Invalid " << name << " value: " << value << std::endl;
         printUsage(std::cerr);
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
     }
 
     return static_cast<int>(parsed);
@@ -86,7 +89,7 @@ int parseNonNegativeInt(const char *value, const char *name)
     {
         std::cerr << "Invalid " << name << " value: " << value << std::endl;
         printUsage(std::cerr);
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
     }
 
     return static_cast<int>(parsed);
@@ -109,7 +112,7 @@ float parseNonNegativeFloat(const char *value, const char *name)
     {
         std::cerr << "Invalid " << name << " value: " << value << std::endl;
         printUsage(std::cerr);
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
     }
 
     return parsed;
@@ -123,7 +126,7 @@ float parsePositiveFloat(const char *value, const char *name)
     {
         std::cerr << "Invalid " << name << " value: " << value << std::endl;
         printUsage(std::cerr);
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
     }
 
     return parsed;
@@ -139,7 +142,7 @@ double parsePositiveDouble(const char *value, const char *name)
     {
         std::cerr << "Invalid " << name << " value: " << value << std::endl;
         printUsage(std::cerr);
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
     }
 
     return parsed;
@@ -287,13 +290,13 @@ App::App(int ac, char **av)
         case 8:
         case 'h':
             printUsage(std::cout);
-            std::exit(EXIT_SUCCESS);
+            throw AppExit{EXIT_SUCCESS};
         case 9:
             _rendererName = optarg;
             break;
         case 10:
             listRenderers();
-            std::exit(EXIT_SUCCESS);
+            throw AppExit{EXIT_SUCCESS};
         case 11:
             _interface = Interface::GUI;
             _guiName = optarg;
@@ -306,7 +309,7 @@ App::App(int ac, char **av)
             {
                 std::cerr << "Unknown tonemapping mode: " << optarg << std::endl;
                 std::cerr << "Available modes: none, reinhard, aces" << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
             break;
         case 14:
@@ -317,7 +320,7 @@ App::App(int ac, char **av)
             break;
         case 16:
             listGuis();
-            std::exit(EXIT_SUCCESS);
+            throw AppExit{EXIT_SUCCESS};
         case 17:
             _device = parseNonNegativeInt(optarg, "device");
             break;
@@ -342,7 +345,7 @@ App::App(int ac, char **av)
             if (_postProcess.bloomRadius > BLOOM_MAX_RADIUS)
             {
                 std::cerr << "Bloom radius must be at most " << BLOOM_MAX_RADIUS << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
             break;
         case 24:
@@ -366,7 +369,7 @@ App::App(int ac, char **av)
             if (_shutterAngle >= 360.0f)
             {
                 std::cerr << "Shutter angle must be less than 360 degrees." << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
             break;
         case 30:
@@ -400,7 +403,7 @@ App::App(int ac, char **av)
         default:
             std::cerr << "Unknown or incomplete option." << std::endl;
             printUsage(std::cerr);
-            std::exit(EXIT_FAILURE);
+            throw AppExit{EXIT_FAILURE};
         }
     }
 }
@@ -422,17 +425,24 @@ void App::run(void)
     if (_filepath.empty() || _interface == Interface::NONE)
     {
         printUsage(std::cerr);
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
     }
     if (_width <= 0 || _height <= 0)
     {
         std::cerr << "Width and height must be positive." << std::endl;
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
     }
     if (_frames <= 0)
     {
         std::cerr << "Frames must be positive." << std::endl;
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
+    }
+    if (_width > MAX_IMAGE_DIMENSION || _height > MAX_IMAGE_DIMENSION ||
+        static_cast<std::uint64_t>(_width) * static_cast<std::uint64_t>(_height) > MAX_IMAGE_PIXELS)
+    {
+        std::cerr << "Image dimensions are too large (maximum " << MAX_IMAGE_DIMENSION << "x"
+                  << MAX_IMAGE_DIMENSION << " and " << MAX_IMAGE_PIXELS << " pixels)." << std::endl;
+        throw AppExit{EXIT_FAILURE};
     }
 
     try
@@ -444,7 +454,7 @@ void App::run(void)
         if (!scene || !camera)
         {
             std::cerr << "Failed to load the scene or camera from: " << _filepath << std::endl;
-            std::exit(EXIT_FAILURE);
+            throw AppExit{EXIT_FAILURE};
         }
 
         // The parser builds a camera with its default resolution, so apply the
@@ -474,12 +484,12 @@ void App::run(void)
             if (_interface != Interface::CLI && !_validate)
             {
                 std::cerr << "Animation rendering is only available with --cli." << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
             if (!animation)
             {
                 std::cerr << "Scene has no animation block: " << _filepath << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
 
             animationFps = _fps > 0.0 ? _fps : static_cast<double>(animation->getFps());
@@ -493,12 +503,12 @@ void App::run(void)
             {
                 std::cerr << "Animation frame range " << startFrame << "-" << endFrame << " is outside 0-"
                           << (frameCount - 1) << "." << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
             if (endFrame < startFrame)
             {
                 std::cerr << "End frame must not be before the start frame." << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
 
             shutterAngle = animation->getShutter().angle;
@@ -512,19 +522,25 @@ void App::run(void)
             if (shutterAngle < 0.0f || shutterAngle >= 360.0f)
             {
                 std::cerr << "Shutter angle must be in [0, 360) degrees." << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
             if (shutterSamples <= 0)
             {
                 std::cerr << "Shutter samples must be positive." << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
         }
 
         if (!_output.empty() && isVideoExtension(_output))
         {
             std::cerr << "--output is for frame sequences; use --video for video output: " << _output << std::endl;
-            std::exit(EXIT_FAILURE);
+            throw AppExit{EXIT_FAILURE};
+        }
+        if (!_output.empty() && !isImageExtension(_output))
+        {
+            std::cerr << "Unsupported output extension: " << _output << " (expected .ppm or .png)"
+                      << std::endl;
+            throw AppExit{EXIT_FAILURE};
         }
 
         if (videoRequested)
@@ -533,7 +549,7 @@ void App::run(void)
             {
                 std::cerr << "--resume cannot be used with --video; render frames with --output and encode later."
                           << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
 
             video.path = _videoPath;
@@ -550,12 +566,12 @@ void App::run(void)
             if (!validationError.empty())
             {
                 std::cerr << validationError << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
             if (findFFmpeg().empty())
             {
                 std::cerr << "ffmpeg was not found; install it or set RAYTRACER_FFMPEG." << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
             if (_output.empty() && _keepFrames)
                 _output = "frame-%04d.ppm";
@@ -566,7 +582,7 @@ void App::run(void)
         {
             std::cerr << "Unknown renderer: " << _rendererName << std::endl;
             printRendererNames(std::cerr);
-            std::exit(EXIT_FAILURE);
+            throw AppExit{EXIT_FAILURE};
         }
 
         if (_validate)
@@ -669,7 +685,7 @@ void App::run(void)
         catch (const std::exception &error)
         {
             std::cerr << "Renderer '" << rendererEntry->name << "' is unavailable: " << error.what() << std::endl;
-            std::exit(EXIT_FAILURE);
+            throw AppExit{EXIT_FAILURE};
         }
 
         std::string unavailableReason;
@@ -677,7 +693,7 @@ void App::run(void)
         if (!renderer->isAvailable(unavailableReason))
         {
             std::cerr << "Renderer '" << rendererEntry->name << "' is unavailable: " << unavailableReason << std::endl;
-            std::exit(EXIT_FAILURE);
+            throw AppExit{EXIT_FAILURE};
         }
 
         RenderContext context;
@@ -722,7 +738,7 @@ void App::run(void)
             {
                 std::cerr << "Unknown GUI backend: " << _guiName << std::endl;
                 std::cerr << "Available GUI backends: sfml, opengl" << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
 
             try
@@ -732,7 +748,7 @@ void App::run(void)
             catch (const std::exception &error)
             {
                 std::cerr << "GUI '" << _guiName << "' is unavailable: " << error.what() << std::endl;
-                std::exit(EXIT_FAILURE);
+                throw AppExit{EXIT_FAILURE};
             }
         }
 
@@ -741,6 +757,6 @@ void App::run(void)
     catch (const std::exception &e)
     {
         std::cerr << "Error: " << e.what() << std::endl;
-        std::exit(EXIT_FAILURE);
+        throw AppExit{EXIT_FAILURE};
     }
 }

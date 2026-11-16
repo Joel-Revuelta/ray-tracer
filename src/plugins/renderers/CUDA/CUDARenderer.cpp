@@ -977,7 +977,7 @@ void saveScreenshot(const std::vector<uint32_t> &pixels, int width, int height)
                            .count();
     const std::string path = "raytracer-" + std::to_string(stamp) + ".ppm";
 
-    writePPMFile(path, width, height, pixels);
+    writeImageFileAtomic(path, width, height, pixels);
     std::clog << "\rSaved screenshot: " << path << std::endl;
 }
 } // namespace
@@ -1194,6 +1194,7 @@ void CUDARenderer::run(const RenderContext &context)
         }
 
         std::unique_ptr<CudaRenderSession> session;
+        std::unique_ptr<SceneSnapshot> animatedSnapshot;
 
         const auto sequenceStart = std::chrono::steady_clock::now();
         int completedFrames = 0;
@@ -1229,13 +1230,16 @@ void CUDARenderer::run(const RenderContext &context)
 
                 if (sceneInstances)
                 {
-                    const SceneSnapshot frameSnapshot = buildSceneSnapshot(*context.scene, *camera);
+                    if (!animatedSnapshot)
+                        animatedSnapshot = std::make_unique<SceneSnapshot>(buildSceneSnapshot(*context.scene, *camera));
+                    else if (!refreshSceneSnapshot(*animatedSnapshot, *context.scene, *camera))
+                        animatedSnapshot = std::make_unique<SceneSnapshot>(buildSceneSnapshot(*context.scene, *camera));
 
                     if (!session)
                         session = std::make_unique<CudaRenderSession>(
-                            frameSnapshot, context.options.postProcess, subframeSeed(frame, subframe));
+                            *animatedSnapshot, context.options.postProcess, subframeSeed(frame, subframe));
                     else
-                        session->updateScene(frameSnapshot, subframe == 0);
+                        session->updateScene(*animatedSnapshot, subframe == 0);
                 }
                 else if (!session)
                 {

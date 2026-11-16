@@ -6,6 +6,7 @@
 */
 
 #include "render/ImageWriter.hpp"
+#include "render/TemporaryPath.hpp"
 #include "plugins/renderers/PPM.hpp"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -13,6 +14,7 @@
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
+#include <limits>
 #include <stdexcept>
 
 using namespace RayTracer;
@@ -43,17 +45,31 @@ void RayTracer::writePNGFile(const std::string &path, int width, int height, con
 
     if (pixels.size() < pixelCount)
         throw std::invalid_argument("Not enough pixel data for the requested PNG size");
+    if (width > std::numeric_limits<int>::max() / 4)
+        throw std::invalid_argument("PNG width is too large for the image writer");
 
     if (stbi_write_png(path.c_str(), width, height, 4, pixels.data(), width * 4) == 0)
         throw std::runtime_error("Failed to write PNG file: " + path);
 }
 
+bool RayTracer::isImageExtension(const std::string &path)
+{
+    const std::string extension = lowerExtension(path);
+
+    return extension == ".ppm" || extension == ".png";
+}
+
 void RayTracer::writeImageFile(const std::string &path, int width, int height, const std::vector<uint32_t> &pixels)
 {
-    if (lowerExtension(path) == ".png")
+    const std::string extension = lowerExtension(path);
+
+    if (extension == ".png")
         writePNGFile(path, width, height, pixels);
-    else
+    else if (extension == ".ppm")
         writePPMFile(path, width, height, pixels);
+    else
+        throw std::invalid_argument("Unsupported output extension '" + extension +
+                                    "'; expected .ppm or .png");
 }
 
 void RayTracer::writeImageFileAtomic(const std::string &path, int width, int height,
@@ -63,13 +79,19 @@ void RayTracer::writeImageFileAtomic(const std::string &path, int width, int hei
         throw std::invalid_argument("Output path must not be empty");
 
     const std::filesystem::path destination(path);
-    const std::string temporaryName =
-        destination.stem().string() + ".tmp" + destination.extension().string();
-    const std::filesystem::path temporary =
-        destination.parent_path().empty() ? std::filesystem::path(temporaryName)
-                                          : destination.parent_path() / temporaryName;
+    const std::filesystem::path temporary(makeTemporaryPath(path));
 
-    writeImageFile(temporary.string(), width, height, pixels);
+    try
+    {
+        writeImageFile(temporary.string(), width, height, pixels);
+    }
+    catch (...)
+    {
+        std::error_code cleanupError;
+
+        std::filesystem::remove(temporary, cleanupError);
+        throw;
+    }
 
     std::error_code error;
 
@@ -103,6 +125,7 @@ std::string RayTracer::formatFramePath(const std::string &pattern, int frame)
         return formatFramePath("frame-%04d.ppm", frame);
 
     bool hasConversion = false;
+    char conversion = '\0';
 
     for (std::size_t i = 0; i < pattern.size(); ++i)
     {
@@ -128,13 +151,17 @@ std::string RayTracer::formatFramePath(const std::string &pattern, int frame)
             throw std::invalid_argument("Frame path must contain one integer printf conversion");
 
         hasConversion = true;
+        conversion = pattern[cursor];
         i = cursor;
     }
 
     if (hasConversion)
     {
         char buffer[4096];
-        const int written = std::snprintf(buffer, sizeof(buffer), pattern.c_str(), frame);
+        const int written =
+            conversion == 'u'
+                ? std::snprintf(buffer, sizeof(buffer), pattern.c_str(), static_cast<unsigned int>(frame))
+                : std::snprintf(buffer, sizeof(buffer), pattern.c_str(), frame);
 
         if (written < 0 || static_cast<std::size_t>(written) >= sizeof(buffer))
             throw std::runtime_error("Frame path is too long");

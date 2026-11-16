@@ -78,6 +78,14 @@ CameraData makeCameraData(const Camera &camera);
 std::vector<LightData> collectLights(const Scene &scene);
 SceneSnapshot buildSceneSnapshot(const Scene &scene, const Camera &camera);
 
+/**
+ * Refreshes only the animated parts of an existing snapshot: camera,
+ * primitives, mesh material-group ranges and lights. Materials, textures,
+ * meshes, background and atmosphere are reused. Returns false when the scene
+ * contains a mesh asset that was not present in the original snapshot.
+ */
+bool refreshSceneSnapshot(SceneSnapshot &snapshot, const Scene &scene, const Camera &camera);
+
 } // namespace RayTracer
 
 #endif // SCENE_SNAPSHOT_HPP_

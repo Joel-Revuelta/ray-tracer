@@ -84,7 +84,7 @@ bool Cone::intersect(const Ray &ray, HitPayload &payload, size_t i, bool baseAbo
                     k2 * originToCenter.getY() * originToCenter.getY();
 
     auto tryBody = [&](const float distance) {
-        if (distance < 0.0f || distance >= bestDistance)
+        if (distance <= Ray::EPSILON || distance >= bestDistance)
             return;
 
         const Vec3D hitPoint = ray.at(distance);
@@ -127,7 +127,7 @@ bool Cone::intersect(const Ray &ray, HitPayload &payload, size_t i, bool baseAbo
     {
         const float distance = (baseY - origin.getY()) / direction.getY();
 
-        if (distance >= 0.0f && distance < bestDistance)
+        if (distance > Ray::EPSILON && distance < bestDistance)
         {
             const Vec3D hitPoint = ray.at(distance);
             const float dx = hitPoint.getX() - _center.getX();

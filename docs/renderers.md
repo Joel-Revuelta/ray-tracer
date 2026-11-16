@@ -355,6 +355,11 @@ seed formula `seed + frame * 0x9e3779b9u`.
   original fast path.
 - Motion blur samples camera, instance transforms and light values at the same
   shutter subframes.
+- **Approximations:** direct lighting is Blinn-Phong; metallic surfaces also
+  receive the direct specular term, emissive surfaces reflect light, and medium
+  next-event estimation of a large area light evaluates the phase at one cone
+  sample. Dielectric interfaces are tracked with a per-ray stack so nested
+  objects use the correct surrounding IOR.
 - A JSON sidecar records the resolved settings, video settings, scene-animation
   targets and per-frame camera poses; both renderers produce the same schema.
 - `--video` streams final frames to the same `VideoWriter` in both renderers.

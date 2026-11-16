@@ -51,6 +51,7 @@ void CameraController::captureInitial(const Camera &camera)
     _initialFov = camera.getVerticalFovDegree();
     _initialLensRadius = camera.getLensRadius();
     _initialFocusDistance = camera.getFocusDistance();
+    _initialAutoFocus = camera.isAutoFocus();
     _hasInitialState = true;
 }
 
@@ -108,9 +109,8 @@ bool CameraController::handleEvent(char event, Camera &camera)
         if (changed)
         {
             camera.setLensRadius(_initialLensRadius);
-            // A zero initial focus means auto-focus, so passing zero here
-            // restores tracking of the restored look-at distance.
-            camera.setFocusDistance(_initialFocusDistance);
+            // Preserve whether the initial camera was auto-focused.
+            camera.setFocusDistance(_initialAutoFocus ? 0.0f : _initialFocusDistance);
         }
         return changed;
     }

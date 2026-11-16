@@ -6,6 +6,7 @@
 */
 
 #include "render/VideoWriter.hpp"
+#include "render/TemporaryPath.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -13,8 +14,10 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <filesystem>
 #include <iomanip>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <sys/types.h>
@@ -25,6 +28,35 @@ using namespace RayTracer;
 
 namespace
 {
+using SignalHandler = void (*)(int);
+
+std::mutex signalMutex;
+int signalUsers = 0;
+SignalHandler previousSigpipe = SIG_DFL;
+
+void acquireSigpipeGuard(void)
+{
+    std::lock_guard<std::mutex> lock(signalMutex);
+
+    if (signalUsers++ == 0)
+        previousSigpipe = std::signal(SIGPIPE, SIG_IGN);
+}
+
+void releaseSigpipeGuard(void)
+{
+    std::lock_guard<std::mutex> lock(signalMutex);
+
+    if (signalUsers > 0 && --signalUsers == 0 && previousSigpipe != SIG_ERR)
+        std::signal(SIGPIPE, previousSigpipe);
+}
+
+bool setCloseOnExec(int descriptor)
+{
+    const int flags = fcntl(descriptor, F_GETFD);
+
+    return flags >= 0 && fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC) == 0;
+}
+
 std::string lowerExtension(const std::string &path)
 {
     std::string extension = std::filesystem::path(path).extension().string();
@@ -82,15 +114,6 @@ bool isValidBitrate(const std::string &bitrate)
 bool isMp4Family(const std::string &extension)
 {
     return extension == ".mp4" || extension == ".m4v" || extension == ".mov";
-}
-
-std::string temporaryPathFor(const std::string &path)
-{
-    const std::filesystem::path destination(path);
-    const std::string name =
-        destination.stem().string() + ".tmp" + destination.extension().string();
-
-    return (destination.parent_path() / name).string();
 }
 
 std::string containerFormat(const std::string &extension)
@@ -244,6 +267,7 @@ struct VideoWriter::Impl
     std::string temporaryPath;
     int width = 0;
     int height = 0;
+    bool sigpipeGuard = false;
 
     ~Impl(void)
     {
@@ -269,6 +293,12 @@ struct VideoWriter::Impl
             std::error_code error;
 
             std::filesystem::remove(temporaryPath, error);
+        }
+
+        if (sigpipeGuard)
+        {
+            releaseSigpipeGuard();
+            sigpipeGuard = false;
         }
     }
 
@@ -297,7 +327,7 @@ VideoWriter::VideoWriter(const VideoSettings &settings) : _impl(std::make_unique
         throw std::runtime_error("ffmpeg was not found; install it or set RAYTRACER_FFMPEG");
 
     _impl->finalPath = settings.path;
-    _impl->temporaryPath = temporaryPathFor(settings.path);
+    _impl->temporaryPath = makeTemporaryPath(settings.path);
     _impl->width = settings.width;
     _impl->height = settings.height;
 
@@ -386,12 +416,19 @@ VideoWriter::VideoWriter(const VideoSettings &settings) : _impl(std::make_unique
         argv.push_back(argument.data());
     argv.push_back(nullptr);
 
-    std::signal(SIGPIPE, SIG_IGN);
-
     int pipeDescriptors[2];
 
     if (pipe(pipeDescriptors) != 0)
         throw std::runtime_error("Failed to create the ffmpeg pipe: " + std::string(std::strerror(errno)));
+    if (!setCloseOnExec(pipeDescriptors[0]) || !setCloseOnExec(pipeDescriptors[1]))
+    {
+        close(pipeDescriptors[0]);
+        close(pipeDescriptors[1]);
+        throw std::runtime_error("Failed to configure the ffmpeg pipe close-on-exec flag");
+    }
+
+    acquireSigpipeGuard();
+    _impl->sigpipeGuard = true;
 
     const pid_t child = fork();
 
@@ -399,6 +436,8 @@ VideoWriter::VideoWriter(const VideoSettings &settings) : _impl(std::make_unique
     {
         close(pipeDescriptors[0]);
         close(pipeDescriptors[1]);
+        releaseSigpipeGuard();
+        _impl->sigpipeGuard = false;
         throw std::runtime_error("Failed to start ffmpeg: " + std::string(std::strerror(errno)));
     }
 

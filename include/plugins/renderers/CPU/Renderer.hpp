@@ -55,6 +55,7 @@ class Renderer
     void setFrameIterationsScale(float frameIterationsScale);
     void setScene(std::shared_ptr<Scene> scene);
     void setCamera(std::shared_ptr<Camera> camera);
+    void setSeed(uint32_t seed);
 
     int getFrameIteration(void) const;
     int getFrameIterations(void) const;
@@ -110,7 +111,7 @@ class Renderer
     Color3D computeLightContribution(const HitPayload &payload, const IMaterial &material,
                                      const LightSample &sample, bool ambient, const Ray &ray, float roughness);
     Vec3D computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed, Color3D &throughput,
-                                  const Color3D &surfaceColor, float roughness);
+                                  const Color3D &surfaceColor, IMaterial::MaterialType materialType, float roughness);
     HitPayload shotRay(const Ray &ray);
     HitPayload missHit(void);
     void manageEvent(char evt);

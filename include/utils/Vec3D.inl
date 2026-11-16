@@ -9,6 +9,7 @@
 #define VEC3D_INL_
 
 #include "VectorIndexOutOfBounds.hpp"
+#include <cassert>
 #include <cmath>
 
 namespace RayTracer
@@ -77,12 +78,24 @@ inline Vec3D Vec3D::operator-(void) const
 
 inline float Vec3D::operator[](int i) const
 {
+    assert(i >= 0 && i < 3);
+    return _pos3D[i];
+}
+
+inline float &Vec3D::operator[](int i)
+{
+    assert(i >= 0 && i < 3);
+    return _pos3D[i];
+}
+
+inline float Vec3D::at(int i) const
+{
     if (i < 0 || i >= 3)
         throw VectorIndexOutOfBounds();
     return _pos3D[i];
 }
 
-inline float &Vec3D::operator[](int i)
+inline float &Vec3D::at(int i)
 {
     if (i < 0 || i >= 3)
         throw VectorIndexOutOfBounds();

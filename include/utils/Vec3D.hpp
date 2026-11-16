@@ -40,13 +40,13 @@ class Vec3D
     // Return new Vec3D with opposite coordinates
     Vec3D operator-(void) const;
 
-    // Return unmutable value of the i-th coordinate of pos3D.
-    // Will be called when using [] on a const Vec3D
+    // Unchecked access for hot loops. Indices must be in [0, 3).
     float operator[](int i) const;
-
-    // Return mutable value of the i-th coordinate of pos3D
-    // Will be called when using [] on a non-const Vec3D
     float &operator[](int i);
+
+    // Checked access for public/error-handling paths.
+    float at(int i) const;
+    float &at(int i);
 
     Vec3D operator+(const Vec3D &rhsVec3D) const;
     Vec3D operator+(const float t) const;

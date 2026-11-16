@@ -6,10 +6,9 @@
 */
 
 #include "SFML.hpp"
+#include "plugins/renderers/PPM.hpp"
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
-#include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -45,54 +44,10 @@ SFML::~SFML()
 
 void SFML::loadPPM(const std::string &path)
 {
-    std::ifstream file(path, std::ios::binary);
-    if (!file)
-        throw std::runtime_error("Cannot open file: " + path);
+    const PPMImage decoded = readPPMFile(path);
 
-    std::string magic;
-    int width = 0;
-    int height = 0;
-    int maxColorValue = 0;
-
-    file >> magic >> width >> height >> maxColorValue;
-
-    if (magic != "P6")
-        throw std::runtime_error("Unsupported PPM format (expected binary P6): " + path);
-    if (width <= 0 || height <= 0)
-        throw std::runtime_error("Invalid dimensions in PPM file: " + path);
-    if (maxColorValue != 255)
-        throw std::runtime_error("Invalid max color value in PPM file: " + path);
-
-    // The header is followed by exactly one whitespace character. Accept CRLF
-    // as well, but do not use std::ws here: the pixel data itself may start
-    // with a whitespace-valued byte.
-    char separator = '\0';
-    file.get(separator);
-    if (!std::isspace(static_cast<unsigned char>(separator)))
-        throw std::runtime_error("Malformed PPM header: " + path);
-    if (separator == '\r')
-    {
-        char lineFeed = '\0';
-        file.get(lineFeed);
-        if (lineFeed != '\n')
-            throw std::runtime_error("Malformed PPM line ending: " + path);
-    }
-
-    constexpr std::size_t MAX_PIXELS = 16000000;
-    const std::size_t pixelCount =
-        static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-
-    if (pixelCount > MAX_PIXELS)
-        throw std::runtime_error("PPM image is too large: " + path);
-
-    std::vector<std::uint8_t> rgb(pixelCount * 3u);
-
-    file.read(reinterpret_cast<char *>(rgb.data()), static_cast<std::streamsize>(rgb.size()));
-    if (file.gcount() != static_cast<std::streamsize>(rgb.size()))
-        throw std::runtime_error("Truncated PPM pixel data: " + path);
-
-    _width = static_cast<std::size_t>(width);
-    _height = static_cast<std::size_t>(height);
+    _width = decoded.width;
+    _height = decoded.height;
 
     sf::Image image({static_cast<unsigned int>(_width), static_cast<unsigned int>(_height)});
     _pixels.assign(_height, std::vector<Color4D>(_width));
@@ -103,10 +58,10 @@ void SFML::loadPPM(const std::string &path)
     {
         for (std::size_t x = 0; x < _width; ++x)
         {
-            const std::size_t offset = (x + y * _width) * 3u;
-            const std::uint8_t r = rgb[offset];
-            const std::uint8_t g = rgb[offset + 1u];
-            const std::uint8_t b = rgb[offset + 2u];
+            const std::uint32_t pixel = decoded.pixels[x + y * _width];
+            const std::uint8_t r = static_cast<std::uint8_t>(pixel & 0xFFu);
+            const std::uint8_t g = static_cast<std::uint8_t>((pixel >> 8u) & 0xFFu);
+            const std::uint8_t b = static_cast<std::uint8_t>((pixel >> 16u) & 0xFFu);
 
             _pixels[y][x] = Color4D(r, g, b);
             image.setPixel({static_cast<unsigned int>(x), static_cast<unsigned int>(y)}, sf::Color(r, g, b));

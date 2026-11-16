@@ -63,8 +63,7 @@ class Camera
     Vec3D getCamViewForward(void) const;      // Could be removed. Only used in initialize.
     float getLensRadius(void) const;
     float getFocusDistance(void) const;
-
-    Ray randomPixelRayCompute(uint32_t &seed, const float &x, const float &y) const;
+    bool isAutoFocus(void) const;
 
   private:
     // Final image dimensions.
@@ -116,6 +115,7 @@ class Camera
     // focus distance is resolved to the look-at distance during initialize().
     float _lensRadius = 0.0f;
     float _focusDistance = 0.0f;
+    bool _autoFocus = true;
 
     // The dimensions of the viewport are computed based on the aspect ratio of the camera. It has to follow that aspect
     // ratio because if not, the image will be distorted. ex: streched or compressed.

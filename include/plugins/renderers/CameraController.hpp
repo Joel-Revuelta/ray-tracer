@@ -51,6 +51,7 @@ class CameraController
     float _initialFov = 90.0f;
     float _initialLensRadius = 0.0f;
     float _initialFocusDistance = 0.0f;
+    bool _initialAutoFocus = true;
     bool _hasInitialState = false;
 };
 
