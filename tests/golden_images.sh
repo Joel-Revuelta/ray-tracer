@@ -140,6 +140,7 @@ render mtl_maps-still mtl_maps still
 render misty_shrine-still misty_shrine still 256
 render volumetric_cathedral-still volumetric_cathedral still 256
 render lagoon_mist-still lagoon_mist still 256
+render motion_blur-animation motion_blur 24 64 --animation --start-frame 24 --end-frame 24
 render primitives_extra-still primitives_extra still
 render scatter_field-still scatter_field still
 render brass_orrery-animation brass_orrery 96 --animation --start-frame 96 --end-frame 96
@@ -158,6 +159,7 @@ compare mtl_maps-still "$out_dir/mtl_maps-still.ppm"
 compare misty_shrine-still "$out_dir/misty_shrine-still.ppm"
 compare volumetric_cathedral-still "$out_dir/volumetric_cathedral-still.ppm"
 compare lagoon_mist-still "$out_dir/lagoon_mist-still.ppm"
+compare motion_blur-animation "$out_dir/motion_blur-animation-0024.ppm"
 compare primitives_extra-still "$out_dir/primitives_extra-still.ppm"
 compare scatter_field-still "$out_dir/scatter_field-still.ppm"
 compare brass_orrery-animation "$out_dir/brass_orrery-animation-0096.ppm"

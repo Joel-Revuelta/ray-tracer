@@ -610,6 +610,13 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/lagoon_mist_smoke.ppm
 )
 add_test(
+    NAME motion_blur_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/motion_blur.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --animation --start-frame 24 --end-frame 24
+            --output ${CMAKE_BINARY_DIR}/motion_blur_smoke-%02d.ppm
+)
+add_test(
     NAME deterministic_mtl_materials_render
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_mtl_materials.sh $<TARGET_FILE:raytracer>
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
@@ -943,6 +950,12 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/invalid_scene_animation_duplicate.ppm
 )
 add_test(
+    NAME motion_blur_bvh
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/motion_blur_bvh.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(motion_blur_bvh PROPERTIES LABELS "parity;scene")
+add_test(
     NAME deterministic_motion_blur
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_motion_blur.sh $<TARGET_FILE:raytracer>
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
@@ -1076,7 +1089,7 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     deterministic_animation_render deterministic_motion_blur deterministic_scene_animation
     golden_images atmosphere_regressions malformed_scene_corpus benchmark_report
     material_maps_smoke mtl_maps_smoke primitives_extra_smoke scatter_field_smoke
-    misty_shrine_smoke volumetric_cathedral_smoke lagoon_mist_smoke
+    misty_shrine_smoke volumetric_cathedral_smoke lagoon_mist_smoke motion_blur_smoke
     validate_still_smoke validate_animation_smoke
     png_output_smoke
     PROPERTIES WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR})
@@ -1135,7 +1148,7 @@ set_tests_properties(
     sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
     frozen_cathedral_smoke bloom_smoke validate_still_smoke validate_animation_smoke
     material_maps_smoke mtl_maps_smoke primitives_extra_smoke scatter_field_smoke
-    misty_shrine_smoke volumetric_cathedral_smoke lagoon_mist_smoke
+    misty_shrine_smoke volumetric_cathedral_smoke lagoon_mist_smoke motion_blur_smoke
     PROPERTIES LABELS "smoke"
 )
 set_tests_properties(animation_smoke implicit_animation_smoke animation_shutter_smoke PROPERTIES

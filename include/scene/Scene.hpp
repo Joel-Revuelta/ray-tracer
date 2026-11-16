@@ -44,6 +44,11 @@ class Scene : public IPrimitive
     // primitives and material indices have been validated.
     void buildAcceleration(void);
 
+    // Updates existing BVH bounds in place after primitive transforms changed.
+    // Returns false when the topology is no longer valid and a full rebuild is
+    // required.
+    bool refitAcceleration(void);
+
     void addLight(std::shared_ptr<ILight> light);
     void addMaterial(std::shared_ptr<IMaterial> material);
     void addPrimitive(std::shared_ptr<IPrimitive> primitive);

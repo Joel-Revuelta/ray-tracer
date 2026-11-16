@@ -35,10 +35,14 @@ measure() {
 
 measure still cpu 320 180 32 showcase
 measure animation cpu 320 180 16 brass_orrery --animation --start-frame 96 --end-frame 96
+measure motion-blur cpu 320 180 16 brass_orrery --animation --start-frame 96 --end-frame 96 \
+    --shutter-angle 180 --shutter-samples 4
 
 if "$executable" --list-renderers 2>/dev/null | grep -q 'cuda.*\[available\]'; then
     measure still cuda 320 180 32 showcase
     measure animation cuda 320 180 16 brass_orrery --animation --start-frame 96 --end-frame 96
+    measure motion-blur cuda 320 180 16 brass_orrery --animation --start-frame 96 --end-frame 96 \
+        --shutter-angle 180 --shutter-samples 4
 fi
 
 cat "$report"

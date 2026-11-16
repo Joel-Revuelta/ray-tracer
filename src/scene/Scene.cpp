@@ -7,6 +7,7 @@
 
 #include "Scene.hpp"
 #include "BVHBuilder.hpp"
+#include "PrimitiveBounds.hpp"
 #include "HitPayload.hpp"
 #include <cstddef>
 #include <stdexcept>
@@ -54,6 +55,123 @@ void Scene::buildAcceleration(void)
     _bvhIndices = std::move(result.indices);
     _unboundedPrimitives = std::move(result.unbounded);
     _accelerated = !_bvhNodes.empty();
+}
+
+bool Scene::refitAcceleration(void)
+{
+    if (_bvhNodes.empty())
+        return true;
+
+    if (_bvhIndices.size() > _primitives.size())
+        return false;
+
+    std::vector<PrimitiveData> descriptions(_primitives.size());
+    std::vector<AABB> primitiveBounds(_primitives.size());
+    std::vector<bool> bounded(_primitives.size(), false);
+
+    for (std::size_t i = 0; i < _primitives.size(); ++i)
+    {
+        if (!_primitives[i]->getData(descriptions[i]))
+            descriptions[i].type = PrimitiveType::NONE;
+        bounded[i] = computePrimitiveBounds(descriptions[i], primitiveBounds[i]);
+    }
+
+    std::vector<bool> indexed(_primitives.size(), false);
+    std::vector<bool> unbounded(_primitives.size(), false);
+
+    for (const std::uint32_t index : _bvhIndices)
+    {
+        if (index >= _primitives.size())
+            return false;
+        indexed[index] = true;
+    }
+
+    for (const std::uint32_t index : _unboundedPrimitives)
+    {
+        if (index >= _primitives.size())
+            return false;
+        unbounded[index] = true;
+    }
+
+    for (std::size_t i = 0; i < _primitives.size(); ++i)
+    {
+        if (bounded[i])
+        {
+            if (!indexed[i] || unbounded[i])
+                return false;
+        }
+        else if (!unbounded[i] || indexed[i])
+            return false;
+    }
+
+    // Compute a post-order list without recursion so deep trees cannot overflow
+    // the stack. Children always appear after their parent in `order`, so the
+    // reversed pass updates leaves before internal nodes.
+    std::vector<int> order;
+    std::vector<int> pending;
+
+    order.reserve(_bvhNodes.size());
+    pending.push_back(0);
+
+    while (!pending.empty())
+    {
+        const int nodeIndex = pending.back();
+
+        pending.pop_back();
+
+        if (nodeIndex < 0 || static_cast<std::size_t>(nodeIndex) >= _bvhNodes.size())
+            return false;
+
+        order.push_back(nodeIndex);
+
+        const BVHNode &node = _bvhNodes[static_cast<std::size_t>(nodeIndex)];
+
+        if (!node.leaf)
+        {
+            if (node.left < 0 || node.right < 0)
+                return false;
+            pending.push_back(node.left);
+            pending.push_back(node.right);
+        }
+    }
+
+    if (order.size() != _bvhNodes.size())
+        return false;
+
+    for (auto iterator = order.rbegin(); iterator != order.rend(); ++iterator)
+    {
+        BVHNode &node = _bvhNodes[static_cast<std::size_t>(*iterator)];
+        AABB bounds;
+
+        if (node.leaf)
+        {
+            if (node.start > _bvhIndices.size() || node.count > _bvhIndices.size() - node.start)
+                return false;
+
+            for (std::size_t i = 0; i < node.count; ++i)
+            {
+                const std::uint32_t primitiveIndex = _bvhIndices[node.start + i];
+
+                if (primitiveIndex >= primitiveBounds.size() || !bounded[primitiveIndex])
+                    return false;
+                bounds.expand(primitiveBounds[primitiveIndex]);
+            }
+        }
+        else
+        {
+            if (node.left < 0 || node.right < 0 || static_cast<std::size_t>(node.left) >= _bvhNodes.size() ||
+                static_cast<std::size_t>(node.right) >= _bvhNodes.size())
+                return false;
+            bounds.expand(_bvhNodes[static_cast<std::size_t>(node.left)].bounds);
+            bounds.expand(_bvhNodes[static_cast<std::size_t>(node.right)].bounds);
+        }
+
+        if (!bounds.valid())
+            return false;
+        node.bounds = bounds;
+    }
+
+    return true;
 }
 
 void Scene::clearAcceleration(void)

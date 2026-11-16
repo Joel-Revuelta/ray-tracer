@@ -28,7 +28,7 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
 - **Headless CLI** — binary PPM or PNG output, stdout support, configurable
   resolution/samples, exposure and tonemapping.
 - **Animation** — keyframed camera, prefab-instance and light timelines,
-  deterministic numbered frame sequences, camera motion blur, resumable
+  deterministic numbered frame sequences, camera/object/light motion blur, resumable
   rendering and JSON sequence metadata, with CPU/CUDA playback from the CLI.
 - **Video output** — direct MP4/H.264 and WebM/VP9 encoding through FFmpeg,
   with optional simultaneous frame output.
@@ -61,7 +61,7 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
   with matching CPU/CUDA kernels, applied before exposure and tonemapping.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 41 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, material maps, boxes/disks, prefab scatter, environment lighting, group transforms, a five-scene hero pack and 8K renders.
+- **Included scenes** — 42 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, material maps, boxes/disks, prefab scatter, environment lighting, group transforms, a five-scene hero pack and 8K renders.
 
 ## Screenshots
 
@@ -246,8 +246,8 @@ ffmpeg -framerate 24 -i 'frames/orrery-%04d.png' \
 ```
 
 `--start-frame`, `--end-frame` and `--fps` select a sub-range and override the
-scene frame rate. Add `--shutter-angle 180 --shutter-samples 8` for camera
-motion blur. Scenes can also animate named prefab instances and lights through
+scene frame rate. Add `--shutter-angle 180 --shutter-samples 8` for camera,
+object and light motion blur. Scenes can also animate named prefab instances and lights through
 the `animation` block; see [docs/scene-format.md](docs/scene-format.md). `--resume`
 skips completed frames, and `--validate` prints the resolved frame range,
 output pattern and animated targets without rendering. Animation is CLI-only;
@@ -435,6 +435,7 @@ architecture and CUDA build details.
 | `misty_shrine.cfg` | Torii gate and lanterns in low exponential height fog. |
 | `volumetric_cathedral.cfg` | Strong god rays through a foggy cathedral nave. |
 | `lagoon_mist.cfg` | Glowing blooms and reflections under thin water haze. |
+| `motion_blur.cfg` | A fast emissive orb and its area light with object/light motion blur. |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback. |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL. |
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face. |

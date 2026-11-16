@@ -96,3 +96,10 @@ resolution/sample counts.
   scan. The same threshold applies to meshes with fewer than eight triangles.
 - Mesh BVHs are built once per unique asset at load time and shared by every
   instance.
+- Animated instance frames reuse one CUDA session. The first shutter subframe
+  rebuilds the host BVH; later subframes refit node bounds and upload only
+  primitives, nodes and lights. `tests/benchmark_report.sh` includes a
+  4-subframe motion-blur case; on the reference machine it measured roughly
+  4–5 s on CPU and 0.5–0.6 s on CUDA at `320x180`, 16 samples.
+- Motion blur multiplies tracing cost by the number of shutter subframes while
+  scene updates add only bounds/upload work.

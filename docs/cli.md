@@ -85,8 +85,8 @@ this version.
   frame. Leave them unset to use the animation timeline.
 - Scenes can also declare animated prefab instances and lights. They play
   alongside the camera; still renders ignore them and use the base scene.
-- Camera motion blur does not blur object or light motion; those values are
-  constant within a shutter interval.
+- Motion blur samples the camera, animated instance transforms and animated
+  light values at every shutter subframe.
 - `--shutter-angle 0` disables motion blur, even when the scene enables it.
   Otherwise, motion blur renders `--shutter-samples` deterministic subframes per
   frame and averages them in linear HDR before post-processing. Render cost
@@ -174,7 +174,7 @@ mkdir -p frames
   --start-frame 0 --end-frame 47 --fps 12 \
   --output 'frames/sakura-%04d.ppm'
 
-# Half-frame camera motion blur with 8 subframes
+# Half-frame motion blur with 8 subframes
 ./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cuda \
   --width 1280 --height 720 --samples 64 --animation \
   --shutter-angle 180 --shutter-samples 8 \

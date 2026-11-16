@@ -246,11 +246,13 @@ uses the same `SceneSnapshot` data path.
 - **Output:** uses the shared image writer and supports stdout, PPM/PNG files,
   and unwritable-output errors like the CPU renderer. PPM output is binary `P6`,
   which keeps 8K images around 100 MB instead of several hundred MB of ASCII.
-- **Animation:** builds the snapshot and `CudaRenderSession` once from the
-  first frame, then reuses the scene, BVH, meshes, textures and lights for every
-  later frame. `updateCamera()` replaces the camera and clears accumulation;
-  `setSeed()` applies the deterministic per-frame seed. The session is never
-  rebuilt for a camera-only animation, so long sequences avoid the upload cost.
+- **Animation:** builds one `CudaRenderSession` at the first rendered frame,
+  then reuses meshes, textures and materials for every later frame.
+  `updateCamera()` replaces the camera and clears accumulation; `setSeed()`
+  applies the deterministic per-frame seed. Animated instances call
+  `updateScene()` with a full host BVH rebuild on each frame's first subframe
+  and a bounds refit for later subframes. Light-only animation uploads the light
+  buffer. Camera-only sequences avoid all scene uploads.
 
 Run it with:
 
@@ -331,11 +333,12 @@ Both renderers play the same `CameraAnimation` timeline and share the per-frame
 seed formula `seed + frame * 0x9e3779b9u`.
 
 - The CPU renderer creates a fresh `Renderer` per subframe with the interpolated
-  camera and reads its linear HDR average. This reuses the immutable scene graph
-  and avoids rebuilding geometry; allocation cost is small relative to tracing.
-- The CUDA renderer keeps one `CudaRenderSession` alive and updates only
-  `CameraData` and the seed between subframes. Device memory for the BVH,
-  meshes and textures is allocated once.
+  camera and reads its linear HDR average. Animated instances rebuild the scene
+  BVH on the first subframe of each frame and refit bounds for later subframes.
+- The CUDA renderer keeps one `CudaRenderSession` alive and updates the scene,
+  lights, camera and seed between subframes. Device memory for meshes and
+  textures is allocated once; BVH nodes and primitive data are updated in
+  place.
 - Motion blur accumulates subframes in linear HDR and post-processes once.
   CUDA uses a lazily allocated device shutter buffer and an accumulation
   kernel; shutter-off sessions keep their previous memory use.
@@ -345,11 +348,13 @@ seed formula `seed + frame * 0x9e3779b9u`.
 - `--resume` skips frames whose final output already exists. The CUDA session
   is initialized from the first frame that will actually render.
 - Named prefab-instance transforms and light values can also animate. CPU
-  rebuilds the BVH only when instance transforms change; CUDA reuses the session
-  for light-only animation and rebuilds the snapshot/session per frame when
-  instances move. Camera-only sequences keep the original fast path.
-- Motion blur is camera-only; object and light values are constant within a
-  shutter interval.
+  rebuilds the BVH on the first subframe of a frame and refits it for later
+  shutter samples. CUDA reuses one session: light-only animation uploads the
+  light buffer, instance animation uses a host BVH rebuild on the first
+  subframe and `refitBVH` for later subframes. Camera-only sequences keep the
+  original fast path.
+- Motion blur samples camera, instance transforms and light values at the same
+  shutter subframes.
 - A JSON sidecar records the resolved settings, video settings, scene-animation
   targets and per-frame camera poses; both renderers produce the same schema.
 - `--video` streams final frames to the same `VideoWriter` in both renderers.
@@ -359,9 +364,9 @@ seed formula `seed + frame * 0x9e3779b9u`.
 - Animation is CLI-only. GUI renderers reject animation flags so interactive
   camera control cannot fight the timeline.
 - CPU/CUDA sequences match within normal Monte Carlo noise when the sample
-  count and seed are identical. Camera-only animation does not change scene
-  ordering; scene animation keeps the same primitive and light order on both
-  renderers, so parity behavior is unchanged from still rendering.
+  count and seed are identical. Scene and camera animation keep the same
+  primitive and light order on both renderers, so parity behavior is unchanged
+  from still rendering.
 
 ## Troubleshooting
 

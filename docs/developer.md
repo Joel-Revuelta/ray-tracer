@@ -514,9 +514,9 @@ const double time = animation->timeAtFrame(frame, fps);
 `getFrameCount` returns `ceil(duration * fps)` (at least one frame).
 
 `shutterSampleTime(frameTime, fps, shutter, sample)` returns the stratified
-subframe times for camera motion blur. The interval is centered on the frame
-time and spans `shutter.angle / 360 / fps` seconds; `cameraAt` clamps times
-outside the timeline.
+subframe times for motion blur. The interval is centered on the frame time and
+spans `shutter.angle / 360 / fps` seconds; `cameraAt` and scene animation clamp
+times outside their timelines.
 
 Sequence rendering keeps still rendering untouched:
 
@@ -562,16 +562,21 @@ tracks alongside the camera timeline.
   the still render.
 - `SceneAnimation::apply` updates instance transforms and light values. It
   reports whether instance transforms changed.
-- CPU applies the timeline once per frame and rebuilds the scene BVH only when
-  instances moved.
-- CUDA has three paths:
-  - camera-only: reuse the existing `CudaRenderSession`;
-  - light-only: reuse the session and upload an updated light buffer through
-    `updateLights`;
-  - instance transforms: rebuild the `SceneSnapshot` and session per frame for
-    v1. Dynamic BVH refitting is future work.
-- Motion blur remains camera-only: object and light values are constant across
-  shutter subframes.
+- Both renderers apply the timeline at every shutter subframe. Without motion
+  blur the single subframe time is the frame time.
+- CPU rebuilds the scene BVH on the first subframe of a frame and calls
+  `Scene::refitAcceleration()` for later subframes when instance transforms
+  changed.
+- CUDA reuses one `CudaRenderSession`:
+  - camera-only: update `CameraData` and the seed;
+  - light-only: upload an updated light buffer through `updateLights`;
+  - instance transforms: `updateScene(snapshot, Rebuild)` on the first
+    subframe and `updateScene(snapshot, Refit)` for later subframes.
+    `refitBVH` recomputes leaf and internal AABBs; a topology or resource-count
+    change falls back to a full host BVH rebuild or a fatal update error.
+- `updateScene` uploads primitives, BVH nodes, indices/unbounded lists and
+  lights. Materials, meshes, textures, environment and atmosphere are static.
+- Motion blur samples camera, instances and lights at the same subframe times.
 - Still renders never call `SceneAnimation::apply`.
 
 ### Video output
@@ -853,7 +858,11 @@ Motion blur, metadata and resume:
   --width 320 --height 180 --samples 8 --animation \
   --shutter-angle 180 --shutter-samples 4 \
   --start-frame 0 --end-frame 11 --output '/tmp/orrery-%04d.png'
+./raytracer --path scenes/motion_blur.cfg --cli --renderer cuda \
+  --width 320 --height 180 --samples 64 --animation \
+  --start-frame 24 --end-frame 24 --output '/tmp/motion-blur-%02d.png'
 bash tests/deterministic_motion_blur.sh ./raytracer . build
+bash tests/motion_blur_bvh.sh ./raytracer . build
 ./raytracer --path scenes/brass_orrery.cfg --cli --animation \
   --output '/tmp/orrery-%04d.png' --validate
 ./raytracer --path scenes/brass_orrery.cfg --cli --renderer cpu \
@@ -917,6 +926,9 @@ Atmosphere and MTL maps:
   --width 320 --height 180 --samples 256 --output /tmp/lagoon.png
 ./raytracer --path scenes/mtl_maps.cfg --cli --renderer cpu \
   --width 320 --height 180 --samples 64 --output /tmp/mtl-maps.png
+./raytracer --path scenes/motion_blur.cfg --cli --renderer cuda \
+  --width 320 --height 180 --samples 64 \
+  --animation --start-frame 24 --end-frame 24 --output '/tmp/blur-%02d.png'
 bash tests/cpu_cuda_parity.sh ./raytracer . build
 bash tests/atmosphere_regressions.sh ./raytracer . build
 ```

@@ -49,6 +49,34 @@ if cmp -s "${out_dir}/sharp-00.ppm" "${out_dir}/blurred-00.ppm"; then
     exit 1
 fi
 
+# Object and light motion blur must be deterministic and visibly different from
+# a sharp frame at the same animation time.
+motion_dir="${out_dir}/object-motion"
+
+mkdir -p "${motion_dir}/first" "${motion_dir}/second"
+
+for pass in first second; do
+    "${executable}" --path "${source_dir}/scenes/motion_blur.cfg" --cli --renderer cpu \
+        --width 96 --height 54 --samples 8 --seed 7 \
+        --animation --start-frame 24 --end-frame 24 \
+        --output "${motion_dir}/${pass}/frame-%02d.ppm" >/dev/null
+done
+
+if ! cmp -s "${motion_dir}/first/frame-24.ppm" "${motion_dir}/second/frame-24.ppm"; then
+    echo "object motion blur is not deterministic" >&2
+    exit 1
+fi
+
+"${executable}" --path "${source_dir}/scenes/motion_blur.cfg" --cli --renderer cpu \
+    --width 96 --height 54 --samples 8 --seed 7 \
+    --animation --start-frame 24 --end-frame 24 --shutter-angle 0 \
+    --output "${motion_dir}/sharp-%02d.ppm" >/dev/null
+
+if cmp -s "${motion_dir}/sharp-24.ppm" "${motion_dir}/first/frame-24.ppm"; then
+    echo "object motion blur did not change the rendered frame" >&2
+    exit 1
+fi
+
 # Scene-authored shutter settings must be parsed and used.
 "${executable}" --path "${source_dir}/tests/animation_shutter.cfg" --cli --renderer cpu \
     --width 64 --height 36 --samples 2 --seed 7 \

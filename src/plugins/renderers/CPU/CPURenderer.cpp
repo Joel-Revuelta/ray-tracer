@@ -119,21 +119,25 @@ void CPURenderer::run(const RenderContext &context)
                 continue;
             }
 
-            if (context.sceneAnimation)
-            {
-                const bool instancesChanged = context.sceneAnimation->apply(*context.scene, frameTime);
-
-                if (instancesChanged)
-                    context.scene->buildAcceleration();
-            }
-
             std::vector<Color3D> frameHDR(pixelCount, Color3D(0.0f));
             const float subframeWeight = 1.0f / static_cast<float>(subframes);
 
             for (int subframe = 0; subframe < subframes; ++subframe)
             {
-                std::shared_ptr<Camera> camera = context.animation->cameraAt(
-                    shutterSampleTime(frameTime, fps, shutter, subframe));
+                const double subframeTime = shutterSampleTime(frameTime, fps, shutter, subframe);
+
+                if (context.sceneAnimation)
+                {
+                    const bool instancesChanged = context.sceneAnimation->apply(*context.scene, subframeTime);
+
+                    if (instancesChanged)
+                    {
+                        if (subframe == 0 || !context.scene->refitAcceleration())
+                            context.scene->buildAcceleration();
+                    }
+                }
+
+                std::shared_ptr<Camera> camera = context.animation->cameraAt(subframeTime);
 
                 camera->initialize(width, height, camera->getLookAt(), camera->getLookFrom(),
                                    camera->getVerticalFovDegree());

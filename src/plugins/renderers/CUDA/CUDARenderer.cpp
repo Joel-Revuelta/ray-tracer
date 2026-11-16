@@ -16,6 +16,7 @@
 #include "render/Texture.hpp"
 #include "render/VideoWriter.hpp"
 #include "scene/BVHBuilder.hpp"
+#include "scene/PrimitiveBounds.hpp"
 #include "scene/Transform.hpp"
 #include <algorithm>
 #include <chrono>
@@ -118,6 +119,24 @@ template <typename T> class DeviceBuffer
         if (_count == 0)
             return;
         checkCuda(cudaMemcpy(_data, values.data(), _count * sizeof(T), cudaMemcpyHostToDevice), "cudaMemcpy");
+    }
+
+    void resize(std::size_t count)
+    {
+        if (count == _count)
+            return;
+
+        if (_data != nullptr)
+        {
+            checkCuda(cudaFree(_data), "cudaFree");
+            _data = nullptr;
+        }
+
+        _count = count;
+
+        if (_count == 0)
+            return;
+        checkCuda(cudaMalloc(reinterpret_cast<void **>(&_data), _count * sizeof(T)), "cudaMalloc");
     }
 
   private:
@@ -350,6 +369,122 @@ HostBVH buildBVH(const SceneSnapshot &snapshot)
         bvh.unbounded.push_back(static_cast<int>(index));
 
     return bvh;
+}
+
+bool refitBVH(HostBVH &bvh, const std::vector<PrimitiveData> &primitives)
+{
+    if (bvh.nodes.empty())
+        return true;
+
+    std::vector<AABB> primitiveBounds(primitives.size());
+    std::vector<bool> bounded(primitives.size(), false);
+
+    for (std::size_t i = 0; i < primitives.size(); ++i)
+        bounded[i] = computePrimitiveBounds(primitives[i], primitiveBounds[i]);
+
+    std::vector<bool> indexed(primitives.size(), false);
+    std::vector<bool> unbounded(primitives.size(), false);
+
+    for (const int index : bvh.indices)
+    {
+        if (index < 0 || static_cast<std::size_t>(index) >= primitives.size())
+            return false;
+        indexed[static_cast<std::size_t>(index)] = true;
+    }
+
+    for (const int index : bvh.unbounded)
+    {
+        if (index < 0 || static_cast<std::size_t>(index) >= primitives.size())
+            return false;
+        unbounded[static_cast<std::size_t>(index)] = true;
+    }
+
+    for (std::size_t i = 0; i < primitives.size(); ++i)
+    {
+        if (bounded[i])
+        {
+            if (!indexed[i] || unbounded[i])
+                return false;
+        }
+        else if (!unbounded[i] || indexed[i])
+            return false;
+    }
+
+    std::vector<int> order;
+    std::vector<int> pending;
+
+    order.reserve(bvh.nodes.size());
+    pending.push_back(0);
+
+    while (!pending.empty())
+    {
+        const int nodeIndex = pending.back();
+
+        pending.pop_back();
+
+        if (nodeIndex < 0 || static_cast<std::size_t>(nodeIndex) >= bvh.nodes.size())
+            return false;
+
+        order.push_back(nodeIndex);
+
+        const Cuda::BVHNode &node = bvh.nodes[static_cast<std::size_t>(nodeIndex)];
+
+        if (node.leaf == 0)
+        {
+            if (node.left < 0 || node.right < 0)
+                return false;
+            pending.push_back(node.left);
+            pending.push_back(node.right);
+        }
+    }
+
+    if (order.size() != bvh.nodes.size())
+        return false;
+
+    for (auto iterator = order.rbegin(); iterator != order.rend(); ++iterator)
+    {
+        Cuda::BVHNode &node = bvh.nodes[static_cast<std::size_t>(*iterator)];
+        AABB bounds;
+
+        if (node.leaf != 0)
+        {
+            if (node.start < 0 || node.count < 0 ||
+                static_cast<std::size_t>(node.start) > bvh.indices.size() ||
+                static_cast<std::size_t>(node.count) > bvh.indices.size() - static_cast<std::size_t>(node.start))
+                return false;
+
+            for (int i = 0; i < node.count; ++i)
+            {
+                const int primitiveIndex = bvh.indices[static_cast<std::size_t>(node.start) + i];
+
+                if (primitiveIndex < 0 || static_cast<std::size_t>(primitiveIndex) >= primitiveBounds.size() ||
+                    !bounded[static_cast<std::size_t>(primitiveIndex)])
+                    return false;
+                bounds.expand(primitiveBounds[static_cast<std::size_t>(primitiveIndex)]);
+            }
+        }
+        else
+        {
+            if (node.left < 0 || node.right < 0 || static_cast<std::size_t>(node.left) >= bvh.nodes.size() ||
+                static_cast<std::size_t>(node.right) >= bvh.nodes.size())
+                return false;
+            const Cuda::BVHNode &left = bvh.nodes[static_cast<std::size_t>(node.left)];
+            const Cuda::BVHNode &right = bvh.nodes[static_cast<std::size_t>(node.right)];
+
+            bounds.expand(Vec3D(left.min.x, left.min.y, left.min.z));
+            bounds.expand(Vec3D(left.max.x, left.max.y, left.max.z));
+            bounds.expand(Vec3D(right.min.x, right.min.y, right.min.z));
+            bounds.expand(Vec3D(right.max.x, right.max.y, right.max.z));
+        }
+
+        if (!bounds.valid())
+            return false;
+
+        node.min = Cuda::Vec3{bounds.min.getX(), bounds.min.getY(), bounds.min.getZ()};
+        node.max = Cuda::Vec3{bounds.max.getX(), bounds.max.getY(), bounds.max.getZ()};
+    }
+
+    return true;
 }
 
 int checkedCount(std::size_t count, const char *name)
@@ -615,6 +750,45 @@ class CudaRenderSession
         _lights = converted;
         _view.lights = _deviceLights.get();
         _view.lightCount = static_cast<int>(converted.size());
+    }
+
+    void updateScene(const SceneSnapshot &snapshot, bool rebuild)
+    {
+        finishBatch();
+
+        if (snapshot.camera.imageWidth != _width || snapshot.camera.imageHeight != _height)
+            throw std::runtime_error("CUDA scene update changed image dimensions");
+        if (snapshot.primitives.size() != _primitives.size())
+            throw std::runtime_error("CUDA scene update changed the primitive count");
+        if (snapshot.materials.size() != _materials.size() ||
+            snapshot.lights.size() != _lights.size() || snapshot.meshes.size() != _meshes.ranges.size() ||
+            snapshot.textures.size() != _textures.ranges.size())
+            throw std::runtime_error("CUDA scene update changed a static resource count");
+
+        std::vector<Cuda::Primitive> primitives = convertPrimitives(snapshot);
+
+        if (rebuild || !refitBVH(_bvh, snapshot.primitives))
+            _bvh = buildBVH(snapshot);
+
+        _primitives = std::move(primitives);
+        _devicePrimitives.upload(_primitives);
+        _deviceNodes.resize(_bvh.nodes.size());
+        _deviceNodes.upload(_bvh.nodes);
+        _deviceIndices.resize(_bvh.indices.size());
+        _deviceIndices.upload(_bvh.indices);
+        _deviceUnbounded.resize(_bvh.unbounded.size());
+        _deviceUnbounded.upload(_bvh.unbounded);
+
+        _view.primitives = _devicePrimitives.get();
+        _view.primitiveCount = checkedCount(_primitives.size(), "primitives");
+        _view.nodes = _deviceNodes.get();
+        _view.nodeCount = checkedCount(_bvh.nodes.size(), "BVH nodes");
+        _view.primitiveIndices = _deviceIndices.get();
+        _view.primitiveIndexCount = checkedCount(_bvh.indices.size(), "BVH primitive indices");
+        _view.unboundedIndices = _deviceUnbounded.get();
+        _view.unboundedCount = checkedCount(_bvh.unbounded.size(), "unbounded primitives");
+
+        updateLights(snapshot.lights);
     }
 
     void refreshOutput(int renderedSamples)
@@ -1019,25 +1193,7 @@ void CUDARenderer::run(const RenderContext &context)
             }
         }
 
-        std::shared_ptr<Camera> firstCamera =
-            context.animation->cameraAt(context.animation->timeAtFrame(firstRendered, fps));
-        firstCamera->initialize(context.options.width, context.options.height, firstCamera->getLookAt(),
-                                firstCamera->getLookFrom(), firstCamera->getVerticalFovDegree());
-
-        if (context.options.lensRadiusOverride >= 0.0f)
-            firstCamera->setLensRadius(context.options.lensRadiusOverride);
-        if (context.options.focusDistanceOverride > 0.0f)
-            firstCamera->setFocusDistance(context.options.focusDistanceOverride);
-
         std::unique_ptr<CudaRenderSession> session;
-
-        if (!sceneInstances)
-        {
-            const SceneSnapshot snapshot = buildSceneSnapshot(*context.scene, *firstCamera);
-
-            session = std::make_unique<CudaRenderSession>(snapshot, context.options.postProcess,
-                                                          subframeSeed(firstRendered, 0));
-        }
 
         const auto sequenceStart = std::chrono::steady_clock::now();
         int completedFrames = 0;
@@ -1054,45 +1210,14 @@ void CUDARenderer::run(const RenderContext &context)
                 continue;
             }
 
-            if (context.sceneAnimation)
-                context.sceneAnimation->apply(*context.scene, frameTime);
-
-            std::unique_ptr<CudaRenderSession> frameSession;
-            CudaRenderSession *active = session.get();
-
-            if (sceneInstances)
-            {
-                std::shared_ptr<Camera> nominalCamera = context.animation->cameraAt(frameTime);
-
-                nominalCamera->initialize(context.options.width, context.options.height, nominalCamera->getLookAt(),
-                                          nominalCamera->getLookFrom(), nominalCamera->getVerticalFovDegree());
-
-                if (context.options.lensRadiusOverride >= 0.0f)
-                    nominalCamera->setLensRadius(context.options.lensRadiusOverride);
-                if (context.options.focusDistanceOverride > 0.0f)
-                    nominalCamera->setFocusDistance(context.options.focusDistanceOverride);
-
-                const SceneSnapshot frameSnapshot = buildSceneSnapshot(*context.scene, *nominalCamera);
-
-                frameSession = std::make_unique<CudaRenderSession>(frameSnapshot, context.options.postProcess,
-                                                                  subframeSeed(frame, 0));
-                active = frameSession.get();
-            }
-            else if (sceneLights)
-            {
-                active->updateLights(collectLights(*context.scene));
-            }
-
-            if (!active)
-                throw std::runtime_error("CUDA animation session was not initialized");
-
-            if (motionBlur)
-                active->beginShutter();
-
             for (int subframe = 0; subframe < subframes; ++subframe)
             {
-                std::shared_ptr<Camera> camera = context.animation->cameraAt(
-                    shutterSampleTime(frameTime, fps, shutter, subframe));
+                const double subframeTime = shutterSampleTime(frameTime, fps, shutter, subframe);
+
+                if (context.sceneAnimation)
+                    context.sceneAnimation->apply(*context.scene, subframeTime);
+
+                std::shared_ptr<Camera> camera = context.animation->cameraAt(subframeTime);
 
                 camera->initialize(context.options.width, context.options.height, camera->getLookAt(),
                                    camera->getLookFrom(), camera->getVerticalFovDegree());
@@ -1102,8 +1227,36 @@ void CUDARenderer::run(const RenderContext &context)
                 if (context.options.focusDistanceOverride > 0.0f)
                     camera->setFocusDistance(context.options.focusDistanceOverride);
 
-                active->updateCamera(makeCameraData(*camera));
-                active->setSeed(subframeSeed(frame, subframe));
+                if (sceneInstances)
+                {
+                    const SceneSnapshot frameSnapshot = buildSceneSnapshot(*context.scene, *camera);
+
+                    if (!session)
+                        session = std::make_unique<CudaRenderSession>(
+                            frameSnapshot, context.options.postProcess, subframeSeed(frame, subframe));
+                    else
+                        session->updateScene(frameSnapshot, subframe == 0);
+                }
+                else if (!session)
+                {
+                    const SceneSnapshot frameSnapshot = buildSceneSnapshot(*context.scene, *camera);
+
+                    session = std::make_unique<CudaRenderSession>(frameSnapshot, context.options.postProcess,
+                                                                  subframeSeed(frame, subframe));
+                }
+                else if (sceneLights)
+                {
+                    session->updateLights(collectLights(*context.scene));
+                }
+
+                if (!session)
+                    throw std::runtime_error("CUDA animation session was not initialized");
+
+                if (motionBlur && subframe == 0)
+                    session->beginShutter();
+
+                session->updateCamera(makeCameraData(*camera));
+                session->setSeed(subframeSeed(frame, subframe));
 
                 constexpr int batchSize = 16;
 
@@ -1111,22 +1264,22 @@ void CUDARenderer::run(const RenderContext &context)
                 {
                     const int count = std::min(batchSize, context.options.frames - start);
 
-                    active->renderBatch(start, count);
+                    session->renderBatch(start, count);
                 }
 
                 if (motionBlur)
-                    active->accumulateShutter();
+                    session->accumulateShutter();
             }
 
             if (motionBlur)
-                active->refreshShutterOutput(context.options.frames * subframes);
+                session->refreshShutterOutput(context.options.frames * subframes);
             else if (context.options.postProcess.bloom)
-                active->refreshOutput(context.options.frames);
+                session->refreshOutput(context.options.frames);
 
-            const std::vector<uint32_t> &pixels = active->copyImage();
+            const std::vector<uint32_t> &pixels = session->copyImage();
 
             if (writeFrames)
-                writeImageFileAtomic(path, active->width(), active->height(), pixels);
+                writeImageFileAtomic(path, session->width(), session->height(), pixels);
             if (video)
                 video->writeFrame(pixels);
             ++completedFrames;

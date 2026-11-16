@@ -117,7 +117,8 @@ animation:
 
 - `fps` is an optional positive integer frame rate. It defaults to `24` and can
   be overridden per render with `--fps F`.
-- `shutter` is optional and controls camera motion blur. `angle` is the shutter
+- `shutter` is optional and controls motion blur of the camera, animated
+  instances and animated lights. `angle` is the shutter
   opening in degrees in `[0, 360)`; `0` or an omitted block disables blur, and
   `180` is a half-frame exposure. `samples` is the number of deterministic
   subframe times and defaults to `1`. Both fields can be overridden with
@@ -223,8 +224,9 @@ animation:
   must be finite and non-negative.
 - Animated instance transforms replace the instance's base transform for that
   frame. Animated light position applies to point and sphere lights.
-- Scene animation is applied once per frame. The existing motion blur remains
-  camera-only; objects and lights are static within a shutter interval.
+- Scene animation is sampled at every shutter subframe, so animated instances
+  and lights blur alongside the camera. Without motion blur the timeline is
+  applied once per frame.
 - The block is validated when the scene loads, so an invalid timeline fails
   even if only a still image is rendered. Still renders ignore scene animation
   and use the base transforms and light values.

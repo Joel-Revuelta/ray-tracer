@@ -141,6 +141,19 @@ for scene in material_maps mtl_maps primitives_extra scatter_field misty_shrine 
     compare "${out_dir}/${scene}-cpu.ppm" "${out_dir}/${scene}-cuda.ppm" "${scene}"
 done
 
+# Object and light motion blur at a mid-animation frame.
+for renderer in cpu cuda; do
+    if ! "${executable}" --path "${source_dir}/scenes/motion_blur.cfg" --cli \
+        --renderer "${renderer}" --width 160 --height 90 --samples 128 --seed 5 \
+        --animation --start-frame 24 --end-frame 24 \
+        --output "${out_dir}/motion-blur-${renderer}-%02d.ppm" \
+        >"${out_dir}/motion-blur-${renderer}.log" 2>&1; then
+        cat "${out_dir}/motion-blur-${renderer}.log" >&2
+        exit 1
+    fi
+done
+compare_loose "${out_dir}/motion-blur-cpu-24.ppm" "${out_dir}/motion-blur-cuda-24.ppm" "object motion blur"
+
 # The cathedral combines high-dynamic-range area lighting with strong forward
 # scattering, so its GPU/CPU comparison carries a deliberately wider tolerance.
 for renderer in cpu cuda; do

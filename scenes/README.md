@@ -74,6 +74,7 @@ letterboxes it to preserve aspect ratio.
 | `misty_shrine.cfg` | Torii gate and lanterns in low exponential height fog |
 | `volumetric_cathedral.cfg` | Strong god rays through a foggy cathedral nave |
 | `lagoon_mist.cfg` | Glowing blooms and reflections under thin water haze |
+| `motion_blur.cfg` | Fast emissive orb and area light with object/light motion blur |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL |
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face |
