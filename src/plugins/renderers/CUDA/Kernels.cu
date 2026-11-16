@@ -212,6 +212,17 @@ __device__ inline Vec3 fresnelSchlick(const Vec3 &f0, float cosTheta)
     return add(f0, scale(sub(white, f0), factor));
 }
 
+__device__ inline Vec3 stableTangent(const Vec3 &normal)
+{
+    const Vec3 axis = fabsf(normal.y) < 0.999f ? makeVec3(0.0f, 1.0f, 0.0f) : makeVec3(1.0f, 0.0f, 0.0f);
+    Vec3 tangent = cross(axis, normal);
+    const float length = lengthSquared(tangent);
+
+    if (!isfinite(length) || length < 1e-12f)
+        return makeVec3(0.0f, 0.0f, 0.0f);
+    return normalize(tangent);
+}
+
 __device__ inline float blinnShininess(float roughness)
 {
     if (roughness <= 1e-3f)
@@ -724,6 +735,148 @@ __device__ inline Vec3 transformNormal(const TransformData &transform, const Vec
                         transform.inverseLinear[8] * normal.z);
 }
 
+__device__ bool intersectBox(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
+                             Vec3 &bestShadingNormal, float &bestU, float &bestV, int &bestIndex, int index)
+{
+    const float origin[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
+    const float direction[3] = {ray.direction.x, ray.direction.y, ray.direction.z};
+    const float minimum[3] = {primitive.localMin.x, primitive.localMin.y, primitive.localMin.z};
+    const float maximum[3] = {primitive.localMax.x, primitive.localMax.y, primitive.localMax.z};
+    float nearDistance = -3.402823466e38f;
+    float farDistance = 3.402823466e38f;
+    int nearAxis = -1;
+    float nearSign = 1.0f;
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        if (fabsf(direction[axis]) < 1e-12f)
+        {
+            if (origin[axis] < minimum[axis] || origin[axis] > maximum[axis])
+                return false;
+            continue;
+        }
+
+        const float inverse = 1.0f / direction[axis];
+        float first = (minimum[axis] - origin[axis]) * inverse;
+        float second = (maximum[axis] - origin[axis]) * inverse;
+        float sign = -1.0f;
+
+        if (first > second)
+        {
+            const float temporary = first;
+
+            first = second;
+            second = temporary;
+            sign = 1.0f;
+        }
+        if (first > nearDistance)
+        {
+            nearDistance = first;
+            nearAxis = axis;
+            nearSign = sign;
+        }
+        farDistance = fminf(farDistance, second);
+
+        if (nearDistance > farDistance)
+            return false;
+    }
+
+    if (nearAxis < 0)
+        return false;
+
+    float distance = nearDistance;
+
+    if (distance <= RAY_EPSILON)
+    {
+        distance = farDistance;
+        nearSign = -nearSign;
+    }
+    if (distance <= RAY_EPSILON || distance >= bestDistance)
+        return false;
+
+    const Vec3 hitPosition = rayAt(ray, distance);
+    Vec3 normal = makeVec3(0.0f, 0.0f, 0.0f);
+
+    if (nearAxis == 0)
+        normal.x = nearSign;
+    else if (nearAxis == 1)
+        normal.y = nearSign;
+    else
+        normal.z = nearSign;
+
+    if (dot(normal, ray.direction) > 0.0f)
+        normal = negate(normal);
+
+    bestDistance = distance;
+    bestNormal = normalize(normal);
+    bestShadingNormal = bestNormal;
+    bestIndex = index;
+
+    const Vec3 size = sub(primitive.localMax, primitive.localMin);
+    const Vec3 local = sub(hitPosition, primitive.localMin);
+
+    if (nearAxis == 0)
+    {
+        bestU = local.y / fmaxf(size.y, 1e-12f);
+        bestV = local.z / fmaxf(size.z, 1e-12f);
+    }
+    else if (nearAxis == 1)
+    {
+        bestU = local.x / fmaxf(size.x, 1e-12f);
+        bestV = local.z / fmaxf(size.z, 1e-12f);
+    }
+    else
+    {
+        bestU = local.x / fmaxf(size.x, 1e-12f);
+        bestV = local.y / fmaxf(size.y, 1e-12f);
+    }
+
+    bestU = clamp01(bestU);
+    bestV = clamp01(bestV);
+    return true;
+}
+
+__device__ bool intersectDisk(const Primitive &primitive, const Ray &ray, float &bestDistance, Vec3 &bestNormal,
+                              Vec3 &bestShadingNormal, float &bestU, float &bestV, int &bestIndex, int index)
+{
+    const float denominator = dot(ray.direction, primitive.normal);
+
+    if (fabsf(denominator) < 1e-12f)
+        return false;
+
+    const float distance = dot(primitive.normal, sub(primitive.center, ray.origin)) / denominator;
+
+    if (distance <= RAY_EPSILON || distance >= bestDistance)
+        return false;
+
+    const Vec3 hitPosition = rayAt(ray, distance);
+    const Vec3 relative = sub(hitPosition, primitive.center);
+    const float normalProjection = dot(relative, primitive.normal);
+    const float radialSquared = fmaxf(lengthSquared(relative) - normalProjection * normalProjection, 0.0f);
+    const float radiusSquared = primitive.radius * primitive.radius;
+    const float innerSquared = primitive.innerRadius * primitive.innerRadius;
+
+    if (radialSquared > radiusSquared || radialSquared < innerSquared)
+        return false;
+
+    Vec3 normal = primitive.normal;
+
+    if (dot(normal, ray.direction) > 0.0f)
+        normal = negate(normal);
+
+    bestDistance = distance;
+    bestNormal = normal;
+    bestShadingNormal = normal;
+    bestIndex = index;
+
+    const Vec3 tangent = stableTangent(primitive.normal);
+    const Vec3 bitangent = cross(primitive.normal, tangent);
+
+    bestU = clamp01(0.5f + dot(relative, tangent) / primitive.radius * 0.5f);
+    bestV = clamp01(0.5f + dot(relative, bitangent) / primitive.radius * 0.5f);
+    return true;
+}
+
 __device__ bool intersectPrimitiveLocal(const SceneView &scene, const Primitive &primitive, const Ray &ray,
                                         float &bestDistance, Vec3 &bestNormal, Vec3 &bestShadingNormal, float &bestU,
                                         float &bestV, int &bestMaterialIndex, int &bestIndex, int index)
@@ -747,6 +900,12 @@ __device__ bool intersectPrimitiveLocal(const SceneView &scene, const Primitive 
     case PRIMITIVE_MESH:
         return intersectMesh(scene, primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestU, bestV,
                              bestMaterialIndex, bestIndex, index);
+    case PRIMITIVE_BOX:
+        return intersectBox(primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestU, bestV, bestIndex,
+                            index);
+    case PRIMITIVE_DISK:
+        return intersectDisk(primitive, ray, bestDistance, bestNormal, bestShadingNormal, bestU, bestV, bestIndex,
+                             index);
     default:
         return false;
     }
@@ -1430,6 +1589,36 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         const Material &material = scene.materials[resolvedMaterial];
         const Vec3 hitPosition = rayAt(ray, distance);
         const Vec3 surfaceColor = multiply(material.diffuseColor, sampleTexture(scene, material.textureIndex, u, v));
+        float roughness = material.roughness;
+        Vec3 emissionColor = material.emissionColor;
+
+        if (material.roughnessTextureIndex >= 0)
+            roughness = clamp01(roughness * sampleTexture(scene, material.roughnessTextureIndex, u, v).x);
+        if (material.emissionTextureIndex >= 0)
+            emissionColor = multiply(emissionColor, sampleTexture(scene, material.emissionTextureIndex, u, v));
+        if (material.normalTextureIndex >= 0)
+        {
+            const Vec3 sample = sampleTexture(scene, material.normalTextureIndex, u, v);
+            const Vec3 normalUnit = normalize(shadingNormal);
+            const Vec3 tangent = stableTangent(normalUnit);
+
+            if (lengthSquared(tangent) >= 1e-12f)
+            {
+                const Vec3 bitangent = cross(normalUnit, tangent);
+                const Vec3 mapped = makeVec3(2.0f * sample.x - 1.0f, 2.0f * sample.y - 1.0f,
+                                             2.0f * sample.z - 1.0f);
+                Vec3 perturbed =
+                    add(add(scale(tangent, mapped.x), scale(bitangent, mapped.y)), scale(normalUnit, mapped.z));
+
+                if (lengthSquared(perturbed) >= 1e-12f)
+                {
+                    perturbed = normalize(perturbed);
+                    if (dot(perturbed, ray.direction) > 0.0f)
+                        perturbed = negate(perturbed);
+                    shadingNormal = perturbed;
+                }
+            }
+        }
 
         if (material.type == MATERIAL_DIELECTRIC)
         {
@@ -1478,7 +1667,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
             material.ambientReflection + material.diffuseReflection + material.specularReflection;
 
         if (material.type == MATERIAL_EMISSIVE)
-            accumulated = add(accumulated, multiply(throughput, material.emissionColor));
+            accumulated = add(accumulated, multiply(throughput, emissionColor));
 
         for (int lightIndex = 0; lightIndex < scene.lightCount; ++lightIndex)
         {
@@ -1497,7 +1686,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
                 const float diffuseFactor = fmaxf(dot(shadingNormal, sample.direction), 0.0f);
                 const Vec3 halfDirection = normalize(add(sample.direction, viewDirection));
                 const float specularFactor =
-                    powf(fmaxf(dot(shadingNormal, halfDirection), 0.0f), blinnShininess(material.roughness));
+                    powf(fmaxf(dot(shadingNormal, halfDirection), 0.0f), blinnShininess(roughness));
 
                 contribution = add(scale(sample.radiance, phongCoefficient * diffuseFactor),
                                    scale(sample.radiance, material.specularReflection * specularFactor));
@@ -1556,8 +1745,7 @@ __device__ Vec3 traceSample(const SceneView &scene, int x, int y, int sample)
         {
             Vec3 weight;
 
-            if (!sampleMetallic(viewDirection, shadingNormal, surfaceColor, material.roughness, state,
-                                nextDirection, weight))
+            if (!sampleMetallic(viewDirection, shadingNormal, surfaceColor, roughness, state, nextDirection, weight))
                 break;
 
             throughput = multiply(throughput, weight);

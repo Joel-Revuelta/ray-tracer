@@ -122,6 +122,18 @@ compare "${out_dir}/still-cpu.ppm" "${out_dir}/still-cuda.ppm" "still"
 compare "${out_dir}/anim-cpu-0003.ppm" "${out_dir}/anim-cuda-0003.ppm" "animation frame 3"
 compare "${out_dir}/blur-cpu-0003.ppm" "${out_dir}/blur-cuda-0003.ppm" "motion-blurred frame 3"
 
+for scene in material_maps primitives_extra scatter_field; do
+    for renderer in cpu cuda; do
+        if ! "${executable}" --path "${source_dir}/scenes/${scene}.cfg" --cli --renderer "${renderer}" \
+            --width 160 --height 90 --samples 128 --seed 5 \
+            --output "${out_dir}/${scene}-${renderer}.ppm" >"${out_dir}/${scene}-${renderer}.log" 2>&1; then
+            cat "${out_dir}/${scene}-${renderer}.log" >&2
+            exit 1
+        fi
+    done
+    compare "${out_dir}/${scene}-cpu.ppm" "${out_dir}/${scene}-cuda.ppm" "${scene}"
+done
+
 for renderer in cpu cuda; do
     if ! "${executable}" --path "${source_dir}/tests/scene_animation.cfg" --cli --renderer "${renderer}" \
         --width 96 --height 54 --samples 16 --animation --start-frame 24 --end-frame 24 \

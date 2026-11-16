@@ -38,6 +38,11 @@ float srgbToLinear(float value)
     return std::pow((value + 0.055f) / 1.055f, 2.4f);
 }
 
+float decodeTexel(float value, TextureColorSpace colorSpace)
+{
+    return colorSpace == TextureColorSpace::SRGB ? srgbToLinear(value) : value;
+}
+
 bool readToken(std::istream &stream, std::string &token)
 {
     token.clear();
@@ -205,7 +210,7 @@ std::shared_ptr<const Texture> RayTracer::loadHDRTexture(const std::string &path
     return std::make_shared<Texture>(width, height, std::move(pixels));
 }
 
-std::shared_ptr<const Texture> RayTracer::loadTextureFile(const std::string &path)
+std::shared_ptr<const Texture> RayTracer::loadTextureFile(const std::string &path, TextureColorSpace colorSpace)
 {
     std::string extension = std::filesystem::path(path).extension().string();
 
@@ -213,7 +218,7 @@ std::shared_ptr<const Texture> RayTracer::loadTextureFile(const std::string &pat
                    [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
 
     if (extension == ".ppm")
-        return loadPPMTexture(path);
+        return loadPPMTexture(path, colorSpace);
     if (extension == ".hdr")
         return loadHDRTexture(path);
 
@@ -248,16 +253,16 @@ std::shared_ptr<const Texture> RayTracer::loadTextureFile(const std::string &pat
 
     for (std::size_t i = 0; i < texelCount; ++i)
     {
-        pixels.emplace_back(srgbToLinear(static_cast<float>(data[i * 3]) / 255.0f),
-                            srgbToLinear(static_cast<float>(data[i * 3 + 1]) / 255.0f),
-                            srgbToLinear(static_cast<float>(data[i * 3 + 2]) / 255.0f));
+        pixels.emplace_back(decodeTexel(static_cast<float>(data[i * 3]) / 255.0f, colorSpace),
+                            decodeTexel(static_cast<float>(data[i * 3 + 1]) / 255.0f, colorSpace),
+                            decodeTexel(static_cast<float>(data[i * 3 + 2]) / 255.0f, colorSpace));
     }
 
     stbi_image_free(data);
     return std::make_shared<Texture>(width, height, std::move(pixels));
 }
 
-std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path)
+std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path, TextureColorSpace colorSpace)
 {
     std::ifstream file(path, std::ios::binary);
 
@@ -304,9 +309,9 @@ std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path
             if (file.gcount() != static_cast<std::streamsize>(sizeof(rgb)))
                 fail(path, "truncated binary texture data");
 
-            pixels.emplace_back(srgbToLinear(static_cast<float>(rgb[0]) * inverseMaximum),
-                                srgbToLinear(static_cast<float>(rgb[1]) * inverseMaximum),
-                                srgbToLinear(static_cast<float>(rgb[2]) * inverseMaximum));
+            pixels.emplace_back(decodeTexel(static_cast<float>(rgb[0]) * inverseMaximum, colorSpace),
+                                decodeTexel(static_cast<float>(rgb[1]) * inverseMaximum, colorSpace),
+                                decodeTexel(static_cast<float>(rgb[2]) * inverseMaximum, colorSpace));
         }
     }
     else
@@ -319,9 +324,9 @@ std::shared_ptr<const Texture> RayTracer::loadPPMTexture(const std::string &path
             const int green = readInteger(file, path, "green component", 0, maxValue);
             const int blue = readInteger(file, path, "blue component", 0, maxValue);
 
-            pixels.emplace_back(srgbToLinear(static_cast<float>(red) * inverseMaximum),
-                                srgbToLinear(static_cast<float>(green) * inverseMaximum),
-                                srgbToLinear(static_cast<float>(blue) * inverseMaximum));
+            pixels.emplace_back(decodeTexel(static_cast<float>(red) * inverseMaximum, colorSpace),
+                                decodeTexel(static_cast<float>(green) * inverseMaximum, colorSpace),
+                                decodeTexel(static_cast<float>(blue) * inverseMaximum, colorSpace));
         }
     }
 

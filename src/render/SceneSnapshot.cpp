@@ -72,18 +72,22 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
         data.ior = material->getIndexOfRefraction();
         data.roughness = material->getRoughness();
 
-        const std::shared_ptr<const Texture> texture = material->getTexture();
+        auto registerTexture = [&](const std::shared_ptr<const Texture> &texture) {
+            if (!texture)
+                return -1;
 
-        if (texture)
-        {
             const auto inserted =
                 textureIndices.emplace(texture.get(), static_cast<int>(snapshot.textures.size()));
 
             if (inserted.second)
                 snapshot.textures.push_back(texture);
+            return inserted.first->second;
+        };
 
-            data.textureIndex = inserted.first->second;
-        }
+        data.textureIndex = registerTexture(material->getTexture());
+        data.normalTextureIndex = registerTexture(material->getNormalTexture());
+        data.roughnessTextureIndex = registerTexture(material->getRoughnessTexture());
+        data.emissionTextureIndex = registerTexture(material->getEmissionTexture());
 
         snapshot.materials.push_back(data);
     }

@@ -60,6 +60,8 @@ static_assert(static_cast<int>(PrimitiveType::PLANE) == Cuda::PRIMITIVE_PLANE, "
 static_assert(static_cast<int>(PrimitiveType::CYLINDER) == Cuda::PRIMITIVE_CYLINDER, "primitive enum mismatch");
 static_assert(static_cast<int>(PrimitiveType::CONE) == Cuda::PRIMITIVE_CONE, "primitive enum mismatch");
 static_assert(static_cast<int>(PrimitiveType::MESH) == Cuda::PRIMITIVE_MESH, "primitive enum mismatch");
+static_assert(static_cast<int>(PrimitiveType::BOX) == Cuda::PRIMITIVE_BOX, "primitive enum mismatch");
+static_assert(static_cast<int>(PrimitiveType::DISK) == Cuda::PRIMITIVE_DISK, "primitive enum mismatch");
 static_assert(static_cast<int>(IMaterial::DIFFUSE) == Cuda::MATERIAL_DIFFUSE, "material enum mismatch");
 static_assert(static_cast<int>(IMaterial::FLAT_COLOR) == Cuda::MATERIAL_FLAT_COLOR, "material enum mismatch");
 static_assert(static_cast<int>(IMaterial::EMISSIVE) == Cuda::MATERIAL_EMISSIVE, "material enum mismatch");
@@ -186,7 +188,10 @@ std::vector<Cuda::Primitive> convertPrimitives(const SceneSnapshot &snapshot)
         converted.point = toDevice(primitive.point);
         converted.normal = toDevice(primitive.normal);
         converted.axis = toDevice(primitive.axis);
+        converted.localMin = toDevice(primitive.localMin);
+        converted.localMax = toDevice(primitive.localMax);
         converted.radius = primitive.radius;
+        converted.innerRadius = primitive.innerRadius;
         converted.height = primitive.height;
         converted.coneBaseAbove = primitive.coneBaseAbove ? 1 : 0;
         converted.transformed = isIdentityTransform(primitive.transform) ? 0 : 1;
@@ -214,6 +219,9 @@ std::vector<Cuda::Material> convertMaterials(const SceneSnapshot &snapshot)
         converted.ior = material.ior;
         converted.roughness = material.roughness;
         converted.textureIndex = material.textureIndex;
+        converted.normalTextureIndex = material.normalTextureIndex;
+        converted.roughnessTextureIndex = material.roughnessTextureIndex;
+        converted.emissionTextureIndex = material.emissionTextureIndex;
         materials.push_back(converted);
     }
     return materials;

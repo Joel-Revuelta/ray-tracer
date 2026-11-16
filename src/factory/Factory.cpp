@@ -15,6 +15,8 @@ Factory::Factory(void)
             {"Cylinder", "raytracer_cylinder.so"},
             {"Cone", "raytracer_cone.so"},
             {"Mesh", "raytracer_mesh.so"},
+            {"Box", "raytracer_box.so"},
+            {"Disk", "raytracer_disk.so"},
             {"Rotation", "raytracer_transformation_rotation.so"},
             {"Translation", "raytracer_transformation_translation.so"},
             {"AmbientLight", "raytracer_light_ambient.so"},

@@ -35,6 +35,9 @@ struct MaterialData
     float ior = 1.5f;
     float roughness = 0.0f;
     int textureIndex = -1;
+    int normalTextureIndex = -1;
+    int roughnessTextureIndex = -1;
+    int emissionTextureIndex = -1;
 };
 
 struct CameraData

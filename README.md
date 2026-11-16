@@ -43,8 +43,11 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
   keyboard focus controls in both interactive backends.
 - **Area lights** — solid-angle cone sampling of sphere lights produces
   physically consistent soft shadows in both renderers.
-- **Textures** — PPM albedo maps with UVs on meshes and analytic primitives,
-  bilinear filtering and repeat wrapping on CPU and CUDA.
+- **Textures** — albedo, roughness, emission and normal maps with UVs on meshes
+  and analytic primitives, bilinear filtering and repeat wrapping on CPU and
+  CUDA.
+- **Primitives** — spheres, planes, cylinders, cones, boxes, disks/rings, OBJ
+  meshes and deterministic prefab scatter.
 - **OBJ materials** — `usemtl` face groups mapped to scene materials, automatic
   `mtllib`/MTL import with `Kd`/`Ka`/`Ks`/`Ns` and `map_Kd`, plus a per-mesh
   fallback for unmapped groups.
@@ -55,7 +58,7 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
   with matching CPU/CUDA kernels, applied before exposure and tonemapping.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 34 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, textures, OBJ/MTL materials, environment lighting, group transforms, prefabs, a five-scene hero pack and 8K renders.
+- **Included scenes** — 37 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, material maps, boxes/disks, prefab scatter, environment lighting, group transforms, a five-scene hero pack and 8K renders.
 
 ## Screenshots
 
@@ -423,6 +426,9 @@ architecture and CUDA build details.
 | `depth_of_field.cfg` | Spheres at several depths with a focused middle plane. |
 | `soft_shadows.cfg` | Two sphere area lights over a floor and three spheres. |
 | `textures.cfg` | Checker PPM textures on a plane, primitives and a mesh. |
+| `material_maps.cfg` | Roughness, normal and emission maps on metal, stone and an emissive sign. |
+| `primitives_extra.cfg` | Axis-aligned boxes and metal/glass disks/rings. |
+| `scatter_field.cfg` | 180 deterministically scattered emissive spores. |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback. |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL. |
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face. |

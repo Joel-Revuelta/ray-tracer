@@ -53,8 +53,13 @@ inline bool computePrimitiveBounds(const PrimitiveData &data, AABB &bounds)
         break;
     }
     case PrimitiveType::MESH:
+    case PrimitiveType::BOX:
         local.expand(data.localMin);
         local.expand(data.localMax);
+        break;
+    case PrimitiveType::DISK:
+        local.expand(data.center - allRadius);
+        local.expand(data.center + allRadius);
         break;
     case PrimitiveType::PLANE:
     case PrimitiveType::NONE:

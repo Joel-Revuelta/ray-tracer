@@ -43,6 +43,36 @@ std::shared_ptr<const Texture> AMaterial::getTexture(void) const
     return _texture;
 }
 
+void AMaterial::setNormalTexture(const std::shared_ptr<const Texture> &texture)
+{
+    _normalTexture = texture;
+}
+
+std::shared_ptr<const Texture> AMaterial::getNormalTexture(void) const
+{
+    return _normalTexture;
+}
+
+void AMaterial::setRoughnessTexture(const std::shared_ptr<const Texture> &texture)
+{
+    _roughnessTexture = texture;
+}
+
+std::shared_ptr<const Texture> AMaterial::getRoughnessTexture(void) const
+{
+    return _roughnessTexture;
+}
+
+void AMaterial::setEmissionTexture(const std::shared_ptr<const Texture> &texture)
+{
+    _emissionTexture = texture;
+}
+
+std::shared_ptr<const Texture> AMaterial::getEmissionTexture(void) const
+{
+    return _emissionTexture;
+}
+
 Color3D AMaterial::getEmissionColor(void) const
 {
     return _emissionColor * getEmissionPower();

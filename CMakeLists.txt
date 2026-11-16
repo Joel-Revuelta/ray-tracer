@@ -223,6 +223,14 @@ file(GLOB_RECURSE EXTERN_MESH CONFIGURE_DEPENDS "src/plugins/primitives/ExternMe
 add_library(raytracer_mesh SHARED ${SOURCES_MESH} ${EXTERN_MESH})
 target_link_libraries(raytracer_mesh PRIVATE raytracer_core)
 
+file(GLOB_RECURSE SOURCES_BOX CONFIGURE_DEPENDS "src/plugins/primitives/Box.cpp")
+add_library(raytracer_box SHARED ${SOURCES_BOX})
+target_link_libraries(raytracer_box PRIVATE raytracer_core)
+
+file(GLOB_RECURSE SOURCES_DISK CONFIGURE_DEPENDS "src/plugins/primitives/Disk.cpp")
+add_library(raytracer_disk SHARED ${SOURCES_DISK})
+target_link_libraries(raytracer_disk PRIVATE raytracer_core)
+
 # Materials
 file(GLOB_RECURSE SOURCES_CUSTOM_MATERIAL CONFIGURE_DEPENDS "src/plugins/materials/CustomMaterial.cpp")
 add_library(raytracer_material_custom SHARED ${SOURCES_CUSTOM_MATERIAL})
@@ -316,6 +324,8 @@ add_custom_target(primitives DEPENDS
     raytracer_cylinder
     raytracer_cone
     raytracer_mesh
+    raytracer_box
+    raytracer_disk
 )
 
 add_custom_target(transformations DEPENDS raytracer_transformation_translation raytracer_transformation_rotation)
@@ -335,6 +345,8 @@ set_target_properties(
     raytracer_cylinder
     raytracer_cone
     raytracer_mesh
+    raytracer_box
+    raytracer_disk
     raytracer_material_phong
     raytracer_material_custom
     raytracer_material_emissive
@@ -793,6 +805,60 @@ add_test(
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
 )
 add_test(
+    NAME material_maps_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/material_maps.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --output ${CMAKE_BINARY_DIR}/material_maps_smoke.png
+)
+add_test(
+    NAME primitives_extra_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/primitives_extra.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --output ${CMAKE_BINARY_DIR}/primitives_extra_smoke.png
+)
+add_test(
+    NAME scatter_field_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/scatter_field.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --output ${CMAKE_BINARY_DIR}/scatter_field_smoke.png
+)
+add_test(
+    NAME parser_rejects_invalid_box
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_box.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_box.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_disk
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_disk.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_disk.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_scatter
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_scatter.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_scatter.ppm
+)
+add_test(
+    NAME golden_images
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/golden_images.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(golden_images PROPERTIES LABELS "golden;scene")
+add_test(
+    NAME malformed_scene_corpus
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/malformed_scene_corpus.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(malformed_scene_corpus PROPERTIES LABELS "negative;parser")
+add_test(
+    NAME benchmark_report
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/benchmark_report.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(benchmark_report PROPERTIES LABELS "benchmark")
+add_test(
     NAME parser_rejects_invalid_scene_animation_target
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_scene_animation_target.cfg
             --cli --renderer cpu --width 16 --height 9 --frames 1
@@ -948,6 +1014,8 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     bloom_smoke deterministic_bloom_render
     animation_smoke implicit_animation_smoke animation_shutter_smoke scene_animation_smoke
     deterministic_animation_render deterministic_motion_blur deterministic_scene_animation
+    golden_images malformed_scene_corpus benchmark_report
+    material_maps_smoke primitives_extra_smoke scatter_field_smoke
     validate_still_smoke validate_animation_smoke
     png_output_smoke
     PROPERTIES WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR})
@@ -978,7 +1046,9 @@ set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_scene_animation_target
     parser_rejects_invalid_scene_animation_times
     parser_rejects_invalid_scene_animation_empty
-    parser_rejects_invalid_scene_animation_duplicate PROPERTIES
+    parser_rejects_invalid_scene_animation_duplicate
+    parser_rejects_invalid_box parser_rejects_invalid_disk
+    parser_rejects_invalid_scatter PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR}
 )
@@ -1001,6 +1071,7 @@ set_tests_properties(
     environment_smoke mtl_materials_smoke group_transform_smoke prefab_instances_smoke
     sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
     frozen_cathedral_smoke bloom_smoke validate_still_smoke validate_animation_smoke
+    material_maps_smoke primitives_extra_smoke scatter_field_smoke
     PROPERTIES LABELS "smoke"
 )
 set_tests_properties(animation_smoke implicit_animation_smoke animation_shutter_smoke PROPERTIES
@@ -1052,6 +1123,10 @@ set_tests_properties(
     PROPERTIES LABELS "negative;animation"
 )
 set_tests_properties(
+    parser_rejects_invalid_box parser_rejects_invalid_disk parser_rejects_invalid_scatter
+    PROPERTIES LABELS "negative;scene"
+)
+set_tests_properties(
     cli_rejects_resume_video cli_rejects_output_video_extension
     cli_rejects_invalid_video_container cli_rejects_invalid_video_codec
     cli_rejects_invalid_video_crf cli_rejects_invalid_video_bitrate
@@ -1071,6 +1146,8 @@ set(RAYTRACER_PLUGIN_TARGETS
     raytracer_cylinder
     raytracer_cone
     raytracer_mesh
+    raytracer_box
+    raytracer_disk
     raytracer_material_phong
     raytracer_material_custom
     raytracer_material_emissive

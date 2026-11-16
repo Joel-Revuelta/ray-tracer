@@ -40,6 +40,16 @@ float powerHeuristicPdf(float first, float second)
     return total > 0.0f ? firstSquared / total : 0.0f;
 }
 
+Vec3D stableTangent(const Vec3D &normal)
+{
+    const Vec3D axis = std::fabs(normal.getY()) < 0.999f ? Vec3D(0.0f, 1.0f, 0.0f) : Vec3D(1.0f, 0.0f, 0.0f);
+    Vec3D tangent = vec3DCross(axis, normal);
+    const float lengthSquared = tangent.lengthSquared();
+
+    if (!std::isfinite(lengthSquared) || lengthSquared < 1e-12f)
+        return Vec3D(0.0f);
+    return tangent / std::sqrt(lengthSquared);
+}
 } // namespace
 
 class RenderPool
@@ -625,7 +635,7 @@ void Renderer::manageEvent(char evt)
  * @return The direction of the next ray to be traced.
  */
 Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payload, uint32_t &seed,
-                                         Color3D &throughput, const Color3D &surfaceColor)
+                                         Color3D &throughput, const Color3D &surfaceColor, float roughness)
 {
     Vec3D rayDirection;
     const auto &material =
@@ -643,8 +653,8 @@ Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payloa
         const Vec3D viewDirection = vec3DNormalize(ray.getOrigin() - payload.getHitPosition());
         Color3D weight;
 
-        if (!sampleMetallic(viewDirection, payload.getShadingNormal(), surfaceColor, material->getRoughness(), seed,
-                            rayDirection, weight))
+        if (!sampleMetallic(viewDirection, payload.getShadingNormal(), surfaceColor, roughness, seed, rayDirection,
+                            weight))
             return Vec3D(0.0f);
 
         throughput *= weight;
@@ -674,7 +684,7 @@ Vec3D Renderer::computeNextRayDirection(const Ray &ray, const HitPayload &payloa
  * @return The computed colour contribution.
  */
 Color3D Renderer::computeLightContribution(const HitPayload &payload, const IMaterial &material,
-                                           const LightSample &sample, bool ambient, const Ray &ray)
+                                           const LightSample &sample, bool ambient, const Ray &ray, float roughness)
 {
     const float reflectionCoefficient = material.getAmbientReflectionCoefficient() +
                                         material.getDiffuseReflectionCoefficient() +
@@ -691,7 +701,7 @@ Color3D Renderer::computeLightContribution(const HitPayload &payload, const IMat
 
     const Vec3D viewDirection = vec3DNormalize(ray.getOrigin() - payload.getHitPosition());
     const Vec3D halfDirection = vec3DNormalize(sample.direction + viewDirection);
-    const float shininess = blinnShininess(material.getRoughness());
+    const float shininess = blinnShininess(roughness);
     const float specularFactor = std::pow(std::max(vec3DDot(normal, halfDirection), 0.0f), shininess);
 
     return reflectionCoefficient * sample.radiance * diffuseFactor +
@@ -782,6 +792,16 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             if (const std::shared_ptr<const Texture> texture = material->getTexture())
                 surfaceColor *= texture->sample(payload.getU(), payload.getV());
 
+            float roughness = material->getRoughness();
+
+            if (const std::shared_ptr<const Texture> texture = material->getRoughnessTexture())
+                roughness = std::clamp(roughness * texture->sample(payload.getU(), payload.getV()).getX(), 0.0f, 1.0f);
+
+            Color3D emissionColor = material->getEmissionColor();
+
+            if (const std::shared_ptr<const Texture> texture = material->getEmissionTexture())
+                emissionColor *= texture->sample(payload.getU(), payload.getV());
+
             if (materialType == IMaterial::DIELECTRIC)
             {
                 const Vec3D normal = payload.getHitNormal();
@@ -827,9 +847,32 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                 continue;
             }
 
+            if (const std::shared_ptr<const Texture> normalTexture = material->getNormalTexture())
+            {
+                const Color3D sample = normalTexture->sample(payload.getU(), payload.getV());
+                const Vec3D normal = payload.getShadingNormal();
+                const Vec3D tangent = stableTangent(normal);
+
+                if (tangent.lengthSquared() >= 1e-12f)
+                {
+                    const Vec3D bitangent = vec3DCross(normal, tangent);
+                    const Vec3D mapped(2.0f * sample.getX() - 1.0f, 2.0f * sample.getY() - 1.0f,
+                                       2.0f * sample.getZ() - 1.0f);
+                    Vec3D perturbed = tangent * mapped.getX() + bitangent * mapped.getY() + normal * mapped.getZ();
+
+                    if (perturbed.lengthSquared() >= 1e-12f)
+                    {
+                        perturbed = vec3DNormalize(perturbed);
+                        if (vec3DDot(perturbed, ray.getDirection()) > 0.0f)
+                            perturbed = -perturbed;
+                        payload.setShadingNormal(perturbed);
+                    }
+                }
+            }
+
             // If the material emits light, add its emission to the accumulated color
             if (materialType == IMaterial::EMISSIVE)
-                accumulatedColor += throughput * material->getEmissionColor();
+                accumulatedColor += throughput * emissionColor;
 
             // Compute lighting contributions from each light source
             for (size_t i = 0; i < lights.size(); ++i)
@@ -841,7 +884,7 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
 
                 // Calculate Phong lighting model for the hit point and the current light
                 Color3D phongLighting =
-                    computeLightContribution(payload, *material, lightSample, lights[i]->isAmbient(), ray);
+                    computeLightContribution(payload, *material, lightSample, lights[i]->isAmbient(), ray, roughness);
 
                 // Reduce the Phong lighting because it's too bright
                 // phongLighting /= brightReduction;
@@ -898,7 +941,8 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             }
 
             // Handle set direction and origin for the next ray
-            const Vec3D nextDirection = computeNextRayDirection(ray, payload, sampler, throughput, surfaceColor);
+            const Vec3D nextDirection =
+                computeNextRayDirection(ray, payload, sampler, throughput, surfaceColor, roughness);
 
             if (throughput.lengthSquared() < 1e-6f)
                 break;

@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <random>
 #include <stdexcept>
 #include <utility>
 
@@ -596,6 +597,24 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
 
             material->setTexture(loadTexture(texturePath));
         }
+        if (setting.exists("normalTexture"))
+        {
+            const std::string texturePath = resolveAssetPath(setting.lookup("normalTexture"));
+
+            material->setNormalTexture(loadTexture(texturePath, true));
+        }
+        if (setting.exists("roughnessTexture"))
+        {
+            const std::string texturePath = resolveAssetPath(setting.lookup("roughnessTexture"));
+
+            material->setRoughnessTexture(loadTexture(texturePath, true));
+        }
+        if (setting.exists("emissionTexture"))
+        {
+            const std::string texturePath = resolveAssetPath(setting.lookup("emissionTexture"));
+
+            material->setEmissionTexture(loadTexture(texturePath));
+        }
 
         sceneBuilder.addMaterial(material);
         ++_materialCount;
@@ -804,9 +823,108 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
         sceneBuilder.addPrimitive(cone);
     }
 
+    for (int i = 0; primitiveSetting.exists("boxes")
+        && i < primitiveSetting.lookup("boxes").getLength(); i++)
+        sceneBuilder.addPrimitive(parseBox(primitiveSetting.lookup("boxes")[i]));
+
+    for (int i = 0; primitiveSetting.exists("disks")
+        && i < primitiveSetting.lookup("disks").getLength(); i++)
+        sceneBuilder.addPrimitive(parseDisk(primitiveSetting.lookup("disks")[i]));
+
     for (int i = 0; primitiveSetting.exists("meshes")
         && i < primitiveSetting.lookup("meshes").getLength(); i++) {
         sceneBuilder.addPrimitive(parseMesh(sceneBuilder, primitiveSetting.lookup("meshes")[i]));
+    }
+
+    if (primitiveSetting.exists("scatter"))
+    {
+        if (_parsingPrefab)
+            throw std::runtime_error("Prefabs cannot contain scatter blocks");
+
+        const libconfig::Setting &scatter = primitiveSetting.lookup("scatter");
+        const int count = scatter.isList() ? scatter.getLength() : 1;
+
+        for (int i = 0; i < count; ++i)
+        {
+            const libconfig::Setting &group = scatter.isList() ? scatter[i] : scatter;
+            const std::string prefabName = group.lookup("prefab");
+            const auto prefab = _prefabScenes.find(prefabName);
+
+            if (prefab == _prefabScenes.end())
+                throw std::runtime_error("Unknown scatter prefab: " + prefabName);
+
+            const int instances = group.exists("count") ? static_cast<int>(group.lookup("count")) : 1;
+            const int seedValue = group.exists("seed") ? static_cast<int>(group.lookup("seed")) : 0;
+            const uint32_t seed = static_cast<uint32_t>(seedValue);
+
+            if (instances <= 0 || instances > 4096)
+                throw std::runtime_error("Scatter count must be between 1 and 4096");
+            if (seedValue < 0)
+                throw std::runtime_error("Scatter seed must not be negative");
+
+            const libconfig::Setting &area = group.lookup("area");
+            const Vec3D areaMin = parseVector(area.lookup("min"));
+            const Vec3D areaMax = parseVector(area.lookup("max"));
+
+            if (areaMin.getX() > areaMax.getX() || areaMin.getY() > areaMax.getY() ||
+                areaMin.getZ() > areaMax.getZ())
+                throw std::runtime_error("Scatter area minimum must not exceed its maximum");
+
+            Vec3D rotationMin(0.0f);
+            Vec3D rotationMax(0.0f);
+
+            if (group.exists("rotation"))
+            {
+                const libconfig::Setting &rotation = group.lookup("rotation");
+
+                rotationMin = parseVector(rotation.lookup("min"));
+                rotationMax = parseVector(rotation.lookup("max"));
+                if (rotationMin.getX() > rotationMax.getX() || rotationMin.getY() > rotationMax.getY() ||
+                    rotationMin.getZ() > rotationMax.getZ())
+                    throw std::runtime_error("Scatter rotation minimum must not exceed its maximum");
+            }
+
+            float scaleMin = 1.0f;
+            float scaleMax = 1.0f;
+
+            if (group.exists("scale"))
+            {
+                const libconfig::Setting &scale = group.lookup("scale");
+
+                scaleMin = static_cast<float>(settingAsDouble(scale.lookup("min"), "Scatter scale minimum"));
+                scaleMax = static_cast<float>(settingAsDouble(scale.lookup("max"), "Scatter scale maximum"));
+                requirePositive(scaleMin, "Scatter scale minimum");
+                requirePositive(scaleMax, "Scatter scale maximum");
+                if (scaleMin > scaleMax)
+                    throw std::runtime_error("Scatter scale minimum must not exceed its maximum");
+            }
+
+            std::mt19937 random(seed);
+            std::uniform_real_distribution<float> distribution(0.0f, 1.0f);
+
+            auto sample = [&](float minimum, float maximum) {
+                return minimum + (maximum - minimum) * distribution(random);
+            };
+
+            for (int instance = 0; instance < instances; ++instance)
+            {
+                TransformPose pose;
+
+                pose.translation = Vec3D(sample(areaMin.getX(), areaMax.getX()),
+                                         sample(areaMin.getY(), areaMax.getY()),
+                                         sample(areaMin.getZ(), areaMax.getZ()));
+                pose.rotation = Vec3D(sample(rotationMin.getX(), rotationMax.getX()),
+                                      sample(rotationMin.getY(), rotationMax.getY()),
+                                      sample(rotationMin.getZ(), rotationMax.getZ()));
+
+                const float scale = sample(scaleMin, scaleMax);
+
+                pose.scale = Vec3D(scale);
+                sceneBuilder.addScene(prefab->second, pose);
+            }
+
+            _materialCount = static_cast<uint>(sceneBuilder.getMaterialCount());
+        }
     }
 
     if (primitiveSetting.exists("instances"))
@@ -1019,6 +1137,40 @@ std::shared_ptr<IPrimitive> Parser::parseCone(libconfig::Setting &coneSetting)
     return applyTransform(cone, coneSetting);
 }
 
+std::shared_ptr<IPrimitive> Parser::parseBox(libconfig::Setting &boxSetting)
+{
+    const Vec3D minimum = parseVector(boxSetting.lookup("min"));
+    const Vec3D maximum = parseVector(boxSetting.lookup("max"));
+
+    if (!(minimum.getX() < maximum.getX()) || !(minimum.getY() < maximum.getY()) ||
+        !(minimum.getZ() < maximum.getZ()))
+        throw std::runtime_error("Box minimum must be strictly below maximum on every axis");
+
+    std::shared_ptr<IPrimitive> box =
+        _factory.create<IPrimitive>("Box", minimum, maximum, parseMaterialIndex(boxSetting));
+
+    return applyTransform(box, boxSetting);
+}
+
+std::shared_ptr<IPrimitive> Parser::parseDisk(libconfig::Setting &diskSetting)
+{
+    const Vec3D center = parsePoint(diskSetting.lookup("center"));
+    const Vec3D normal = parseVector(diskSetting.lookup("normal"));
+    const double radius = diskSetting.lookup("radius");
+    const double innerRadius = diskSetting.exists("innerRadius") ? diskSetting.lookup("innerRadius") : 0.0;
+
+    requireNonZeroVector(normal, "Disk normal");
+    requirePositive(radius, "Disk radius");
+    requireNonNegative(innerRadius, "Disk inner radius");
+    if (innerRadius >= radius)
+        throw std::runtime_error("Disk inner radius must be smaller than its radius");
+
+    std::shared_ptr<IPrimitive> disk =
+        _factory.create<IPrimitive>("Disk", center, normal, radius, innerRadius, parseMaterialIndex(diskSetting));
+
+    return applyTransform(disk, diskSetting);
+}
+
 std::string Parser::resolveAssetPath(const std::string &path) const
 {
     const std::filesystem::path candidate(path);
@@ -1029,16 +1181,18 @@ std::string Parser::resolveAssetPath(const std::string &path) const
     return (std::filesystem::path(_sceneDirectory) / candidate).lexically_normal().string();
 }
 
-std::shared_ptr<const Texture> Parser::loadTexture(const std::string &path)
+std::shared_ptr<const Texture> Parser::loadTexture(const std::string &path, bool linear)
 {
-    const auto cached = _textureCache.find(path);
+    const std::string cacheKey = linear ? path + "|linear" : path;
+    const auto cached = _textureCache.find(cacheKey);
 
     if (cached != _textureCache.end())
         return cached->second;
 
-    std::shared_ptr<const Texture> texture = loadTextureFile(path);
+    std::shared_ptr<const Texture> texture =
+        loadTextureFile(path, linear ? TextureColorSpace::LINEAR : TextureColorSpace::SRGB);
 
-    _textureCache.emplace(path, texture);
+    _textureCache.emplace(cacheKey, texture);
     return texture;
 }
 

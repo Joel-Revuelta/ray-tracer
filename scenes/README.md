@@ -68,6 +68,9 @@ letterboxes it to preserve aspect ratio.
 | `depth_of_field.cfg` | Five spheres at increasing depths with a focused middle plane |
 | `soft_shadows.cfg` | Two sphere area lights over a floor and three spheres |
 | `textures.cfg` | Checker PPM textures on a plane, primitives and a mesh |
+| `material_maps.cfg` | Roughness, normal and emission maps on metal, stone and an emissive sign |
+| `primitives_extra.cfg` | Axis-aligned boxes and metal/glass disks/rings |
+| `scatter_field.cfg` | 180 deterministically scattered emissive spores |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL |
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face |

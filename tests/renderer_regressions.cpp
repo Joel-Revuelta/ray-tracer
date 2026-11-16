@@ -238,6 +238,11 @@ int checkTextureColorSpace(void)
     if (!closeTo(texture->getPixels()[0].getX(), expected, 1e-4f))
         return fail("PPM texels were not decoded from sRGB to linear");
 
+    const std::shared_ptr<const Texture> linear = loadPPMTexture(path, TextureColorSpace::LINEAR);
+
+    if (!linear || !closeTo(linear->getPixels()[0].getX(), encoded, 1e-4f))
+        return fail("linear PPM texels were sRGB-decoded");
+
     return 0;
 }
 

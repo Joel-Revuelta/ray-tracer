@@ -64,6 +64,36 @@ class IMaterial
         return nullptr;
     }
 
+    virtual void setNormalTexture(const std::shared_ptr<const Texture> &texture)
+    {
+        (void)texture;
+    }
+
+    virtual std::shared_ptr<const Texture> getNormalTexture(void) const
+    {
+        return nullptr;
+    }
+
+    virtual void setRoughnessTexture(const std::shared_ptr<const Texture> &texture)
+    {
+        (void)texture;
+    }
+
+    virtual std::shared_ptr<const Texture> getRoughnessTexture(void) const
+    {
+        return nullptr;
+    }
+
+    virtual void setEmissionTexture(const std::shared_ptr<const Texture> &texture)
+    {
+        (void)texture;
+    }
+
+    virtual std::shared_ptr<const Texture> getEmissionTexture(void) const
+    {
+        return nullptr;
+    }
+
     // Returns an independent copy for scene composition. A material used
     // inside a nested scene or prefab must implement this.
     virtual std::shared_ptr<IMaterial> clone(void) const

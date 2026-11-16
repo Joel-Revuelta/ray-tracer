@@ -42,17 +42,25 @@ class Texture
     std::vector<Color3D> _pixels;
 };
 
+enum class TextureColorSpace
+{
+    SRGB,
+    LINEAR
+};
+
 /**
  * Loads a binary P6 or ASCII P3 PPM file. Throws std::runtime_error with the
  * path and reason on malformed input.
  */
-std::shared_ptr<const Texture> loadPPMTexture(const std::string &path);
+std::shared_ptr<const Texture> loadPPMTexture(const std::string &path,
+                                              TextureColorSpace colorSpace = TextureColorSpace::SRGB);
 
 /**
  * Loads an image by extension. PPM uses the in-tree parser, Radiance HDR
- * keeps linear HDR values, and PNG/JPG are decoded from sRGB to linear.
+ * keeps linear HDR values, and PNG/JPG are decoded according to colorSpace.
  */
-std::shared_ptr<const Texture> loadTextureFile(const std::string &path);
+std::shared_ptr<const Texture> loadTextureFile(const std::string &path,
+                                               TextureColorSpace colorSpace = TextureColorSpace::SRGB);
 
 /**
  * Loads a Radiance RGBE HDR image using stb_image.

@@ -22,7 +22,9 @@ enum class PrimitiveType
     PLANE,
     CYLINDER,
     CONE,
-    MESH
+    MESH,
+    BOX,
+    DISK
 };
 
 /**
@@ -41,6 +43,7 @@ struct PrimitiveData
     Vec3D normal;
     Vec3D axis{0.0f, 1.0f, 0.0f};
     float radius = 0.0f;
+    float innerRadius = 0.0f;
     float height = 0.0f;
     bool coneBaseAbove = false;
     std::uint32_t meshIndex = 0;

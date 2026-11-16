@@ -356,24 +356,35 @@ Any material can reference an albedo texture:
 
 ```libconfig
 name = {
-    type = "diffuse";
-    ambientReflection = 0.25;
-    diffuseReflection = 0.90;
-    color = { r = 1.0; g = 1.0; b = 1.0; };
+    type = "metallic";
+    roughness = 0.35;
+    color = { r = 0.9; g = 0.7; b = 0.4; };
     texture = "textures/checker.ppm";
+    roughnessTexture = "textures/roughness.ppm";
+    normalTexture = "textures/normal.ppm";
+    emissionTexture = "textures/emissive.ppm";
 };
 ```
 
+- `texture` is an albedo map and multiplies the material colour.
+- `roughnessTexture` modulates the material roughness. The red channel is used
+  and the value multiplies the scalar `roughness`; the result is clamped to
+  `[0, 1]`.
+- `emissionTexture` multiplies the material emission colour. It is useful for
+  emissive signs, windows and glowing panels.
+- `normalTexture` is a tangent-space RGB normal map. RGB values decode to
+  `[-1, 1]`; the perturbed normal is used for shading and bounces.
 - Paths resolve relative to the scene file, like meshes.
 - Supported formats: binary `P6` or ASCII `P3` PPM, PNG, JPG and Radiance
   RGBE `.hdr`. `P6` files must use an 8-bit maximum value.
 - Sampling is bilinear with repeat wrapping.
-- LDR textures are treated as sRGB and decoded to linear; HDR textures keep
-  their linear values.
-- The sampled texel multiplies the material's `color`; a white tint leaves the
-  texture unchanged.
-- Textures currently affect albedo only. Emission, roughness and normal maps
-  are not supported.
+- Albedo and emission maps are treated as sRGB and decoded to linear. Roughness
+  and normal maps are loaded as linear data. HDR textures keep their linear
+  values.
+- Normal maps currently use a deterministic tangent frame derived from the
+  shading normal rather than the mesh UV tangent. They add surface detail, but
+  rotating a normal map around the UV axis is not supported yet.
+- MTL import still applies `map_Kd`; `map_Ks` and `map_Ke` are not imported yet.
 
 UV conventions:
 
@@ -383,6 +394,8 @@ UV conventions:
 | Plane | local X | local Z |
 | Cylinder | angle around the axis | normalized height |
 | Cone | angle around the Y axis | normalized apex-to-base height |
+| Box | normalized across the hit face | normalized across the hit face |
+| Disk | tangent-plane X | tangent-plane Y |
 | Mesh | OBJ `vt` values, interpolated per triangle |
 
 `scenes/textures.cfg` demonstrates a checker texture on a plane, sphere,
@@ -457,6 +470,44 @@ cones = (
 - `r` and `h` must be positive.
 - Use a `transform` block to tilt or scale a cone (see
   [Transforms](#transforms)).
+
+### Boxes
+
+```libconfig
+boxes = (
+    {
+        material = 0;
+        min = { x = -1.0; y = 0.0; z = -1.0; };
+        max = { x = 1.0; y = 2.0; z = 1.0; };
+        transform = { translate = { x = 3.0; y = 0.0; z = 0.0; }; };
+    }
+);
+```
+
+- `min` and `max` are the local-space corners of an axis-aligned box.
+- Every component of `min` must be strictly below the corresponding `max`.
+- Use `transform` to translate, rotate or scale the box.
+- UVs are normalized across the hit face.
+
+### Disks and rings
+
+```libconfig
+disks = (
+    {
+        material = 1;
+        center = { x = 0.0; y = 1.5; z = 0.0; };
+        normal = { x = 0.0; y = 1.0; z = 0.0; };
+        radius = 1.2;
+        innerRadius = 0.4;
+        transform = { rotate = { x = 15.0; y = 0.0; z = 0.0; }; };
+    }
+);
+```
+
+- `normal` is the disk plane normal and must be non-zero.
+- `radius` must be positive; `innerRadius` is optional, non-negative and must be
+  smaller than `radius`. An inner radius creates a ring.
+- Use `transform` to orient and place the disk.
 
 ### Meshes
 
@@ -688,6 +739,45 @@ per instance, so repeated instantiations do not share mutable state.
 
 `scenes/prefabs.cfg` instantiates one lamp prefab three times.
 
+### Scatter
+
+`primitives.scatter` generates deterministic prefab instances inside an
+axis-aligned area:
+
+```libconfig
+primitives:
+{
+    scatter = (
+        {
+            prefab = "spore";
+            count = 180;
+            seed = 17;
+            area = {
+                min = { x = -5.0; y = 0.2; z = -1.0; };
+                max = { x = 5.0; y = 3.6; z = 8.0; };
+            };
+            rotation = {
+                min = { x = 0.0; y = 0.0; z = 0.0; };
+                max = { x = 0.0; y = 360.0; z = 0.0; };
+            };
+            scale = { min = 0.6; max = 1.4; };
+        }
+    );
+};
+```
+
+- `count` must be between `1` and `4096`.
+- `seed` drives a deterministic random sequence.
+- `area.min`/`area.max` define the placement box; each component of `min` must
+  not exceed `max`.
+- Optional `rotation.min`/`rotation.max` are Euler-degree ranges.
+- Optional `scale.min`/`scale.max` are positive uniform scale ranges.
+- Scatter definitions inside prefabs are rejected.
+- Scatter instances are not individually addressable by scene animation in
+  this version.
+
+`scenes/scatter_field.cfg` demonstrates 180 emissive spores.
+
 ## Lights
 
 ### Ambient
@@ -826,7 +916,7 @@ The parser rejects:
   texture indices, empty `usemtl`/`mtllib` names, zero-length normals, or empty
   meshes,
 - material-group indices outside the current scene's material list,
-- unreadable or malformed PPM textures,
+- unreadable or malformed PPM/PNG/JPG/HDR textures,
 - non-finite point, vector, or colour components, or values that overflow the
   renderer's float representation,
 - field of view outside `(0, 180)`,
@@ -838,6 +928,11 @@ The parser rejects:
   zero, or non-increasing keyframe times,
 - duplicate or unknown scene-animation targets, tracks with no channels,
   zero scale keyframes, or track times beyond the animation duration,
+- box corners where `min` is not strictly below `max`,
+- disk radii that are non-positive, or an inner radius outside
+  `[0, radius)`,
+- scatter counts outside `1..4096`, inverted area/rotation ranges, or
+  non-positive scale ranges,
 - negative material indices, or indices outside the material list.
 
 Renderer selection errors (unknown renderer names, missing plugins, unavailable

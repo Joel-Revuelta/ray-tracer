@@ -24,7 +24,9 @@ enum PrimitiveKind
     PRIMITIVE_PLANE = 2,
     PRIMITIVE_CYLINDER = 3,
     PRIMITIVE_CONE = 4,
-    PRIMITIVE_MESH = 5
+    PRIMITIVE_MESH = 5,
+    PRIMITIVE_BOX = 6,
+    PRIMITIVE_DISK = 7
 };
 
 // Values deliberately match IMaterial::MaterialType.
@@ -65,7 +67,10 @@ struct Primitive
     Vec3 point;
     Vec3 normal;
     Vec3 axis;
+    Vec3 localMin;
+    Vec3 localMax;
     float radius;
+    float innerRadius;
     float height;
     int coneBaseAbove;
     int transformed;
@@ -83,6 +88,9 @@ struct Material
     float ior;
     float roughness;
     int textureIndex;
+    int normalTextureIndex;
+    int roughnessTextureIndex;
+    int emissionTextureIndex;
 };
 
 struct Light

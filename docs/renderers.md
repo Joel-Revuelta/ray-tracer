@@ -128,9 +128,15 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 - OBJ vertex normals are interpolated with barycentric coordinates for smooth
   shading; geometric normals remain responsible for ray offsets and
   dielectrics.
-- Material albedo textures are sampled bilinearly with repeat wrapping at the
-  hit UV. UVs come from analytic primitive mappings or interpolated OBJ `vt`
-  data.
+- Material albedo, roughness, emission and normal maps are sampled bilinearly
+  with repeat wrapping at the hit UV. UVs come from analytic primitive mappings
+  or interpolated OBJ `vt` data. Normal maps currently use a shading-normal
+  tangent frame rather than mesh tangents.
+- Primitives include spheres, planes, cylinders, cones, axis-aligned boxes,
+  disks/rings and OBJ meshes. Boxes and disks use the same instance-transform
+  path as the other primitives.
+- Prefab scatter expands deterministic instances at parse time and feeds the
+  normal BVH/mesh instancing path.
 - Equirectangular environment backgrounds are sampled on miss with a clamped
   V coordinate. Diffuse surfaces additionally use an importance-sampled
   luminance CDF and MIS for explicit environment lighting.
@@ -197,9 +203,14 @@ uses the same `SceneSnapshot` data path.
 - **Area lights:** sphere lights consume two random values per shading query,
   sample a point on the sphere, and trace a shadow ray. The CPU and CUDA loops
   must use the same light order and sampling order for parity.
-- **Textures:** unique PPM textures are uploaded once as global `Vec3` texels
-  with a `TextureRange` per texture. Materials store a texture index and the
-  device samples bilinearly with repeat wrapping.
+- **Textures:** unique PPM/PNG/JPG/HDR textures are uploaded once as global
+  `Vec3` texels with a `TextureRange` per texture. Materials store albedo,
+  roughness, emission and normal indices and the device samples bilinearly with
+  repeat wrapping.
+- **Primitives:** spheres, planes, cylinders, cones, boxes, disks and meshes are
+  intersected on device with the same local/instance transform path.
+- **Scatter:** prefab scatter is expanded on the host during parsing, so the
+  device sees ordinary mesh/primitive instances.
 - **OBJ materials:** per-primitive group maps are uploaded as a flat `int`
   array with ranges. Triangle hits report a group and `intersectMesh` resolves
   it to a material override. Imported MTL materials use the same data path as

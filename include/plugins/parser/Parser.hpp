@@ -59,6 +59,8 @@ class Parser
     std::shared_ptr<IPrimitive> parseCone(libconfig::Setting &coneSetting);
     std::shared_ptr<IPrimitive> parseMesh(SceneBuilder &sceneBuilder, libconfig::Setting &meshSetting);
     std::shared_ptr<IPrimitive> parseCylinder(libconfig::Setting &cylinderSetting);
+    std::shared_ptr<IPrimitive> parseBox(libconfig::Setting &boxSetting);
+    std::shared_ptr<IPrimitive> parseDisk(libconfig::Setting &diskSetting);
 
     Color3D parseColor(const libconfig::Setting &colorSetting);
     Point3D parsePoint(const libconfig::Setting &pointSetting);
@@ -77,7 +79,7 @@ class Parser
   private:
     std::string resolveAssetPath(const std::string &path) const;
     std::shared_ptr<const MeshAsset> loadMesh(const std::string &path);
-    std::shared_ptr<const Texture> loadTexture(const std::string &path);
+    std::shared_ptr<const Texture> loadTexture(const std::string &path, bool linear = false);
 
     Factory _factory;
     std::shared_ptr<Camera> _camera;
