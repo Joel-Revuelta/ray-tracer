@@ -24,7 +24,7 @@ cmake -S . -B build -DRAYTRACER_ENABLE_CUDA=OFF
 - Single test: `ctest --test-dir build -R renderer_regressions --output-on-failure`
 - Useful labels: `ctest --test-dir build -L animation`, `-L parity`, `-L negative`, `-L golden`, `-L parser`, `-L smoke`, `-L video`.
 - Parity tests skip with status `77` when no CUDA device is available; video tests skip with `77` when FFmpeg is missing.
-- GUI smoke tests are added only when `xvfb-run` and the corresponding GUI plugin are available.
+- GUI smoke tests are added only when `xvfb-run` and the corresponding GUI plugin are available; they also compare the GUI output byte-for-byte with a deterministic CLI render.
 - Golden references are in `tests/golden/`. Refresh only intentional visual changes with:
 
 ```bash

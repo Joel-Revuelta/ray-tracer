@@ -1004,8 +1004,14 @@ cd /tmp/raytracer-cpu && ./raytracer --list-renderers
 GUI smoke test (requires a display or Xvfb):
 
 ```bash
+ctest --test-dir build -L gui
+# Manual alternative:
 ./raytracer --path scenes/showcase.cfg --sfml --renderer cuda
 ```
+
+`tests/gui_smoke.sh` starts each GUI backend under `xvfb-run`, renders one
+frame with `--output`, validates the PPM, and requires byte-identical output to
+the deterministic CLI render of the same scene.
 
 Scene render scripts:
 
