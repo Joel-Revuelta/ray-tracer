@@ -86,6 +86,7 @@ bool Disk::hit(const Ray &ray, HitPayload &payload, size_t i) const
     const float v = 0.5f + vec3DDot(relative, bitangent) / _radius * 0.5f;
 
     payload.setUV(std::clamp(u, 0.0f, 1.0f), std::clamp(v, 0.0f, 1.0f));
+    payload.setShadingTangent(tangent);
     return true;
 }
 

@@ -130,15 +130,22 @@ inline Vec3D vec3DNormalize(const Vec3D &v)
  */
 inline Vec3D vec3DRandom(float min, float max)
 {
-    return Vec3D(Utils::numericGenerateRandom<float>(min, max), Utils::numericGenerateRandom<float>(min, max),
-                 Utils::numericGenerateRandom<float>(min, max));
+    // Function argument evaluation order is unspecified. Keep the historical
+    // z/y/x draw order explicitly so GCC and Clang consume the same sequence.
+    const float z = Utils::numericGenerateRandom<float>(min, max);
+    const float y = Utils::numericGenerateRandom<float>(min, max);
+    const float x = Utils::numericGenerateRandom<float>(min, max);
+
+    return Vec3D(x, y, z);
 }
 
 inline Vec3D vec3DRandom(float min, float max, uint32_t &seed)
 {
-    return Vec3D(Utils::numericGeneratePseudoRandom<float>(seed, min, max),
-                 Utils::numericGeneratePseudoRandom<float>(seed, min, max),
-                 Utils::numericGeneratePseudoRandom<float>(seed, min, max));
+    const float z = Utils::numericGeneratePseudoRandom<float>(seed, min, max);
+    const float y = Utils::numericGeneratePseudoRandom<float>(seed, min, max);
+    const float x = Utils::numericGeneratePseudoRandom<float>(seed, min, max);
+
+    return Vec3D(x, y, z);
 }
 
 /**

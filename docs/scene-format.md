@@ -278,6 +278,63 @@ background:
 `scenes/environment.cfg` demonstrates an equirectangular sky used for the
 background, reflections and path-traced lighting.
 
+## Atmosphere
+
+An optional top-level `atmosphere` block adds a participating medium. It is
+integrated by both the CPU and CUDA path tracers, including shadow-ray and
+environment transmittance.
+
+Homogeneous fog:
+
+```libconfig
+atmosphere:
+{
+    type = "homogeneous";
+    density = 0.025;
+    color = { r = 0.85; g = 0.90; b = 1.0; };
+    anisotropy = 0.35;
+    maxDistance = 80.0;
+};
+```
+
+Height fog:
+
+```libconfig
+atmosphere:
+{
+    type = "height";
+    density = 0.035;
+    color = { r = 0.75; g = 0.80; b = 1.0; };
+    anisotropy = 0.25;
+    groundY = 0.0;
+    heightFalloff = 0.18;
+    maxDistance = 80.0;
+};
+```
+
+- `density` is the extinction coefficient and must be non-negative. A density
+  of `0` leaves rendering unchanged.
+- `color` is the scattering albedo and must lie in `[0, 1]` per channel.
+- `anisotropy` is the Henyey-Greenstein `g` parameter and must be strictly
+  between `-1` and `1`. Positive values scatter forward and produce stronger
+  light shafts; `0` is isotropic.
+- `maxDistance` clips medium integration for rays that leave the scene and must
+  be positive. It defaults to `100`.
+- Height fog density is `density * exp(-heightFalloff * (y - groundY))`.
+  `groundY` and a positive `heightFalloff` are required.
+- Scattering distances are sampled analytically from the medium's optical
+  depth, so homogeneous fog needs no ray marching.
+- Direct lights, environment lighting and background radiance are attenuated
+  by transmittance. Ambient light uses a `maxDistance` attenuation
+  approximation.
+- Dielectrics, emissives and metals still interact with the medium on every
+  path segment.
+- The atmosphere is not animated; scene animation changes geometry and lights,
+  not density.
+
+`scenes/misty_shrine.cfg`, `scenes/volumetric_cathedral.cfg` and
+`scenes/lagoon_mist.cfg` demonstrate height fog, god rays and thin water haze.
+
 ## Materials
 
 Materials are declared in order and referenced by their zero-based index in the
@@ -381,10 +438,12 @@ name = {
 - Albedo and emission maps are treated as sRGB and decoded to linear. Roughness
   and normal maps are loaded as linear data. HDR textures keep their linear
   values.
-- Normal maps currently use a deterministic tangent frame derived from the
-  shading normal rather than the mesh UV tangent. They add surface detail, but
-  rotating a normal map around the UV axis is not supported yet.
-- MTL import still applies `map_Kd`; `map_Ks` and `map_Ke` are not imported yet.
+- Normal maps are evaluated in a UV-aligned tangent frame. Meshes use a
+  per-triangle tangent derived from the corresponding OBJ `vt` values, and
+  analytic primitives use their natural U tangent. A deterministic fallback
+  frame is used only when the tangent is degenerate (for example a mesh
+  without texture coordinates). Mirrored UV islands currently assume a
+  right-handed tangent frame.
 
 UV conventions:
 
@@ -591,16 +650,26 @@ Ka 0.20 0.20 0.20
 Kd 0.85 0.12 0.12
 Ks 0.35 0.35 0.35
 Ns 64
+Ke 0.35 0.35 0.35
 map_Kd ../textures/checker.ppm
+map_Ks ../textures/roughness.ppm
+map_Ke ../textures/emission.ppm
 ```
 
 - `Kd` is the diffuse colour.
 - `Ka` and `Ks` contribute ambient and specular reflection coefficients.
 - `Ns` is converted to a roughness value.
+- `Ke` is applied as a constant additive emission colour.
 - `map_Kd` is an albedo texture resolved relative to the MTL file; the same
   PPM/PNG/JPG/HDR formats are supported.
-- `Ke`, `d`, `Tr` and unsupported maps are accepted but not fully applied yet.
-- `map_Kd` options such as `-s`/`-o` are not supported.
+- `map_Ks` is imported as a roughness map. It is an approximation: the red
+  channel multiplies the `Ns`-derived roughness, because MTL specular maps are
+  not physically equivalent to microfacet roughness maps. Author maps with
+  bright values for rougher surfaces.
+- `map_Ke` is imported as an emission map and multiplies `Ke`. If `Ke` is
+  absent, a white emission colour is used so the map alone drives the glow.
+- `d` and `Tr` are accepted but not fully applied yet.
+- Map options such as `-s`/`-o` are not supported.
 
 MTL materials are appended to the scene automatically. `usemtl` names match
 MTL material names; explicit `materialGroups` entries still take precedence.
@@ -933,6 +1002,9 @@ The parser rejects:
   `[0, radius)`,
 - scatter counts outside `1..4096`, inverted area/rotation ranges, or
   non-positive scale ranges,
+- unknown atmosphere types, negative density, colour outside `[0, 1]`,
+  anisotropy outside `(-1, 1)`, non-positive `maxDistance`, or height fog
+  without `groundY`/positive `heightFalloff`,
 - negative material indices, or indices outside the material list.
 
 Renderer selection errors (unknown renderer names, missing plugins, unavailable

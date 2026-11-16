@@ -72,6 +72,11 @@ Color3D SphereLight::getRadiance(const HitPayload &payload) const
     return _color * _intensity * attenuationAt(distance);
 }
 
+float SphereLight::getDistance(const HitPayload &payload) const
+{
+    return std::max((_position - payload.getHitPosition()).length() - _radius, 0.0f);
+}
+
 Vec3D SphereLight::getLightDirection(const HitPayload &payload) const
 {
     return vec3DNormalize(_position - payload.getHitPosition());
@@ -146,6 +151,7 @@ LightSample SphereLight::sample(const HitPayload &payload, const Scene &scene, u
 
     result.direction = direction;
     result.radiance = _color * _intensity * attenuationAt(centerDistance) * solidAngle;
+    result.distance = shadowDistance;
     result.valid = true;
     return result;
 }

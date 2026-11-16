@@ -238,10 +238,15 @@ per hit and use it for direct lighting, metallic sampling and diffuse
 throughput. Roughness maps multiply the scalar roughness; emission maps
 multiply the emission colour. A missing texture keeps the old constant path.
 
-Normal maps decode RGB to `[-1, 1]` and perturb the shading normal. The current
-tangent frame is derived deterministically from the shading normal rather than
-from mesh/primitive UV tangents. This keeps CPU/CUDA parity simple, but rotating
-a normal map around the UV axis is a future improvement.
+Normal maps decode RGB to `[-1, 1]` and perturb the shading normal in a
+UV-aligned tangent frame. `HitPayload` carries a shading tangent set by every
+primitive. Analytic primitives derive it from their U parameterisation; OBJ
+meshes bake a per-triangle tangent from vertex positions and `vt` values.
+`InstancePrimitive` transforms the tangent with the linear part and
+orthonormalizes it against the shading normal. A deterministic stable basis is
+used only when the tangent is degenerate. CUDA threads the tangent through the
+intersection routines with the same fallback, so normal-map orientation matches
+the CPU renderer.
 
 For CUDA, `SceneSnapshot` deduplicates all four texture channels and
 `CudaRenderSession` uploads a compact global `Vec3` texel buffer plus one
@@ -335,7 +340,8 @@ prefab names are rejected.
 
 `MeshLoader` records `mtllib` paths in `MeshAsset::materialLibraries`, resolved
 relative to the OBJ. `loadMtl()` parses `newmtl`, `Ka`, `Kd`, `Ks`, `Ke`, `Ns`,
-`d`/`Tr` and `map_Kd`; `map_Kd` resolves relative to the MTL file.
+`d`/`Tr`, `map_Kd`, `map_Ks` and `map_Ke`; every map resolves relative to the
+MTL file.
 
 The parser caches parsed MTL files and, per scene, appends unseen MTL materials
 as `PhongMaterial` instances. Mapping is approximate:
@@ -345,14 +351,18 @@ as `PhongMaterial` instances. Mapping is approximate:
 - `Ks` luminance becomes the specular reflection coefficient.
 - `Ns` becomes roughness via `sqrt(2 / (Ns + 2))`.
 - `map_Kd` is attached through `AMaterial::setTexture`.
+- `map_Ks` becomes a linear roughness texture (`setRoughnessTexture`); MTL
+  specular maps are not true roughness maps, so this is a documented
+  approximation driven by the red channel.
+- `Ke` becomes an additive emission term. `map_Ke` becomes an sRGB emission
+  texture; when `Ke` is absent a white emission colour drives the map.
 
 An automatic `usemtl → material index` map is built from MTL names. Explicit
 `materialGroups` entries are applied first and always win. Unmatched groups use
 the mesh fallback. The per-scene MTL index map is saved and restored around
 nested scene parsing, matching the existing material-count guard.
 
-Emission (`Ke`) and opacity (`d`/`Tr`) are parsed but not yet applied to
-rendering.
+Opacity (`d`/`Tr`) is parsed but not applied to rendering yet.
 
 ### Renderer interface
 
@@ -594,7 +604,9 @@ a partially encoded stream cannot be resumed reliably.
 ### Lights and area sampling
 
 `ILight::sample(payload, scene, seed)` returns a `LightSample` containing a
-direction, attenuated radiance and a validity flag. Its default implementation
+direction, attenuated radiance, distance and a validity flag. `sampleMedium`
+wraps it with a light-facing synthetic payload so in-scattering connections are
+not rejected by surface hemisphere checks. Its default implementation
 calls `isPointInShadow()`, `getLightDirection()` and `getRadiance()`, so
 ambient, directional and point lights keep their previous behavior and consume
 no random values.
@@ -609,12 +621,45 @@ no random values.
   constant/linear/quadratic attenuation as point lights,
 - `intensity` is therefore radiance-like; the area-light scenes use larger
   values than point-light scenes.
+- `result.distance` is the shadow-ray entry distance used for fog
+  transmittance.
 
 The CPU and CUDA light loops must stay aligned: same light order and exactly
 two random values per sphere-light sample. The shadow-ray offset uses the
 geometric normal, while the N·L visibility test uses the shading normal.
 Soft-shadow noise is expected; higher sample counts are required for clean
 penumbrae.
+
+### Participating media
+
+`Atmosphere` is stored on `Scene`, copied into `SceneSnapshot` and uploaded as
+`Cuda::Atmosphere`. `include/render/AtmosphereSampling.hpp` holds the CPU
+reference implementation; `Kernels.cu` mirrors the same formulas.
+
+- Optical depth is analytic. Homogeneous media use `density * distance`;
+  exponential height fog uses
+  `density * exp(-falloff * (y - groundY))` integrated along the ray.
+- Scattering distances are sampled by inverting the optical-depth CDF. For
+  upward height-fog rays the distribution can be defective; those samples are
+  treated as no scattering event and the segment is attenuated normally.
+- At a scattering event the path multiplies throughput by the scattering
+  albedo and samples a Henyey-Greenstein direction. The phase function and its
+  sampling use the same constants on both renderers.
+- Medium next-event estimation adds a phase-weighted, transmittance-attenuated
+  light sample at every scattering event. Ambient light contributes its full
+  radiance integral, which is why ambient intensity affects fog brightness.
+- Surface light samples and explicit environment samples are multiplied by
+  medium transmittance. Background radiance is attenuated over `maxDistance`.
+- `LightSample::distance` carries the shadow-ray distance used for
+  transmittance. Directional lights use infinity, which clamps to
+  `maxDistance`.
+- Scenes with no atmosphere block consume no extra random values and remain
+  byte-identical.
+
+The CPU and CUDA loops must keep the same order: distance sample, medium light
+loop, phase sample, then surface shading. Fog has high variance at low sample
+counts; the atmosphere goldens use 256 samples and the cathedral parity case
+uses 512 with a wider tolerance.
 
 ## Adding components
 
@@ -708,7 +753,7 @@ ctest --test-dir build -L parity
 ```
 
 Labels are `unit`, `smoke`, `scene`, `animation`, `output`, `negative`, `video`,
-`parity`, `parser`, `golden` and `benchmark`. The parity label includes the
+`parity`, `parser`, `golden`, `atmosphere` and `benchmark`. The parity label includes the
 CPU/CUDA comparison; it skips with status `77` when no CUDA device is available.
 The video test also skips with `77` when FFmpeg is missing.
 
@@ -859,6 +904,21 @@ Material maps, boxes/disks and scatter:
 ./raytracer --path scenes/scatter_field.cfg --cli --renderer cuda \
   --width 320 --height 180 --samples 32 --output /tmp/scatter.png
 bash tests/golden_images.sh ./raytracer . build
+```
+
+Atmosphere and MTL maps:
+
+```bash
+./raytracer --path scenes/misty_shrine.cfg --cli --renderer cpu \
+  --width 320 --height 180 --samples 256 --output /tmp/misty.png
+./raytracer --path scenes/volumetric_cathedral.cfg --cli --renderer cpu \
+  --width 320 --height 180 --samples 512 --output /tmp/cathedral.png
+./raytracer --path scenes/lagoon_mist.cfg --cli --renderer cuda \
+  --width 320 --height 180 --samples 256 --output /tmp/lagoon.png
+./raytracer --path scenes/mtl_maps.cfg --cli --renderer cpu \
+  --width 320 --height 180 --samples 64 --output /tmp/mtl-maps.png
+bash tests/cpu_cuda_parity.sh ./raytracer . build
+bash tests/atmosphere_regressions.sh ./raytracer . build
 ```
 
 See [performance.md](performance.md) for the benchmark scripts and reference

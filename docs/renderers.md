@@ -130,8 +130,8 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
   dielectrics.
 - Material albedo, roughness, emission and normal maps are sampled bilinearly
   with repeat wrapping at the hit UV. UVs come from analytic primitive mappings
-  or interpolated OBJ `vt` data. Normal maps currently use a shading-normal
-  tangent frame rather than mesh tangents.
+  or interpolated OBJ `vt` data. Normal maps use UV-aligned tangents, with a
+  stable fallback only for degenerate/missing UV data.
 - Primitives include spheres, planes, cylinders, cones, axis-aligned boxes,
   disks/rings and OBJ meshes. Boxes and disks use the same instance-transform
   path as the other primitives.
@@ -140,9 +140,12 @@ The CPU renderer lives in `src/plugins/renderers/CPU/` and is the default.
 - Equirectangular environment backgrounds are sampled on miss with a clamped
   V coordinate. Diffuse surfaces additionally use an importance-sampled
   luminance CDF and MIS for explicit environment lighting.
+- Participating media use analytic optical depth and inverse-CDF distance
+  sampling. Henyey-Greenstein scattering, medium next-event estimation and
+  transmittance apply to light, environment and background radiance.
 - OBJ `usemtl` groups resolve to per-triangle material overrides. Unmapped
   groups use the mesh's fallback material. `mtllib` materials are imported as
-  Phong-style materials with optional `map_Kd` textures.
+  Phong-style materials with optional `map_Kd`, `map_Ks` and `map_Ke` textures.
 - Walks the plugin-backed scene graph directly through `Scene`/`IPrimitive`.
 - Uses the same 15-bounce path tracing, material and light logic as the CUDA
   renderer. Path throughput is attenuated by diffuse/metallic surface colour,
@@ -218,6 +221,12 @@ uses the same `SceneSnapshot` data path.
 - **Environment maps:** the background texture shares the material texture
   upload path. `skyColor` samples it with clamped-V equirectangular mapping and
   falls back to the gradient when no environment is configured.
+- **Atmosphere:** `Cuda::Atmosphere` carries the type, density, scattering
+  albedo, anisotropy, height profile and `maxDistance`. Device-side optical
+  depth, distance sampling, Henyey-Greenstein sampling and transmittance mirror
+  `render/AtmosphereSampling.hpp`. Medium light samples consume the same random
+  values and light order as the CPU; scenes without atmosphere skip the code
+  path entirely.
 - **Architecture:** compiled for `89` by default (RTX 4070 Laptop / Ada). Set
   `-DRAYTRACER_CUDA_ARCH=86` (or `86;89`) for other GPUs.
 - **Runtime:** the plugin links `CUDA::cudart_static`, so it does not require a

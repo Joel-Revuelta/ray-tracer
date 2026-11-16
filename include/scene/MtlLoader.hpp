@@ -20,7 +20,8 @@ namespace RayTracer
  *
  * Kd is the diffuse colour, Ka/Ks are reduced to scalar reflection
  * coefficients by the parser, Ns is the Phong shininess and map_Kd is an
- * optional albedo texture resolved relative to the MTL file.
+ * optional albedo texture resolved relative to the MTL file. map_Ks and
+ * map_Ke are optional specular/roughness and emission maps.
  */
 struct MtlMaterial
 {
@@ -32,6 +33,8 @@ struct MtlMaterial
     float shininess = 0.0f;
     float opacity = 1.0f;
     std::string diffuseMap;
+    std::string specularMap;
+    std::string emissionMap;
 };
 
 /**

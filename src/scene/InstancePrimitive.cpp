@@ -6,6 +6,7 @@
 */
 
 #include "InstancePrimitive.hpp"
+#include "render/Tangent.hpp"
 #include <cmath>
 #include <utility>
 
@@ -75,6 +76,10 @@ bool InstancePrimitive::hit(const Ray &ray, HitPayload &payload, size_t i) const
     payload.setHitPosition(ray.at(worldDistance));
     payload.setHitNormal(vec3DNormalize(normal));
     payload.setShadingNormal(vec3DNormalize(shadingNormal));
+
+    Vec3D tangent = transformVector(_transform, localPayload.getShadingTangent());
+
+    payload.setShadingTangent(orthonormalizeTangent(tangent, payload.getShadingNormal()));
     payload.setUV(localPayload.getU(), localPayload.getV());
     payload.setMaterialIndex(localPayload.getMaterialIndex());
     payload.setHitIndex(static_cast<int>(i));

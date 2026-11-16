@@ -68,6 +68,7 @@ class Parser
     TransformData parseTransform(const libconfig::Setting &transformSetting);
     TransformPose parseTransformPose(const libconfig::Setting &transformSetting);
     Background parseBackground(const libconfig::Setting &backgroundSetting);
+    Atmosphere parseAtmosphere(const libconfig::Setting &atmosphereSetting);
 
     std::shared_ptr<IPrimitive> applyTransform(std::shared_ptr<IPrimitive> primitive,
                                                const libconfig::Setting &primitiveSetting);

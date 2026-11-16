@@ -83,6 +83,11 @@ Vec3D PointLight::getLightDirection(const HitPayload &payload) const
     return vec3DNormalize(getPosition() - payload.getHitPosition());
 }
 
+float PointLight::getDistance(const HitPayload &payload) const
+{
+    return (getPosition() - payload.getHitPosition()).length();
+}
+
 bool PointLight::isPointInShadow(const HitPayload &payload, const Scene &scene) const
 {
     HitPayload possibleHitInfo;

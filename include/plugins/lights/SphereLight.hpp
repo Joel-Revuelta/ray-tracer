@@ -31,6 +31,7 @@ class SphereLight : public ILight
     bool isPointInShadow(const HitPayload &payload, const Scene &scene) const override;
     Color3D getRadiance(const HitPayload &payload) const override;
     Vec3D getLightDirection(const HitPayload &payload) const override;
+    float getDistance(const HitPayload &payload) const override;
     LightSample sample(const HitPayload &payload, const Scene &scene, uint32_t &seed) const override;
     bool getData(LightData &data) const override;
     std::shared_ptr<ILight> clone(void) const override;

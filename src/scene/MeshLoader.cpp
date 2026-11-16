@@ -6,6 +6,7 @@
 */
 
 #include "MeshLoader.hpp"
+#include "render/Tangent.hpp"
 #include <cctype>
 #include <cerrno>
 #include <cmath>
@@ -131,8 +132,21 @@ bool addTriangle(MeshAsset &asset, const Vec3D &v0, const Vec3D &v1, const Vec3D
     if (!std::isfinite(faceNormal.lengthSquared()) || faceNormal.lengthSquared() < DEGENERATE_EPSILON)
         return false;
 
-    asset.triangles.push_back(
-        Triangle{v0, v1, v2, n0, n1, n2, uv0.u, uv0.v, uv1.u, uv1.v, uv2.u, uv2.v, materialGroup});
+    const Vec3D unitNormal = vec3DNormalize(faceNormal);
+    const float du1 = uv1.u - uv0.u;
+    const float dv1 = uv1.v - uv0.v;
+    const float du2 = uv2.u - uv0.u;
+    const float dv2 = uv2.v - uv0.v;
+    const float determinant = du1 * dv2 - du2 * dv1;
+    Vec3D tangent;
+
+    if (std::isfinite(determinant) && std::fabs(determinant) > 1e-9f)
+        tangent = orthonormalizeTangent(((v1 - v0) * dv2 - (v2 - v0) * dv1) / determinant, unitNormal);
+    else
+        tangent = stableTangent(unitNormal);
+
+    asset.triangles.push_back(Triangle{v0, v1, v2, n0, n1, n2, tangent, uv0.u, uv0.v, uv1.u, uv1.v, uv2.u,
+                                       uv2.v, materialGroup});
     return true;
 }
 } // namespace

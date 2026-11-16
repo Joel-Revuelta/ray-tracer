@@ -43,8 +43,11 @@ compare() {
     local first="$1"
     local second="$2"
     local label="$3"
+    local mean_limit="${4:-0.5}"
+    local p99_limit="${5:-8}"
+    local max_limit="${6:-64}"
 
-    python3 - "${first}" "${second}" "${label}" <<'PY'
+    python3 - "${first}" "${second}" "${label}" "${mean_limit}" "${p99_limit}" "${max_limit}" <<'PY'
 import sys
 
 
@@ -113,16 +116,20 @@ identical = sum(1 for value in per_pixel if value == 0) * 100.0 / count
 
 print(f"{label}: mean={mean:.4f}/255 p99={p99} max={maximum} identical={identical:.2f}%")
 
-if mean > 0.5 or p99 > 8 or maximum > 64:
+if mean > float(sys.argv[4]) or p99 > int(sys.argv[5]) or maximum > int(sys.argv[6]):
     raise SystemExit(f"{label}: parity thresholds exceeded")
 PY
+}
+
+compare_loose() {
+    compare "$1" "$2" "$3" 1.5 10 24
 }
 
 compare "${out_dir}/still-cpu.ppm" "${out_dir}/still-cuda.ppm" "still"
 compare "${out_dir}/anim-cpu-0003.ppm" "${out_dir}/anim-cuda-0003.ppm" "animation frame 3"
 compare "${out_dir}/blur-cpu-0003.ppm" "${out_dir}/blur-cuda-0003.ppm" "motion-blurred frame 3"
 
-for scene in material_maps primitives_extra scatter_field; do
+for scene in material_maps mtl_maps primitives_extra scatter_field misty_shrine lagoon_mist; do
     for renderer in cpu cuda; do
         if ! "${executable}" --path "${source_dir}/scenes/${scene}.cfg" --cli --renderer "${renderer}" \
             --width 160 --height 90 --samples 128 --seed 5 \
@@ -133,6 +140,20 @@ for scene in material_maps primitives_extra scatter_field; do
     done
     compare "${out_dir}/${scene}-cpu.ppm" "${out_dir}/${scene}-cuda.ppm" "${scene}"
 done
+
+# The cathedral combines high-dynamic-range area lighting with strong forward
+# scattering, so its GPU/CPU comparison carries a deliberately wider tolerance.
+for renderer in cpu cuda; do
+    if ! "${executable}" --path "${source_dir}/scenes/volumetric_cathedral.cfg" --cli \
+        --renderer "${renderer}" --width 160 --height 90 --samples 512 --seed 5 \
+        --output "${out_dir}/volumetric_cathedral-${renderer}.ppm" \
+        >"${out_dir}/volumetric_cathedral-${renderer}.log" 2>&1; then
+        cat "${out_dir}/volumetric_cathedral-${renderer}.log" >&2
+        exit 1
+    fi
+done
+compare_loose "${out_dir}/volumetric_cathedral-cpu.ppm" \
+    "${out_dir}/volumetric_cathedral-cuda.ppm" volumetric_cathedral
 
 for renderer in cpu cuda; do
     if ! "${executable}" --path "${source_dir}/tests/scene_animation.cfg" --cli --renderer "${renderer}" \

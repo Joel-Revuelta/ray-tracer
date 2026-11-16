@@ -7,6 +7,7 @@
 
 #include <Sphere.hpp>
 #include "Utils.hpp"
+#include "render/Tangent.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -93,6 +94,13 @@ bool Sphere::hit(const Ray &ray, HitPayload &payload, size_t i) const
     const float v = std::acos(std::clamp(local.getY(), -1.0f, 1.0f)) / static_cast<float>(Utils::PI);
 
     payload.setUV(u, v);
+
+    const float latitude = std::atan2(local.getZ(), local.getX());
+    Vec3D tangent = Vec3D(-std::sin(latitude), 0.0f, std::cos(latitude));
+
+    if (tangent.lengthSquared() < 1e-12f)
+        tangent = stableTangent(payload.getShadingNormal());
+    payload.setShadingTangent(tangent);
     // This primitive has no per-face material override. Clears a stale mesh
     // group override from a previously tested primitive.
     payload.setMaterialIndex(-1);

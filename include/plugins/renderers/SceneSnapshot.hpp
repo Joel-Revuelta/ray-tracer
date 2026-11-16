@@ -9,6 +9,7 @@
 #define SCENE_SNAPSHOT_HPP_
 
 #include "Background.hpp"
+#include "scene/Atmosphere.hpp"
 #include "IMaterial.hpp"
 #include "LightData.hpp"
 #include "Mesh.hpp"
@@ -70,6 +71,7 @@ struct SceneSnapshot
     std::vector<std::shared_ptr<const Texture>> textures;
     std::vector<int> meshMaterialMaps;
     Background background;
+    Atmosphere atmosphere;
 };
 
 CameraData makeCameraData(const Camera &camera);

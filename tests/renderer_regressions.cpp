@@ -12,6 +12,7 @@
 #include "SceneBuilder.hpp"
 #include "TransformData.hpp"
 #include "render/Animation.hpp"
+#include "render/AtmosphereSampling.hpp"
 #include "render/Environment.hpp"
 #include "render/ImageWriter.hpp"
 #include "render/SceneAnimation.hpp"
@@ -107,6 +108,113 @@ int checkPhongCoefficients(const std::string &scenePath)
 
     if (!closeTo(material->getRoughness(), expectedRoughness, 1e-3f))
         return fail("MTL Ns roughness conversion was not applied");
+
+    return 0;
+}
+
+int checkMtlMaps(const std::string &scenePath)
+{
+    Parser parser;
+    std::shared_ptr<Scene> scene = parser.init(scenePath);
+
+    if (!scene)
+        return fail("could not parse the MTL map regression scene");
+
+    bool checkedRoughness = false;
+    bool checkedEmission = false;
+
+    for (const std::shared_ptr<IMaterial> &material : scene->getMaterials())
+    {
+        const Color3D color = material->getDiffuseColor();
+
+        if (closeTo(color.getX(), 0.32f, 1e-3f) && closeTo(color.getY(), 0.24f, 1e-3f) &&
+            closeTo(color.getZ(), 0.16f, 1e-3f))
+        {
+            if (!material->getRoughnessTexture())
+                return fail("MTL map_Ks was not imported as a roughness texture");
+            if (material->getEmissionTexture())
+                return fail("MTL brushed material unexpectedly has an emission map");
+            checkedRoughness = true;
+        }
+
+        if (closeTo(color.getX(), 0.15f, 1e-3f) && closeTo(color.getY(), 0.18f, 1e-3f) &&
+            closeTo(color.getZ(), 0.25f, 1e-3f))
+        {
+            if (!material->getEmissionTexture())
+                return fail("MTL map_Ke was not imported as an emission texture");
+            if (!(material->getEmissionColor().lengthSquared() > 0.0f))
+                return fail("MTL Ke was not applied as a constant emission term");
+            checkedEmission = true;
+        }
+    }
+
+    if (!checkedRoughness)
+        return fail("MTL map_Ks material was not imported");
+    if (!checkedEmission)
+        return fail("MTL map_Ke material was not imported");
+    return 0;
+}
+
+int checkAtmosphereSampling(void)
+{
+    Atmosphere none;
+
+    none.density = 0.0f;
+    if (!closeTo(atmosphereTransmittance(none, Vec3D(0.0f, 1.0f, 0.0f), Vec3D(0.0f, 1.0f, 0.0f), 10.0f), 1.0f))
+        return fail("inactive atmosphere must not attenuate");
+
+    Atmosphere homogeneous;
+
+    homogeneous.type = AtmosphereType::HOMOGENEOUS;
+    homogeneous.density = 0.5f;
+
+    if (!closeTo(atmosphereTransmittance(homogeneous, Vec3D(0.0f), Vec3D(1.0f, 0.0f, 0.0f), 2.0f),
+                 std::exp(-1.0f), 1e-4f))
+        return fail("homogeneous transmittance is wrong");
+
+    homogeneous.density = 100.0f;
+    if (!(atmosphereTransmittance(homogeneous, Vec3D(0.0f), Vec3D(1.0f, 0.0f, 0.0f), 10.0f) < 1e-6f))
+        return fail("dense homogeneous atmosphere is not opaque");
+
+    Atmosphere height;
+
+    height.type = AtmosphereType::HEIGHT;
+    height.density = 0.5f;
+    height.groundY = 0.0f;
+    height.heightFalloff = 0.5f;
+
+    const float lowDepth = atmosphereOpticalDepth(height, Vec3D(0.0f, 0.0f, 0.0f), Vec3D(1.0f, 0.0f, 0.0f), 10.0f);
+    const float highDepth = atmosphereOpticalDepth(height, Vec3D(0.0f, 5.0f, 0.0f), Vec3D(1.0f, 0.0f, 0.0f), 10.0f);
+
+    if (!(lowDepth > highDepth) || !(highDepth > 0.0f))
+        return fail("height fog is not denser near the ground");
+
+    float distance = 0.0f;
+
+    homogeneous.type = AtmosphereType::HOMOGENEOUS;
+    homogeneous.density = 0.5f;
+    if (!sampleAtmosphereDistance(homogeneous, Vec3D(0.0f), Vec3D(1.0f, 0.0f, 0.0f), 0.5f, distance))
+        return fail("homogeneous medium distance sampling failed");
+    if (!closeTo(distance, -std::log(0.5f) / 0.5f, 1e-4f))
+        return fail("homogeneous medium distance sampling is wrong");
+
+    if (!sampleAtmosphereDistance(height, Vec3D(0.0f, 1.0f, 0.0f), Vec3D(0.0f, 1.0f, 0.0f), 0.25f, distance))
+        return fail("height fog distance sampling failed");
+    if (!(distance > 0.0f) || !std::isfinite(distance))
+        return fail("height fog distance sampling returned an invalid distance");
+
+    float integral = 0.0f;
+    const int steps = 4096;
+
+    for (int i = 0; i < steps; ++i)
+    {
+        const float cosine = -1.0f + 2.0f * (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
+
+        integral += 2.0f * static_cast<float>(M_PI) * henyeyGreensteinPhase(cosine, 0.4f) *
+                    (2.0f / static_cast<float>(steps));
+    }
+    if (integral < 0.95f || integral > 1.05f)
+        return fail("Henyey-Greenstein phase function does not integrate to 1");
 
     return 0;
 }
@@ -545,15 +653,19 @@ int checkVideoSettings(void)
 
 int main(int ac, char **av)
 {
-    if (ac != 3)
+    if (ac != 4)
     {
-        std::cerr << "usage: " << av[0] << " <mtl-scene> <hdr-environment>" << std::endl;
+        std::cerr << "usage: " << av[0] << " <mtl-scene> <hdr-environment> <mtl-map-scene>" << std::endl;
         return 2;
     }
 
     Factory factory;
 
     if (const int status = checkPhongCoefficients(av[1]); status != 0)
+        return status;
+    if (const int status = checkMtlMaps(av[3]); status != 0)
+        return status;
+    if (const int status = checkAtmosphereSampling(); status != 0)
         return status;
     if (const int status = checkHDREnvironment(av[2]); status != 0)
         return status;

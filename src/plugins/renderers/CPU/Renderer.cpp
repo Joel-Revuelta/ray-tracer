@@ -6,7 +6,9 @@
 */
 
 #include "plugins/renderers/CPU/Renderer.hpp"
+#include "render/AtmosphereSampling.hpp"
 #include "render/ImageWriter.hpp"
+#include "render/Tangent.hpp"
 #include "render/Texture.hpp"
 #include "Utils.hpp"
 #include "render/Brdf.hpp"
@@ -40,16 +42,6 @@ float powerHeuristicPdf(float first, float second)
     return total > 0.0f ? firstSquared / total : 0.0f;
 }
 
-Vec3D stableTangent(const Vec3D &normal)
-{
-    const Vec3D axis = std::fabs(normal.getY()) < 0.999f ? Vec3D(0.0f, 1.0f, 0.0f) : Vec3D(1.0f, 0.0f, 0.0f);
-    Vec3D tangent = vec3DCross(axis, normal);
-    const float lengthSquared = tangent.lengthSquared();
-
-    if (!std::isfinite(lengthSquared) || lengthSquared < 1e-12f)
-        return Vec3D(0.0f);
-    return tangent / std::sqrt(lengthSquared);
-}
 } // namespace
 
 class RenderPool
@@ -772,9 +764,87 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
     ray.setDirection(direction);
 
     // Shoot the ray, bounce it around the scene, and accumulate the color of the pixel
+    const Atmosphere &atmosphere = scene.getAtmosphere();
+
     for (int bounce = 0; bounce < bounces; ++bounce)
     {
         HitPayload payload = shotRay(ray);
+        bool mediumScattered = false;
+
+        if (atmosphereActive(atmosphere))
+        {
+            const Vec3D direction = ray.getDirection();
+            const float directionLength = direction.length();
+
+            if (directionLength > 0.0f)
+            {
+                const Vec3D unitDirection = direction / directionLength;
+                float segmentDistance = atmosphere.maxDistance;
+
+                if (payload.getHitDistance() != std::numeric_limits<float>::infinity())
+                    segmentDistance = std::min(segmentDistance, payload.getHitDistance() * directionLength);
+
+                float scatterDistance = 0.0f;
+                const float distanceSample = Utils::numericGeneratePseudoRandom<float>(sampler, 0.0f, 1.0f);
+
+                if (sampleAtmosphereDistance(atmosphere, ray.getOrigin(), unitDirection, distanceSample,
+                                             scatterDistance) &&
+                    scatterDistance < segmentDistance)
+                {
+                    const Point3D scatterPosition = ray.at(scatterDistance / directionLength);
+
+                    for (const std::shared_ptr<ILight> &light : lights)
+                    {
+                        const LightSample lightSample = light->sampleMedium(scatterPosition, scene, sampler);
+
+                        if (!lightSample.valid)
+                            continue;
+
+                        const float lightDistance = light->isAmbient()
+                                                        ? atmosphere.maxDistance
+                                                        : std::min(lightSample.distance, atmosphere.maxDistance);
+                        const Vec3D lightDirection = light->isAmbient() ? unitDirection : lightSample.direction;
+                        const float transmittance = atmosphereTransmittance(
+                            atmosphere, scatterPosition, lightDirection, lightDistance);
+
+                        if (light->isAmbient())
+                        {
+                            accumulatedColor +=
+                                throughput * atmosphere.color * lightSample.radiance * transmittance;
+                            continue;
+                        }
+
+                        const float cosine =
+                            std::clamp(vec3DDot(unitDirection, lightSample.direction), -1.0f, 1.0f);
+                        const float phase = henyeyGreensteinPhase(cosine, atmosphere.anisotropy);
+
+                        accumulatedColor += throughput * atmosphere.color * lightSample.radiance *
+                                            (phase * transmittance);
+                    }
+
+                    const float directionU = Utils::numericGeneratePseudoRandom<float>(sampler, 0.0f, 1.0f);
+                    const float directionV = Utils::numericGeneratePseudoRandom<float>(sampler, 0.0f, 1.0f);
+                    const Vec3D nextDirection =
+                        sampleHenyeyGreenstein(unitDirection, atmosphere.anisotropy, directionU, directionV);
+
+                    throughput *= atmosphere.color;
+                    ray.setOrigin(scatterPosition + nextDirection * Ray::EPSILON);
+                    ray.setDirection(nextDirection);
+                    backgroundWeight = 1.0f;
+                    mediumScattered = true;
+                }
+                else
+                {
+                    const float transmittance =
+                        atmosphereTransmittance(atmosphere, ray.getOrigin(), unitDirection, segmentDistance);
+
+                    throughput *= transmittance;
+                }
+            }
+        }
+
+        if (mediumScattered)
+            continue;
 
         // If we hit an object
         if (payload.getHitDistance() != std::numeric_limits<float>::infinity())
@@ -851,7 +921,7 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
             {
                 const Color3D sample = normalTexture->sample(payload.getU(), payload.getV());
                 const Vec3D normal = payload.getShadingNormal();
-                const Vec3D tangent = stableTangent(normal);
+                const Vec3D tangent = orthonormalizeTangent(payload.getShadingTangent(), normal);
 
                 if (tangent.lengthSquared() >= 1e-12f)
                 {
@@ -870,8 +940,9 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                 }
             }
 
-            // If the material emits light, add its emission to the accumulated color
-            if (materialType == IMaterial::EMISSIVE)
+            // Add emission for emissive materials and for materials with an
+            // imported additive emission term (for example MTL Ke).
+            if (emissionColor.lengthSquared() > 0.0f)
                 accumulatedColor += throughput * emissionColor;
 
             // Compute lighting contributions from each light source
@@ -883,8 +954,17 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                     continue;
 
                 // Calculate Phong lighting model for the hit point and the current light
+                const float lightDistance =
+                    lights[i]->isAmbient() ? atmosphere.maxDistance
+                                           : std::min(lightSample.distance, atmosphere.maxDistance);
+                const Vec3D lightDirection =
+                    lights[i]->isAmbient() ? Vec3D(0.0f, 1.0f, 0.0f) : lightSample.direction;
+                const float lightTransmittance =
+                    atmosphereTransmittance(atmosphere, payload.getHitPosition(), lightDirection, lightDistance);
+
                 Color3D phongLighting =
-                    computeLightContribution(payload, *material, lightSample, lights[i]->isAmbient(), ray, roughness);
+                    computeLightContribution(payload, *material, lightSample, lights[i]->isAmbient(), ray, roughness) *
+                    lightTransmittance;
 
                 // Reduce the Phong lighting because it's too bright
                 // phongLighting /= brightReduction;
@@ -934,8 +1014,13 @@ Color4D Renderer::getPixelColor(uint32_t seed, int x, int y)
                         const float environmentWeight =
                             powerHeuristicPdf(environmentSample.pdf, bsdfPdfAtEnvironment);
 
+                        const float environmentTransmittance =
+                            atmosphereTransmittance(atmosphere, payload.getHitPosition(),
+                                                   environmentSample.direction, atmosphere.maxDistance);
+
                         accumulatedColor += throughput * environmentSample.radiance *
-                                            (environmentCosine / (PI_F * environmentSample.pdf)) * environmentWeight;
+                                            (environmentCosine / (PI_F * environmentSample.pdf)) * environmentWeight *
+                                            environmentTransmittance;
                     }
                 }
             }

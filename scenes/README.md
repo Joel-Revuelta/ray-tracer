@@ -71,9 +71,13 @@ letterboxes it to preserve aspect ratio.
 | `material_maps.cfg` | Roughness, normal and emission maps on metal, stone and an emissive sign |
 | `primitives_extra.cfg` | Axis-aligned boxes and metal/glass disks/rings |
 | `scatter_field.cfg` | 180 deterministically scattered emissive spores |
+| `misty_shrine.cfg` | Torii gate and lanterns in low exponential height fog |
+| `volumetric_cathedral.cfg` | Strong god rays through a foggy cathedral nave |
+| `lagoon_mist.cfg` | Glowing blooms and reflections under thin water haze |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL |
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face |
+| `mtl_maps.cfg` | MTL `map_Ks` roughness and `map_Ke` emission import |
 | `group_transform.cfg` | A nested scene of spheres and a point light transformed as a group |
 | `prefabs.cfg` | One lamp prefab instantiated three times with different transforms |
 | `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns; camera dolly and pulsing shrine light |

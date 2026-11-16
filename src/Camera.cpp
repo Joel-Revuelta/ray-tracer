@@ -136,8 +136,9 @@ Ray Camera::randomPixelRayCompute(uint32_t &seed, const float &x, const float &y
     (void)seed;
     // Vec3D pixelRandomPos = Vec3D(Utils::numericGenerateRandom<float>(0.0, 0.999) - 0.5,
     // Utils::numericGenerateRandom<float>(0.0, 0.999) - 0.5, 0);
-    Vec3D pixelRandomPos = Vec3D(Utils::numericGeneratePseudoRandom<float>(seed, 0.0, 0.999) - 0.5,
-                                 Utils::numericGeneratePseudoRandom<float>(seed, 0.0, 0.999) - 0.5, 0);
+    const float pixelRandomY = Utils::numericGeneratePseudoRandom<float>(seed, 0.0, 0.999) - 0.5;
+    const float pixelRandomX = Utils::numericGeneratePseudoRandom<float>(seed, 0.0, 0.999) - 0.5;
+    Vec3D pixelRandomPos = Vec3D(pixelRandomX, pixelRandomY, 0);
 
     // Compute the real world position of the pixel.
     Vec3D positionToHit = getInitialPixelPos() + ((x + pixelRandomPos.getX()) * getPixelWidthDistance()) +

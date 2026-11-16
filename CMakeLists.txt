@@ -368,7 +368,7 @@ enable_testing()
 add_test(
     NAME renderer_regressions
     COMMAND $<TARGET_FILE:raytracer_regressions> ${CMAKE_SOURCE_DIR}/scenes/mtl_materials.cfg
-            ${CMAKE_SOURCE_DIR}/scenes/textures/nebula_equirect.hdr
+            ${CMAKE_SOURCE_DIR}/scenes/textures/nebula_equirect.hdr ${CMAKE_SOURCE_DIR}/scenes/mtl_maps.cfg
 )
 set_tests_properties(renderer_regressions PROPERTIES
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -586,9 +586,63 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/mtl_materials_smoke.ppm
 )
 add_test(
+    NAME mtl_maps_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/mtl_maps.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --output ${CMAKE_BINARY_DIR}/mtl_maps_smoke.ppm
+)
+add_test(
+    NAME misty_shrine_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/misty_shrine.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --output ${CMAKE_BINARY_DIR}/misty_shrine_smoke.ppm
+)
+add_test(
+    NAME volumetric_cathedral_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/volumetric_cathedral.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --output ${CMAKE_BINARY_DIR}/volumetric_cathedral_smoke.ppm
+)
+add_test(
+    NAME lagoon_mist_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/lagoon_mist.cfg
+            --cli --renderer cpu --width 160 --height 90 --samples 8 --seed 5
+            --output ${CMAKE_BINARY_DIR}/lagoon_mist_smoke.ppm
+)
+add_test(
     NAME deterministic_mtl_materials_render
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_mtl_materials.sh $<TARGET_FILE:raytracer>
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_invalid_atmosphere_density
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_atmosphere_density.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_atmosphere_density.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_atmosphere_anisotropy
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_atmosphere_anisotropy.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_atmosphere_anisotropy.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_atmosphere_type
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_atmosphere_type.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_atmosphere_type.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_height_fog
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_height_fog.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_height_fog.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_atmosphere_distance
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_atmosphere_distance.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_atmosphere_distance.ppm
 )
 add_test(
     NAME parser_rejects_invalid_mtl
@@ -847,6 +901,12 @@ add_test(
 )
 set_tests_properties(golden_images PROPERTIES LABELS "golden;scene")
 add_test(
+    NAME atmosphere_regressions
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/atmosphere_regressions.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(atmosphere_regressions PROPERTIES LABELS "scene;atmosphere")
+add_test(
     NAME malformed_scene_corpus
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/malformed_scene_corpus.sh $<TARGET_FILE:raytracer>
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
@@ -1014,8 +1074,9 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     bloom_smoke deterministic_bloom_render
     animation_smoke implicit_animation_smoke animation_shutter_smoke scene_animation_smoke
     deterministic_animation_render deterministic_motion_blur deterministic_scene_animation
-    golden_images malformed_scene_corpus benchmark_report
-    material_maps_smoke primitives_extra_smoke scatter_field_smoke
+    golden_images atmosphere_regressions malformed_scene_corpus benchmark_report
+    material_maps_smoke mtl_maps_smoke primitives_extra_smoke scatter_field_smoke
+    misty_shrine_smoke volumetric_cathedral_smoke lagoon_mist_smoke
     validate_still_smoke validate_animation_smoke
     png_output_smoke
     PROPERTIES WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR})
@@ -1048,7 +1109,9 @@ set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_scene_animation_empty
     parser_rejects_invalid_scene_animation_duplicate
     parser_rejects_invalid_box parser_rejects_invalid_disk
-    parser_rejects_invalid_scatter PROPERTIES
+    parser_rejects_invalid_scatter parser_rejects_invalid_atmosphere_density
+    parser_rejects_invalid_atmosphere_anisotropy parser_rejects_invalid_atmosphere_type
+    parser_rejects_invalid_height_fog parser_rejects_invalid_atmosphere_distance PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR}
 )
@@ -1071,7 +1134,8 @@ set_tests_properties(
     environment_smoke mtl_materials_smoke group_transform_smoke prefab_instances_smoke
     sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
     frozen_cathedral_smoke bloom_smoke validate_still_smoke validate_animation_smoke
-    material_maps_smoke primitives_extra_smoke scatter_field_smoke
+    material_maps_smoke mtl_maps_smoke primitives_extra_smoke scatter_field_smoke
+    misty_shrine_smoke volumetric_cathedral_smoke lagoon_mist_smoke
     PROPERTIES LABELS "smoke"
 )
 set_tests_properties(animation_smoke implicit_animation_smoke animation_shutter_smoke PROPERTIES
@@ -1124,6 +1188,9 @@ set_tests_properties(
 )
 set_tests_properties(
     parser_rejects_invalid_box parser_rejects_invalid_disk parser_rejects_invalid_scatter
+    parser_rejects_invalid_atmosphere_density parser_rejects_invalid_atmosphere_anisotropy
+    parser_rejects_invalid_atmosphere_type parser_rejects_invalid_height_fog
+    parser_rejects_invalid_atmosphere_distance
     PROPERTIES LABELS "negative;scene"
 )
 set_tests_properties(

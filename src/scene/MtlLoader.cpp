@@ -123,7 +123,7 @@ std::vector<MtlMaterial> RayTracer::loadMtl(const std::string &path)
             current->opacity = std::clamp(parseFloat(stream, path, lineNumber, "d"), 0.0f, 1.0f);
         else if (tag == "Tr")
             current->opacity = std::clamp(1.0f - parseFloat(stream, path, lineNumber, "Tr"), 0.0f, 1.0f);
-        else if (tag == "map_Kd")
+        else if (tag == "map_Kd" || tag == "map_Ks" || tag == "map_Ke")
         {
             std::string mapPath;
 
@@ -131,11 +131,19 @@ std::vector<MtlMaterial> RayTracer::loadMtl(const std::string &path)
             mapPath = trim(mapPath);
 
             if (mapPath.empty())
-                fail(path, lineNumber, "empty map_Kd path");
+                fail(path, lineNumber, "empty " + tag + " path");
             if (mapPath.front() == '-')
-                fail(path, lineNumber, "map_Kd options are not supported");
+                fail(path, lineNumber, tag + " options are not supported");
 
-            current->diffuseMap = (mtlPath.parent_path() / std::filesystem::path(mapPath)).lexically_normal().string();
+            const std::string resolved =
+                (mtlPath.parent_path() / std::filesystem::path(mapPath)).lexically_normal().string();
+
+            if (tag == "map_Kd")
+                current->diffuseMap = resolved;
+            else if (tag == "map_Ks")
+                current->specularMap = resolved;
+            else
+                current->emissionMap = resolved;
         }
     }
 

@@ -239,3 +239,13 @@ void Scene::setBackground(const Background &background)
 {
     _background = background;
 }
+
+const Atmosphere &Scene::getAtmosphere(void) const
+{
+    return _atmosphere;
+}
+
+void Scene::setAtmosphere(const Atmosphere &atmosphere)
+{
+    _atmosphere = atmosphere;
+}

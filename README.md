@@ -48,6 +48,9 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
   CUDA.
 - **Primitives** — spheres, planes, cylinders, cones, boxes, disks/rings, OBJ
   meshes and deterministic prefab scatter.
+- **Atmosphere** — homogeneous fog and exponential height fog with
+  Henyey-Greenstein scattering, transmittance-attenuated lights and
+  environment lighting, and CPU/CUDA parity.
 - **OBJ materials** — `usemtl` face groups mapped to scene materials, automatic
   `mtllib`/MTL import with `Kd`/`Ka`/`Ks`/`Ns` and `map_Kd`, plus a per-mesh
   fallback for unmapped groups.
@@ -58,7 +61,7 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
   with matching CPU/CUDA kernels, applied before exposure and tonemapping.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 37 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, material maps, boxes/disks, prefab scatter, environment lighting, group transforms, a five-scene hero pack and 8K renders.
+- **Included scenes** — 41 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, material maps, boxes/disks, prefab scatter, environment lighting, group transforms, a five-scene hero pack and 8K renders.
 
 ## Screenshots
 
@@ -429,9 +432,13 @@ architecture and CUDA build details.
 | `material_maps.cfg` | Roughness, normal and emission maps on metal, stone and an emissive sign. |
 | `primitives_extra.cfg` | Axis-aligned boxes and metal/glass disks/rings. |
 | `scatter_field.cfg` | 180 deterministically scattered emissive spores. |
+| `misty_shrine.cfg` | Torii gate and lanterns in low exponential height fog. |
+| `volumetric_cathedral.cfg` | Strong god rays through a foggy cathedral nave. |
+| `lagoon_mist.cfg` | Glowing blooms and reflections under thin water haze. |
 | `obj_materials.cfg` | A multi-material OBJ cube with `usemtl` groups and a fallback. |
 | `environment.cfg` | An equirectangular sky used for reflections and IBL. |
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face. |
+| `mtl_maps.cfg` | MTL `map_Ks` roughness and `map_Ke` emission import. |
 | `group_transform.cfg` | A nested scene of spheres and a point light transformed as a group. |
 | `prefabs.cfg` | One lamp prefab instantiated three times with different transforms. |
 

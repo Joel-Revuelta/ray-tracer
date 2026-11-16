@@ -93,6 +93,24 @@ struct Material
     int emissionTextureIndex;
 };
 
+enum AtmosphereKind
+{
+    ATMOSPHERE_NONE = 0,
+    ATMOSPHERE_HOMOGENEOUS = 1,
+    ATMOSPHERE_HEIGHT = 2
+};
+
+struct Atmosphere
+{
+    int type;
+    Vec3 color;
+    float density;
+    float anisotropy;
+    float groundY;
+    float heightFalloff;
+    float maxDistance;
+};
+
 struct Light
 {
     int type;
@@ -167,6 +185,7 @@ struct Triangle
     Vec3 n0;
     Vec3 n1;
     Vec3 n2;
+    Vec3 tangent;
     float tu0;
     float tv0;
     float tu1;
@@ -223,6 +242,7 @@ struct SceneView
     int meshMaterialMapCount;
     Camera camera;
     Background background;
+    Atmosphere atmosphere;
     PostProcess postProcess;
     unsigned int seed;
 };

@@ -27,6 +27,7 @@ class HitPayload
     void setMaterialIndex(const int &materialIndex);
     void setHitNormal(const Vec3D &_sceneNormal);
     void setShadingNormal(const Vec3D &shadingNormal);
+    void setShadingTangent(const Vec3D &shadingTangent);
     void setHitDistance(const float &_sceneDistance);
     void setHitPosition(const Point3D &_scenePosition);
     void setUV(const float &u, const float &v);
@@ -35,6 +36,7 @@ class HitPayload
     int getMaterialIndex(void) const;
     Vec3D getHitNormal(void) const;
     Vec3D getShadingNormal(void) const;
+    Vec3D getShadingTangent(void) const;
     float getHitDistance(void) const;
     Point3D getHitPosition(void) const;
     float getU(void) const;
@@ -54,6 +56,9 @@ class HitPayload
     // The normal used for shading. Defaults to the geometric normal, but
     // smooth meshes can provide an interpolated normal.
     Vec3D _shadingNormal;
+
+    // Tangent aligned with the local U direction, used by normal maps.
+    Vec3D _shadingTangent;
 
     // The distance from the ray origin to the hit point.
     float _hitDistance;

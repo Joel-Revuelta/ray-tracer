@@ -7,6 +7,7 @@
 
 #include "Plane.hpp"
 #include "Vec3D.hpp"
+#include "render/Tangent.hpp"
 #include <iostream>
 
 using namespace RayTracer;
@@ -57,6 +58,7 @@ bool Plane::hit(const Ray &ray, HitPayload &payload, size_t i) const
         Vec3D adjustedNormal = denominator > 0 ? -getNormal() : getNormal();
         payload.setHitNormal(adjustedNormal);
         payload.setUV(hitPosition.getX(), hitPosition.getZ());
+        payload.setShadingTangent(orthonormalizeTangent(Vec3D(1.0f, 0.0f, 0.0f), payload.getShadingNormal()));
         payload.setMaterialIndex(-1);
         payload.setHitIndex(i);
         return true;

@@ -22,6 +22,12 @@ SceneBuilder::~SceneBuilder(void)
 {
 }
 
+void SceneBuilder::setAtmosphere(const Atmosphere &atmosphere)
+{
+    ensureScene();
+    _scene->setAtmosphere(atmosphere);
+}
+
 void SceneBuilder::ensureScene(void)
 {
     if (!_scene)

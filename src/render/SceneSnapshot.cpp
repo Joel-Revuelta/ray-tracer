@@ -56,6 +56,7 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
 
     snapshot.camera = makeCameraData(camera);
     snapshot.background = scene.getBackground();
+    snapshot.atmosphere = scene.getAtmosphere();
 
     std::unordered_map<const Texture *, int> textureIndices;
 

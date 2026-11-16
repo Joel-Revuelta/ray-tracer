@@ -36,6 +36,7 @@ class SceneBuilder
     void addScene(std::shared_ptr<Scene> sceneToAdd, const TransformPose &pose = TransformPose{},
                   const std::string &instanceId = {});
     void setBackground(const Background &background);
+    void setAtmosphere(const Atmosphere &atmosphere);
 
     std::size_t getMaterialCount(void) const;
 

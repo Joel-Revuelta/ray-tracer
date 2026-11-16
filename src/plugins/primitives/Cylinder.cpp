@@ -7,6 +7,7 @@
 
 #include "Cylinder.hpp"
 #include "Utils.hpp"
+#include "render/Tangent.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -180,6 +181,9 @@ bool Cylinder::hit(const Ray &ray, HitPayload &payload, size_t i) const
     const float v = std::clamp(heightAtHit / static_cast<float>(_height), 0.0f, 1.0f);
 
     payload.setUV(u, v);
+    const Vec3D tangent = orthonormalizeTangent(vec3DCross(radial, axis), payload.getShadingNormal());
+
+    payload.setShadingTangent(tangent);
     payload.setMaterialIndex(-1);
     payload.setHitIndex(i);
     return true;

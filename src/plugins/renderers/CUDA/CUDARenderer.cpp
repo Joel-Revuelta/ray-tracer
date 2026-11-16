@@ -62,6 +62,10 @@ static_assert(static_cast<int>(PrimitiveType::CONE) == Cuda::PRIMITIVE_CONE, "pr
 static_assert(static_cast<int>(PrimitiveType::MESH) == Cuda::PRIMITIVE_MESH, "primitive enum mismatch");
 static_assert(static_cast<int>(PrimitiveType::BOX) == Cuda::PRIMITIVE_BOX, "primitive enum mismatch");
 static_assert(static_cast<int>(PrimitiveType::DISK) == Cuda::PRIMITIVE_DISK, "primitive enum mismatch");
+static_assert(static_cast<int>(AtmosphereType::NONE) == Cuda::ATMOSPHERE_NONE, "atmosphere enum mismatch");
+static_assert(static_cast<int>(AtmosphereType::HOMOGENEOUS) == Cuda::ATMOSPHERE_HOMOGENEOUS,
+              "atmosphere enum mismatch");
+static_assert(static_cast<int>(AtmosphereType::HEIGHT) == Cuda::ATMOSPHERE_HEIGHT, "atmosphere enum mismatch");
 static_assert(static_cast<int>(IMaterial::DIFFUSE) == Cuda::MATERIAL_DIFFUSE, "material enum mismatch");
 static_assert(static_cast<int>(IMaterial::FLAT_COLOR) == Cuda::MATERIAL_FLAT_COLOR, "material enum mismatch");
 static_assert(static_cast<int>(IMaterial::EMISSIVE) == Cuda::MATERIAL_EMISSIVE, "material enum mismatch");
@@ -161,6 +165,32 @@ Cuda::PostProcess toDevice(const PostProcessSettings &settings)
     for (std::size_t i = 0; i < weights.size(); ++i)
         result.bloomWeights[i] = weights[i];
     return result;
+}
+
+Cuda::Atmosphere toDeviceAtmosphere(const Atmosphere &atmosphere)
+{
+    Cuda::Atmosphere converted{};
+
+    switch (atmosphere.type)
+    {
+    case AtmosphereType::HOMOGENEOUS:
+        converted.type = Cuda::ATMOSPHERE_HOMOGENEOUS;
+        break;
+    case AtmosphereType::HEIGHT:
+        converted.type = Cuda::ATMOSPHERE_HEIGHT;
+        break;
+    default:
+        converted.type = Cuda::ATMOSPHERE_NONE;
+        break;
+    }
+
+    converted.color = toDevice(atmosphere.color);
+    converted.density = atmosphere.density;
+    converted.anisotropy = atmosphere.anisotropy;
+    converted.groundY = atmosphere.groundY;
+    converted.heightFalloff = atmosphere.heightFalloff;
+    converted.maxDistance = atmosphere.maxDistance;
+    return converted;
 }
 
 Cuda::Background toDeviceBackground(const Background &background)
@@ -393,9 +423,9 @@ HostMeshes convertMeshes(const SceneSnapshot &snapshot)
             for (const Triangle &triangle : asset->triangles)
                 meshes.triangles.push_back(
                     Cuda::Triangle{toDevice(triangle.v0), toDevice(triangle.v1), toDevice(triangle.v2),
-                                   toDevice(triangle.n0), toDevice(triangle.n1), toDevice(triangle.n2), triangle.tu0,
-                                   triangle.tv0, triangle.tu1, triangle.tv1, triangle.tu2, triangle.tv2,
-                                   triangle.materialGroup});
+                                   toDevice(triangle.n0), toDevice(triangle.n1), toDevice(triangle.n2),
+                                   toDevice(triangle.tangent), triangle.tu0, triangle.tv0, triangle.tu1,
+                                   triangle.tv1, triangle.tu2, triangle.tv2, triangle.materialGroup});
 
             for (const BVHNode &source : asset->bvh.nodes)
             {
@@ -499,6 +529,7 @@ class CudaRenderSession
         _view.background.environmentWidth = _environment.width;
         _view.background.environmentHeight = _environment.height;
         _view.background.environmentTotal = _environment.total;
+        _view.atmosphere = toDeviceAtmosphere(snapshot.atmosphere);
         _view.postProcess = toDevice(postProcess);
         _view.seed = seed;
 

@@ -13,6 +13,7 @@
 #include "InstancePrimitive.hpp"
 #include "Light.hpp"
 #include "Primitive.hpp"
+#include "Atmosphere.hpp"
 #include "Background.hpp"
 #include "BVH.hpp"
 #include <cstddef>
@@ -54,6 +55,8 @@ class Scene : public IPrimitive
     const Primitives &getPrimitives(void) const;
     const Background &getBackground(void) const;
     void setBackground(const Background &background);
+    const Atmosphere &getAtmosphere(void) const;
+    void setAtmosphere(const Atmosphere &atmosphere);
     const std::unordered_map<std::string, InstanceGroup> &getInstanceGroups(void) const;
     const InstanceGroup *findInstanceGroup(const std::string &id) const;
     const std::unordered_map<std::string, std::shared_ptr<ILight>> &getLightsById(void) const;
@@ -72,6 +75,7 @@ class Scene : public IPrimitive
     std::unordered_map<std::string, InstanceGroup> _instanceGroups;
     std::unordered_map<std::string, std::shared_ptr<ILight>> _lightsById;
     Background _background;
+    Atmosphere _atmosphere;
     std::vector<BVHNode> _bvhNodes;
     std::vector<std::uint32_t> _bvhIndices;
     std::vector<std::uint32_t> _unboundedPrimitives;

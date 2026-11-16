@@ -15,6 +15,7 @@
 #include "Transformable.hpp"
 #include "plugins/renderers/LightData.hpp"
 #include <cstdint>
+#include <limits>
 #include <memory>
 
 namespace RayTracer
@@ -33,6 +34,9 @@ struct LightSample
 {
     Vec3D direction;
     Color3D radiance;
+    // World-space distance to the sampled light, or infinity for directional
+    // lights. Medium transmittance uses it to attenuate shadow connections.
+    float distance = std::numeric_limits<float>::infinity();
     bool valid = false;
 };
 
@@ -76,6 +80,15 @@ class ILight : public ITransformable
     // a zero vector because they have no direction.
     virtual Vec3D getLightDirection(const HitPayload &payload) const = 0;
 
+    // Distance to the light for medium transmittance. The default covers
+    // directional and ambient lights, whose contribution is clipped to the
+    // atmosphere's maxDistance.
+    virtual float getDistance(const HitPayload &payload) const
+    {
+        (void)payload;
+        return std::numeric_limits<float>::infinity();
+    }
+
     // Samples one connection to the light, including visibility. The default
     // implementation keeps point, directional and ambient lights unchanged and
     // consumes no random values. Area lights override it.
@@ -90,8 +103,26 @@ class ILight : public ITransformable
 
         result.direction = getLightDirection(payload);
         result.radiance = getRadiance(payload);
+        result.distance = getDistance(payload);
         result.valid = true;
         return result;
+    }
+
+    /**
+     * Samples a connection from a point inside a participating medium. The
+     * synthetic payload faces the light so surface hemisphere checks do not
+     * reject physically valid in-scattering directions.
+     */
+    virtual LightSample sampleMedium(const Vec3D &position, const Scene &scene, uint32_t &seed) const
+    {
+        HitPayload payload;
+
+        payload.setHitPosition(position);
+
+        const Vec3D direction = getLightDirection(payload);
+
+        payload.setHitNormal(direction.lengthSquared() > 1e-12f ? direction : Vec3D(0.0f, 1.0f, 0.0f));
+        return sample(payload, scene, seed);
     }
 
     virtual bool isAmbient(void) const

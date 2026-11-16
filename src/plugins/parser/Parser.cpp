@@ -217,6 +217,8 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
         parseLights(sceneBuilder, _config.lookup("lights"));
         if (_config.exists("background"))
             sceneBuilder.setBackground(parseBackground(_config.lookup("background")));
+        if (_config.exists("atmosphere"))
+            sceneBuilder.setAtmosphere(parseAtmosphere(_config.lookup("atmosphere")));
 
         std::shared_ptr<Scene> scene = sceneBuilder.build();
 
@@ -910,15 +912,19 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
             {
                 TransformPose pose;
 
-                pose.translation = Vec3D(sample(areaMin.getX(), areaMax.getX()),
-                                         sample(areaMin.getY(), areaMax.getY()),
-                                         sample(areaMin.getZ(), areaMax.getZ()));
-                pose.rotation = Vec3D(sample(rotationMin.getX(), rotationMax.getX()),
-                                      sample(rotationMin.getY(), rotationMax.getY()),
-                                      sample(rotationMin.getZ(), rotationMax.getZ()));
-
+                // Sequence the samples explicitly: function argument evaluation
+                // order is unspecified and would make scatter layout
+                // compiler-dependent.
+                const float translationX = sample(areaMin.getX(), areaMax.getX());
+                const float translationY = sample(areaMin.getY(), areaMax.getY());
+                const float translationZ = sample(areaMin.getZ(), areaMax.getZ());
+                const float rotationX = sample(rotationMin.getX(), rotationMax.getX());
+                const float rotationY = sample(rotationMin.getY(), rotationMax.getY());
+                const float rotationZ = sample(rotationMin.getZ(), rotationMax.getZ());
                 const float scale = sample(scaleMin, scaleMax);
 
+                pose.translation = Vec3D(translationX, translationY, translationZ);
+                pose.rotation = Vec3D(rotationX, rotationY, rotationZ);
                 pose.scale = Vec3D(scale);
                 sceneBuilder.addScene(prefab->second, pose);
             }
@@ -1276,6 +1282,27 @@ std::shared_ptr<IPrimitive> Parser::parseMesh(SceneBuilder &sceneBuilder, libcon
 
                 if (!mtl.diffuseMap.empty())
                     material->setTexture(loadTexture(mtl.diffuseMap));
+                if (!mtl.specularMap.empty())
+                    material->setRoughnessTexture(loadTexture(mtl.specularMap, true));
+
+                const bool hasEmission = luminance(mtl.emission) > 0.0f;
+
+                if (hasEmission)
+                {
+                    material->setEmissionColor(mtl.emission);
+                    material->setEmissionPower(1.0f);
+                }
+                if (!mtl.emissionMap.empty())
+                {
+                    // MTL Ke and map_Ke are conventionally additive. When no
+                    // scalar Ke is present, let a white emitter drive the map.
+                    if (!hasEmission)
+                    {
+                        material->setEmissionColor(Color3D(1.0f, 1.0f, 1.0f));
+                        material->setEmissionPower(1.0f);
+                    }
+                    material->setEmissionTexture(loadTexture(mtl.emissionMap));
+                }
 
                 sceneBuilder.addMaterial(material);
                 materialIndex = _materialCount++;
@@ -1461,6 +1488,73 @@ Background Parser::parseBackground(const libconfig::Setting &backgroundSetting)
     }
 
     return background;
+}
+
+Atmosphere Parser::parseAtmosphere(const libconfig::Setting &atmosphereSetting)
+{
+    Atmosphere atmosphere;
+
+    if (!atmosphereSetting.exists("type"))
+        throw std::runtime_error("Atmosphere requires a type");
+
+    const std::string type = atmosphereSetting.lookup("type");
+
+    if (type == "homogeneous")
+        atmosphere.type = AtmosphereType::HOMOGENEOUS;
+    else if (type == "height")
+        atmosphere.type = AtmosphereType::HEIGHT;
+    else
+        throw std::runtime_error("Unknown atmosphere type: " + type);
+
+    const double density = settingAsDouble(atmosphereSetting.lookup("density"), "Atmosphere density");
+
+    requireNonNegative(density, "Atmosphere density");
+    atmosphere.density = static_cast<float>(density);
+
+    if (atmosphereSetting.exists("color"))
+        atmosphere.color = parseColor(atmosphereSetting.lookup("color"));
+
+    const float components[3] = {atmosphere.color.getX(), atmosphere.color.getY(), atmosphere.color.getZ()};
+
+    for (const float component : components)
+        requireRange(component, 0.0, 1.0, "Atmosphere color component");
+
+    if (atmosphereSetting.exists("anisotropy"))
+    {
+        const double anisotropy =
+            settingAsDouble(atmosphereSetting.lookup("anisotropy"), "Atmosphere anisotropy");
+
+        requireFinite(anisotropy, "Atmosphere anisotropy");
+        if (anisotropy <= -1.0 || anisotropy >= 1.0)
+            throw std::runtime_error("Atmosphere anisotropy must be strictly between -1 and 1");
+        atmosphere.anisotropy = static_cast<float>(anisotropy);
+    }
+
+    if (atmosphereSetting.exists("maxDistance"))
+    {
+        const double maxDistance =
+            settingAsDouble(atmosphereSetting.lookup("maxDistance"), "Atmosphere max distance");
+
+        requirePositive(maxDistance, "Atmosphere max distance");
+        atmosphere.maxDistance = static_cast<float>(maxDistance);
+    }
+
+    if (atmosphere.type == AtmosphereType::HEIGHT)
+    {
+        if (!atmosphereSetting.exists("groundY"))
+            throw std::runtime_error("Height fog requires groundY");
+
+        const double groundY = settingAsDouble(atmosphereSetting.lookup("groundY"), "Height fog ground");
+        const double falloff =
+            settingAsDouble(atmosphereSetting.lookup("heightFalloff"), "Height fog falloff");
+
+        requireFinite(groundY, "Height fog ground");
+        requirePositive(falloff, "Height fog falloff");
+        atmosphere.groundY = static_cast<float>(groundY);
+        atmosphere.heightFalloff = static_cast<float>(falloff);
+    }
+
+    return atmosphere;
 }
 
 std::shared_ptr<Camera> Parser::getParsedCamera(void) const

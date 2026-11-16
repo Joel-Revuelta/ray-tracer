@@ -6,6 +6,7 @@
 */
 
 #include "MeshPrimitive.hpp"
+#include "render/Tangent.hpp"
 #include <cmath>
 #include <utility>
 
@@ -94,6 +95,8 @@ bool MeshPrimitive::hitTriangle(const Triangle &triangle, const Ray &ray, HitPay
     payload.setHitPosition(ray.at(distance));
     payload.setHitNormal(vec3DNormalize(geometricNormal));
     payload.setShadingNormal(vec3DNormalize(shadingNormal));
+    payload.setShadingTangent(
+        orthonormalizeTangent(triangle.tangent, payload.getShadingNormal()));
     payload.setUV(textureU, textureV);
     payload.setMaterialIndex(materialIndex);
     payload.setHitIndex(static_cast<int>(i));

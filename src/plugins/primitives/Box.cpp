@@ -6,6 +6,7 @@
 */
 
 #include "Box.hpp"
+#include "render/Tangent.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -128,6 +129,10 @@ bool Box::hit(const Ray &ray, HitPayload &payload, size_t i) const
     }
 
     payload.setUV(std::clamp(u, 0.0f, 1.0f), std::clamp(v, 0.0f, 1.0f));
+
+    const Vec3D tangent = nearAxis == 0 ? Vec3D(0.0f, 1.0f, 0.0f) : Vec3D(1.0f, 0.0f, 0.0f);
+
+    payload.setShadingTangent(orthonormalizeTangent(tangent, payload.getShadingNormal()));
     return true;
 }
 

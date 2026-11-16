@@ -28,6 +28,7 @@ struct Triangle
     Vec3D n0;
     Vec3D n1;
     Vec3D n2;
+    Vec3D tangent;
     float tu0 = 0.0f;
     float tv0 = 0.0f;
     float tu1 = 0.0f;
