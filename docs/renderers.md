@@ -183,6 +183,8 @@ uses the same `SceneSnapshot` data path.
   - `include/plugins/renderers/CUDA/CudaScene.hpp`
   - `include/plugins/renderers/CUDA/CudaKernels.hpp`
   - `src/plugins/renderers/CUDA/CUDARenderer.cpp`
+  - `src/plugins/renderers/CUDA/CudaCommon.cuh`
+  - `src/plugins/renderers/CUDA/CudaIntersections.cuh`
   - `src/plugins/renderers/CUDA/Kernels.cu`
 - **Build:** CMake detects the toolkit with `find_package(CUDAToolkit QUIET)`.
   The target is built when CUDA is available and can be disabled with
@@ -332,9 +334,10 @@ black.
 Both renderers play the same `CameraAnimation` timeline and share the per-frame
 seed formula `seed + frame * 0x9e3779b9u`.
 
-- The CPU renderer creates a fresh `Renderer` per subframe with the interpolated
-  camera and reads its linear HDR average. Animated instances rebuild the scene
-  BVH on the first subframe of each frame and refit bounds for later subframes.
+- The CPU renderer reuses one `Renderer` and worker pool, updating the
+  interpolated camera and seed before each subframe and reading its linear HDR
+  average. Animated instances rebuild the scene BVH on the first subframe of
+  each frame and refit bounds for later subframes.
 - The CUDA renderer keeps one `CudaRenderSession` alive and updates the scene,
   lights, camera and seed between subframes. Device memory for meshes and
   textures is allocated once; BVH nodes and primitive data are updated in

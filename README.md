@@ -192,6 +192,11 @@ The installer puts the executable and core library in `bin/`, plugins in
 `bin/plugins/`, and scenes in `share/raytracer/scenes/`. Plugin lookup also
 honours `RAYTRACER_PLUGIN_DIR` and searches next to the executable.
 
+The installed CMake package is versioned and can be consumed with
+`find_package(raytracer 1.0 CONFIG REQUIRED)` and
+`RayTracer::raytracer_core`. `tests/package_consumer.sh` installs to a
+temporary prefix and builds a downstream consumer as a release check.
+
 CUDA is detected automatically:
 
 ```bash

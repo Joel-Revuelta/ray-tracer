@@ -34,6 +34,7 @@ UPDATE_GOLDEN=1 bash tests/golden_images.sh ./raytracer . build
 Review the resulting PPM changes before keeping them. The normal golden test is `ctest --test-dir build -L golden`.
 
 - Parser robustness: `bash tests/parser_fuzz_smoke.sh ./raytracer . build` and `bash tests/malformed_scene_corpus.sh ./raytracer . build`.
+- Package/consumer check: `bash tests/package_consumer.sh . build /tmp/raytracer-install` (requires a built tree).
 
 ## CLI and scene gotchas
 

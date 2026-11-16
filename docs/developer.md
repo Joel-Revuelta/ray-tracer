@@ -535,10 +535,9 @@ times outside their timelines.
 
 Sequence rendering keeps still rendering untouched:
 
-- **CPU** constructs a `Renderer` per subframe and calls `renderHDR()` to get
-  the linear HDR average without per-subframe bloom or file output. Subframes
-  are averaged into one frame buffer, post-processed once, and written
-  atomically.
+- **CPU** reuses one `Renderer` and worker pool across frames and subframes,
+  updating the camera and seed before each `renderHDR()` call. Subframes are
+  averaged into one frame buffer, post-processed once, and written atomically.
 - **CUDA** builds the `SceneSnapshot` and `CudaRenderSession` once from the
   first rendered frame. Every rendered subframe calls
   `updateCamera(makeCameraData(camera))` (which clears accumulation) and
@@ -597,8 +596,10 @@ tracks alongside the camera timeline.
 - Still renders never call `SceneAnimation::apply`.
 - Named instances/lights are not preserved by nested-scene composition; such
   compositions are rejected instead of silently dropping animation targets.
-- Lights cloned from a prefab do not follow instance animation; animate a
-  top-level light alongside the instance if needed.
+- Lights cloned from a prefab follow instance animation. `SceneBuilder` keeps
+  an untransformed prototype per instance group, and `SceneAnimation` rebuilds
+  the active light from that prototype whenever the instance transform changes,
+  so repeated frames do not accumulate transforms.
 
 ### Video output
 
@@ -660,7 +661,7 @@ penumbrae.
 
 `Atmosphere` is stored on `Scene`, copied into `SceneSnapshot` and uploaded as
 `Cuda::Atmosphere`. `include/render/AtmosphereSampling.hpp` holds the CPU
-reference implementation; `Kernels.cu` mirrors the same formulas.
+reference implementation; `CudaCommon.cuh` holds the matching device helpers.
 
 - Optical depth is analytic. Homogeneous media use `density * distance`;
   exponential height fog uses

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(raytracer)
+project(raytracer VERSION 1.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -1375,7 +1375,12 @@ configure_package_config_file(
     ${CMAKE_SOURCE_DIR}/cmake/raytracerConfig.cmake.in
     ${CMAKE_BINARY_DIR}/raytracerConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/cmake/raytracer)
+write_basic_package_version_file(
+    ${CMAKE_BINARY_DIR}/raytracerConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
 install(FILES ${CMAKE_BINARY_DIR}/raytracerConfig.cmake
+              ${CMAKE_BINARY_DIR}/raytracerConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_DATADIR}/cmake/raytracer)
 set_target_properties(raytracer raytracer_core PROPERTIES INSTALL_RPATH "$ORIGIN")
 set_target_properties(${RAYTRACER_PLUGIN_TARGETS} PROPERTIES INSTALL_RPATH "$ORIGIN/..")

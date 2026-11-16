@@ -71,6 +71,31 @@ jobs:
           path: build/Testing
           if-no-files-found: ignore
 
+  package-consumer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libconfig++-dev
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DRAYTRACER_ENABLE_GUI=OFF \
+            -DRAYTRACER_ENABLE_CUDA=OFF \
+            -DRAYTRACER_IN_SOURCE_OUTPUT=OFF
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Install and build a downstream consumer
+        run: bash tests/package_consumer.sh . build "$RUNNER_TEMP/raytracer-install"
+
   sanitizers:
     runs-on: ubuntu-latest
 
