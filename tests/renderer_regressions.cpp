@@ -19,6 +19,7 @@
 #include "render/Environment.hpp"
 #include "plugins/renderers/PPM.hpp"
 #include "render/ImageWriter.hpp"
+#include "render/SamplingMath.hpp"
 #include "render/SceneAnimation.hpp"
 #include "render/TemporaryPath.hpp"
 #include "render/Texture.hpp"
@@ -312,6 +313,25 @@ int checkPPMReader(void)
     }
 
     std::filesystem::remove(truncatedPath);
+    return 0;
+}
+
+int checkSamplingMath(void)
+{
+    if (!closeTo(clamp01Sampling(-1.0f), 0.0f) || !closeTo(clamp01Sampling(2.0f), 1.0f) ||
+        !closeTo(clamp01Sampling(0.25f), 0.25f))
+        return fail("shared clamp01 sampling helper is wrong");
+    if (!closeTo(smithGGXSampling(1.0f, 1.0f), 1.0f))
+        return fail("shared Smith-GGX helper is wrong");
+    if (!closeTo(schlickFactorSampling(1.0f), 0.0f) || !closeTo(schlickFactorSampling(0.0f), 1.0f))
+        return fail("shared Schlick factor helper is wrong");
+    if (!closeTo(blinnShininessSampling(0.0f), 64.0f) || !closeTo(blinnShininessSampling(1.0f), 1.0f))
+        return fail("shared Blinn shininess helper is wrong");
+    if (!closeTo(henyeyGreensteinPhaseSampling(1.0f, 0.0f), 1.0f / (4.0f * 3.14159265358979323846f), 1e-6f))
+        return fail("shared Henyey-Greenstein helper is wrong");
+    if (!closeTo(powerHeuristicSampling(1.0f, 2.0f), 0.2f) ||
+        !closeTo(powerHeuristicSampling(0.0f, 0.0f), 0.0f))
+        return fail("shared power-heuristic helper is wrong");
     return 0;
 }
 
@@ -1035,6 +1055,8 @@ int main(int ac, char **av)
     if (const int status = checkConcaveMesh(); status != 0)
         return status;
     if (const int status = checkPPMReader(); status != 0)
+        return status;
+    if (const int status = checkSamplingMath(); status != 0)
         return status;
     if (const int status = checkDielectricStack(); status != 0)
         return status;

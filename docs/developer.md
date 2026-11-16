@@ -88,12 +88,12 @@ are otherwise platform-neutral.
 | `src/App.cpp` | CLI parsing, scene/camera setup, renderer selection. |
 | `src/Camera.cpp` | Camera basis, viewport and pixel ray setup. |
 | `src/scene/` | `Scene` and `SceneBuilder`. |
-| `src/plugins/parser/` | libconfig scene parser. |
+| `src/plugins/parser/` | libconfig scene parser, split into orchestration, values, geometry, materials/mesh, lights and animation modules. |
 | `src/plugins/primitives/` | Sphere, plane, cylinder, cone + exported `create` functions. |
 | `src/plugins/materials/` | Diffuse, metallic, emissive, flat and custom materials. |
 | `src/plugins/lights/` | Ambient, directional and point lights. |
-| `src/plugins/renderers/CPU/` | CPU renderer plugin. |
-| `src/plugins/renderers/CUDA/` | CUDA host plugin and device kernels. |
+| `src/plugins/renderers/CPU/` | CPU renderer plugin: lifecycle/output in `Renderer.cpp`, sampling/shading in `RendererSampling.cpp`. |
+| `src/plugins/renderers/CUDA/` | CUDA host plugin, shared device math/intersections headers and integrator kernels. |
 | `src/plugins/GUI/` | SFML 3 and GLFW/OpenGL GUI plugins. |
 | `src/render/` | Renderer registry, animation timeline, PPM/PNG/video writers, camera controller, scene snapshot. |
 | `include/plugins/renderers/` | Renderer interface, snapshot data, registry, PPM and camera controller headers. |
@@ -742,6 +742,33 @@ Use the existing sphere/plane/cylinder/cone implementations as references.
 5. Add the backend name to `App::normalizeGuiName()` and the CLI docs.
 6. Upload rendered RGBA frames through `setImage()`; keep `getEvent()` mapping
    compatible with `CameraController`.
+
+## Module boundaries
+
+The parser is deliberately split by responsibility: `Parser.cpp` handles
+lifecycle, values and shared settings; `ParserAnimation.cpp` handles camera and
+scene timelines; `ParserGeometry.cpp` handles primitives/scenes/prefabs;
+`ParserMaterials.cpp` handles MTL import and meshes; and `ParserLights.cpp`
+handles light construction. Shared validation helpers and RAII guards live in
+`ParserInternal.hpp/.cpp` so the parser translation units do not duplicate
+them.
+
+The CPU renderer keeps lifecycle, GUI handling and output in `Renderer.cpp` and
+sampling/shading in `RendererSampling.cpp`. CUDA device code is split into
+`CudaCommon.cuh` (math, random, atmosphere and BRDF helpers),
+`CudaIntersections.cuh` (primitive/BVH intersections) and `Kernels.cu` (light
+sampling, integrator, post-process and kernel entry points).
+
+Scalar sampling formulas shared by both renderers live in
+`include/render/SamplingMath.hpp`. Vector-valued BSDF and atmosphere sampling
+remain renderer-specific because the CPU uses `Vec3D` and the CUDA device code
+uses a POD `Vec3`; keep the formulas aligned and rely on the parity tests.
+
+`Point3D` and `Color3D` remain aliases of `Vec3D` by design: points,
+directions and colours share arithmetic and cross the plugin ABI, so distinct
+wrapper types would add conversion and operator boilerplate without preventing
+likely mistakes. Semantic intent is conveyed by parameter names and helper
+signatures; revisit this if units or colour spaces become part of the API.
 
 ## Coding conventions
 

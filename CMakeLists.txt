@@ -145,6 +145,7 @@ target_link_libraries(raytracer_abi_test PRIVATE raytracer_core)
 add_library(raytracer_renderer_cpu SHARED
     src/plugins/renderers/CPU/CPURenderer.cpp
     src/plugins/renderers/CPU/Renderer.cpp
+    src/plugins/renderers/CPU/RendererSampling.cpp
 )
 target_link_libraries(raytracer_renderer_cpu PRIVATE raytracer_core)
 

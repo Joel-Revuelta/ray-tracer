@@ -11,6 +11,7 @@
 #include "Color.hpp"
 #include "Utils.hpp"
 #include "Vec3D.hpp"
+#include "render/SamplingMath.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -21,27 +22,19 @@ constexpr float PI_F = 3.14159265358979323846f;
 
 inline float smithGGX(float ndot, float alpha)
 {
-    const float a2 = alpha * alpha;
-
-    return (2.0f * ndot) / (ndot + std::sqrt(a2 + (1.0f - a2) * ndot * ndot));
+    return smithGGXSampling(ndot, alpha);
 }
 
 inline Color3D fresnelSchlick(const Color3D &f0, float cosTheta)
 {
-    const float factor = std::pow(std::clamp(1.0f - cosTheta, 0.0f, 1.0f), 5.0f);
+    const float factor = schlickFactorSampling(cosTheta);
 
     return f0 + (Color3D(1.0f, 1.0f, 1.0f) - f0) * factor;
 }
 
 inline float blinnShininess(float roughness)
 {
-    if (roughness <= 1e-3f)
-        return 64.0f;
-
-    const float alpha = std::max(roughness, 1e-3f);
-    const float exponent = 2.0f / (alpha * alpha * alpha * alpha) - 2.0f;
-
-    return std::clamp(exponent, 1.0f, 4096.0f);
+    return blinnShininessSampling(roughness);
 }
 
 inline Vec3D sampleGGXHalfVector(const Vec3D &normal, float roughness, uint32_t &seed)

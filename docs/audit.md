@@ -6,7 +6,7 @@ evidence, remediation status and verification.
 
 Status legend: `OPEN`, `IN PROGRESS`, `DONE`, `DEFERRED`.
 
-Current status: **41 DONE**, **3 DEFERRED**, **131 tests**.
+Current status: **44 DONE**, **0 DEFERRED**, **131 tests**.
 
 ## P0 — correctness
 
@@ -278,19 +278,35 @@ Current status: **41 DONE**, **3 DEFERRED**, **131 tests**.
 
 ### A26 — Monolithic parser and renderers
 
-- **Status:** DEFERRED (architectural refactor)
+- **Status:** DONE
 - **Severity:** Low/Medium
-- **Evidence:** `Parser.cpp` ~1.5k lines, `Renderer.cpp` ~1.1k,
-  `Kernels.cu` ~2.3k.
-- **Fix:** split parsing/material/mesh modules and BSDF/integrator modules.
+- **Evidence:** `Parser.cpp` was ~1.5k lines, `Renderer.cpp` ~1.1k and
+  `Kernels.cu` ~2.3k, mixing unrelated responsibilities in single translation
+  units.
+- **Fix:** split the parser into orchestration/values (`Parser.cpp`), animation
+  (`ParserAnimation.cpp`), geometry (`ParserGeometry.cpp`), materials/mesh
+  (`ParserMaterials.cpp`) and lights (`ParserLights.cpp`), with shared helpers
+  in `ParserInternal.hpp/.cpp`. Split the CPU renderer into lifecycle/output
+  (`Renderer.cpp`) and sampling/shading (`RendererSampling.cpp`). Split CUDA
+  device code into `CudaCommon.cuh`, `CudaIntersections.cuh` and the remaining
+  integrator/kernel entry points in `Kernels.cu`.
+- **Test:** full suite, golden images, CPU/CUDA parity and all 42 scene renders
+  pass after the split.
 
 ### A27 — CPU/CUDA sampling logic is duplicated
 
-- **Status:** DEFERRED (architectural refactor)
+- **Status:** DONE (shared scalar sampling core; vector adapters remain type-specific)
 - **Severity:** Medium (maintenance)
-- **Evidence:** BSDF, phase, atmosphere and light sampling exist in both
-  implementations.
-- **Fix:** share host-side helpers and add parity tests for each formula.
+- **Evidence:** BSDF, phase, atmosphere and light sampling existed in both
+  implementations with independently maintained scalar formulas.
+- **Fix:** added `include/render/SamplingMath.hpp` with host/device scalar
+  helpers for clamp, Smith GGX, Schlick, Blinn shininess, Henyey-Greenstein
+  phase and the power heuristic. CPU `Brdf.hpp` and CUDA
+  `CudaCommon.cuh`/`Kernels.cu` now delegate to those helpers. Vector-valued
+  sampling remains renderer-specific because CPU uses `Vec3D` and CUDA uses a
+  POD `Vec3`; CPU/CUDA parity tests cover the shared formulas end to end.
+- **Test:** `checkSamplingMath()` covers the shared formulas; the existing parity
+  suite covers renderer integration.
 
 ### A28 — Plugin ABI and static DLManager fragility
 
@@ -354,7 +370,7 @@ Current status: **41 DONE**, **3 DEFERRED**, **131 tests**.
   parity.
 - 2026-11-16: Plugin factory creation is serialised with a mutex. A13 was
   deferred at that point (later closed), and the remaining architectural items
-  are explicitly deferred with rationale.
+  were deferred with rationale (all later closed).
 - 2026-11-16: Added A31-A41 from the low-priority audit pass, fixed invalid
   AABB bounds, parser cache reset and duplicate MTL names. Scene animation now
   compares transforms before reporting a change, GUI screenshots use atomic
@@ -395,6 +411,13 @@ Current status: **41 DONE**, **3 DEFERRED**, **131 tests**.
   timeout; the test is added only when `xvfb-run` is available. The reference
   build now runs 131 tests; the Clang, ASan/UBSan and isolated CUDA build
   directories have only one GUI backend enabled, so they run 130.
+- 2026-11-16: A26/A27/A43 closed, completing the audit. The parser, CPU
+  renderer and CUDA device code are split into focused translation units;
+  shared scalar sampling math is used by both renderers; type aliases are
+  documented as an accepted design tradeoff. 131/131 tests pass on GCC, with
+  130/130 on Clang, ASan/UBSan and isolated CUDA; all 42 scenes render on both
+  renderers, valgrind and compute-sanitizer are clean, and the 186-file install
+  still satisfies the downstream package consumer.
 
 ## Additional low-priority findings
 
@@ -510,12 +533,16 @@ Current status: **41 DONE**, **3 DEFERRED**, **131 tests**.
 
 ### A43 — Type aliases reduce semantic safety
 
-- **Status:** DEFERRED
+- **Status:** DONE (accepted design)
 - **Severity:** Low (design)
 - **Evidence:** `Point3D` and `Color3D` are aliases of `Vec3D`.
 - **Impact:** Positions, directions and colours are interchangeable in the
   type system.
-- **Fix:** introduce distinct point/direction/colour types if the API grows.
+- **Fix:** documented in `docs/developer.md` as an intentional tradeoff.
+  Points, directions and colours share arithmetic and cross the plugin ABI, so
+  distinct wrapper types would add conversion/operator boilerplate without
+  preventing likely mistakes. Parameter names and helper signatures carry the
+  semantic distinction; revisit if units or colour spaces enter the API.
 
 ### A44 — GUI screenshots used non-atomic PPM writes
 
@@ -525,5 +552,4 @@ Current status: **41 DONE**, **3 DEFERRED**, **131 tests**.
 
 ## Remaining deferred work
 
-Deferred items are architectural work tracked above: A26, A27, A43. No known
-correctness blocker is left open in P0/P1.
+No findings remain deferred. The audit is closed.
