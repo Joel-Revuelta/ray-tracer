@@ -122,6 +122,28 @@ compare "${out_dir}/still-cpu.ppm" "${out_dir}/still-cuda.ppm" "still"
 compare "${out_dir}/anim-cpu-0003.ppm" "${out_dir}/anim-cuda-0003.ppm" "animation frame 3"
 compare "${out_dir}/blur-cpu-0003.ppm" "${out_dir}/blur-cuda-0003.ppm" "motion-blurred frame 3"
 
+for renderer in cpu cuda; do
+    if ! "${executable}" --path "${source_dir}/tests/scene_animation.cfg" --cli --renderer "${renderer}" \
+        --width 96 --height 54 --samples 16 --animation --start-frame 24 --end-frame 24 \
+        --output "${out_dir}/scene-${renderer}-%02d.ppm" >"${out_dir}/scene-${renderer}.log" 2>&1; then
+        cat "${out_dir}/scene-${renderer}.log" >&2
+        exit 1
+    fi
+done
+
+compare "${out_dir}/scene-cpu-24.ppm" "${out_dir}/scene-cuda-24.ppm" "scene animation frame 24"
+
+for renderer in cpu cuda; do
+    if ! "${executable}" --path "${source_dir}/tests/scene_light_animation.cfg" --cli --renderer "${renderer}" \
+        --width 96 --height 54 --samples 64 --animation --start-frame 24 --end-frame 24 \
+        --output "${out_dir}/light-${renderer}-%02d.ppm" >"${out_dir}/light-${renderer}.log" 2>&1; then
+        cat "${out_dir}/light-${renderer}.log" >&2
+        exit 1
+    fi
+done
+
+compare "${out_dir}/light-cpu-24.ppm" "${out_dir}/light-cuda-24.ppm" "light-only scene animation frame 24"
+
 # CUDA resume must initialize the session from the first missing frame and
 # leave existing frames untouched.
 resume_dir="${out_dir}/resume"
@@ -149,4 +171,22 @@ after="$(md5sum "${resume_dir}/f-12.ppm" | cut -d' ' -f1)"
 if [ "${before}" != "${after}" ] || [ ! -s "${resume_dir}/f-13.ppm" ]; then
     echo "CUDA resume did not preserve and complete the sequence" >&2
     exit 1
+fi
+
+# CUDA video streaming is optional when ffmpeg is not installed on the GPU host.
+ffmpeg_path="${RAYTRACER_FFMPEG:-$(command -v ffmpeg || true)}"
+
+if [ -n "$ffmpeg_path" ] && [ -x "$ffmpeg_path" ]; then
+    video="${out_dir}/cuda-video.mp4"
+
+    if ! "${executable}" --path "${source_dir}/scenes/brass_orrery.cfg" --cli --renderer cuda \
+        --width 32 --height 18 --samples 1 --animation --start-frame 12 --end-frame 13 \
+        --video "${video}" >"${out_dir}/cuda-video.log" 2>&1; then
+        cat "${out_dir}/cuda-video.log" >&2
+        exit 1
+    fi
+    if [ ! -s "${video}" ]; then
+        echo "CUDA video output is empty" >&2
+        exit 1
+    fi
 fi

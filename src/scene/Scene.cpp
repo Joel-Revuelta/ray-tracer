@@ -150,9 +150,57 @@ void Scene::addPrimitive(std::shared_ptr<IPrimitive> primitive)
     _primitives.push_back(primitive);
 }
 
+void Scene::addInstanceGroup(const std::string &id, const InstanceGroup &instances)
+{
+    if (id.empty())
+        throw std::invalid_argument("Instance group id must not be empty");
+    if (instances.empty())
+        throw std::invalid_argument("Instance group must contain at least one primitive");
+    if (_instanceGroups.find(id) != _instanceGroups.end())
+        throw std::runtime_error("Duplicate instance id: " + id);
+
+    _instanceGroups.emplace(id, instances);
+}
+
+void Scene::associateLight(const std::string &id, std::shared_ptr<ILight> light)
+{
+    if (id.empty())
+        throw std::invalid_argument("Light id must not be empty");
+    if (!light)
+        throw std::invalid_argument("Cannot associate a null light");
+    if (_lightsById.find(id) != _lightsById.end())
+        throw std::runtime_error("Duplicate light id: " + id);
+
+    _lightsById.emplace(id, std::move(light));
+}
+
 const Lights &Scene::getLights(void) const
 {
     return _lights;
+}
+
+const std::unordered_map<std::string, InstanceGroup> &Scene::getInstanceGroups(void) const
+{
+    return _instanceGroups;
+}
+
+const InstanceGroup *Scene::findInstanceGroup(const std::string &id) const
+{
+    const auto found = _instanceGroups.find(id);
+
+    return found == _instanceGroups.end() ? nullptr : &found->second;
+}
+
+const std::unordered_map<std::string, std::shared_ptr<ILight>> &Scene::getLightsById(void) const
+{
+    return _lightsById;
+}
+
+std::shared_ptr<ILight> Scene::findLight(const std::string &id) const
+{
+    const auto found = _lightsById.find(id);
+
+    return found == _lightsById.end() ? nullptr : found->second;
 }
 
 const Primitives &Scene::getPrimitives(void) const

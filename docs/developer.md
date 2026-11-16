@@ -86,7 +86,7 @@ can be run from anywhere.
 | `src/plugins/renderers/CPU/` | CPU renderer plugin. |
 | `src/plugins/renderers/CUDA/` | CUDA host plugin and device kernels. |
 | `src/plugins/GUI/` | SFML 3 and GLFW/OpenGL GUI plugins. |
-| `src/render/` | Renderer registry, animation timeline, PPM/PNG writer, camera controller, scene snapshot. |
+| `src/render/` | Renderer registry, animation timeline, PPM/PNG/video writers, camera controller, scene snapshot. |
 | `include/plugins/renderers/` | Renderer interface, snapshot data, registry, PPM and camera controller headers. |
 | `scenes/` | Scene files, render scripts and scene documentation. |
 | `screenshots/` | Generated renders and previews. |
@@ -371,6 +371,11 @@ struct RenderOptions
     bool resume;
     std::string scenePath;
     std::string rendererName;
+    std::string videoPath;
+    std::string videoCodec;
+    int videoCrf;
+    std::string videoPreset;
+    std::string videoBitrate;
 };
 
 struct RenderContext
@@ -378,6 +383,7 @@ struct RenderContext
     std::shared_ptr<Scene> scene;
     std::shared_ptr<Camera> camera;
     std::shared_ptr<CameraAnimation> animation;
+    std::shared_ptr<SceneAnimation> sceneAnimation;
     std::shared_ptr<IGUI> gui;
     RenderOptions options;
 };
@@ -519,8 +525,61 @@ Sequence rendering keeps still rendering untouched:
   [cli.md](cli.md#animation). `sequenceMetadataPath` derives its name from the
   output pattern.
 
-Animation is camera-only. Do not mutate primitives or lights between frames:
-that would invalidate the immutable scene snapshot and the CUDA BVH.
+### Scene animation
+
+`render/SceneAnimation` adds named prefab-instance transform tracks and light
+tracks alongside the camera timeline.
+
+- Prefab instances and lights register optional IDs in `Scene`. Duplicate IDs
+  are rejected.
+- `SceneBuilder::addScene` wraps every primitive of a named instance in
+  `InstancePrimitive`, even for an identity transform, and registers the group.
+- `InstancePrimitive` stores a `TransformPose` (translation, Euler rotation,
+  scale) alongside the derived matrix so omitted track channels can inherit the
+  base values.
+- `Quaternion` conversion and slerp live in `scene/Transform`; endpoint
+  keyframes use the Euler path directly so frame `0` remains byte-identical to
+  the still render.
+- `SceneAnimation::apply` updates instance transforms and light values. It
+  reports whether instance transforms changed.
+- CPU applies the timeline once per frame and rebuilds the scene BVH only when
+  instances moved.
+- CUDA has three paths:
+  - camera-only: reuse the existing `CudaRenderSession`;
+  - light-only: reuse the session and upload an updated light buffer through
+    `updateLights`;
+  - instance transforms: rebuild the `SceneSnapshot` and session per frame for
+    v1. Dynamic BVH refitting is future work.
+- Motion blur remains camera-only: object and light values are constant across
+  shutter subframes.
+- Still renders never call `SceneAnimation::apply`.
+
+### Video output
+
+`render/VideoWriter` streams animation frames to the `ffmpeg` executable. It
+does not link `libav*`, so video support adds no link-time dependency and works
+with whatever encoders the installed FFmpeg provides.
+
+- `findFFmpeg()` resolves `RAYTRACER_FFMPEG` or searches `PATH`.
+- `validateVideoSettings()` checks the container/codec pairing, CRF range,
+  preset, bitrate, frame rate and dimensions before rendering starts.
+- `VideoWriter` creates a pipe, forks and execs FFmpeg without a shell, and
+  writes raw RGBA frames to its stdin.
+- The encoder writes to a temporary path such as `orrery.tmp.mp4`; `finish()`
+  waits for FFmpeg and renames the result. A destructor or failed render removes
+  the temporary file.
+- `SIGPIPE` is ignored so a dead encoder becomes an error with FFmpeg's exit
+  status rather than terminating the renderer.
+- Odd dimensions are padded to even for `yuv420p`; frames are converted with a
+  BT.709 matrix and tagged accordingly.
+- MP4/MOV/MKV use `libx264`; WebM uses `libvpx-vp9`. `--video-bitrate` switches
+  from CRF to bitrate mode.
+
+Both animation loops create one writer before rendering, stream each final frame
+after motion blur and post-processing, and call `finish()` before writing
+metadata. Video-only mode leaves `outputPath` empty; frame writing is opt-in via
+`--output` or `--keep-frames`. `--resume` is rejected with video output because
+a partially encoded stream cannot be resumed reliably.
 
 ### Lights and area sampling
 
@@ -638,14 +697,16 @@ ctest --test-dir build -L negative
 ctest --test-dir build -L parity
 ```
 
-Labels are `unit`, `smoke`, `scene`, `animation`, `output`, `negative` and
-`parity`. The parity label includes the CPU/CUDA comparison; it skips with
-status `77` when no CUDA device is available.
+Labels are `unit`, `smoke`, `scene`, `animation`, `output`, `negative`, `video`
+and `parity`. The parity label includes the CPU/CUDA comparison; it skips with
+status `77` when no CUDA device is available. The video test also skips with
+`77` when FFmpeg is missing.
 
 CI runs headless GCC and Clang Release builds, an ASan/UBSan Debug build, and an
 optional self-hosted CUDA job enabled with the repository variable
-`RAYTRACER_CUDA_CI=true`. GUI builds remain a manual verification step because
-SFML 3 is not packaged on the default runner.
+`RAYTRACER_CUDA_CI=true`. The CPU jobs install FFmpeg so the `video` tests run;
+the script skips with status `77` when FFmpeg is missing. GUI builds remain a
+manual verification step because SFML 3 is not packaged on the default runner.
 
 Renderer discovery:
 
@@ -734,6 +795,31 @@ bash tests/deterministic_motion_blur.sh ./raytracer . build
   --width 320 --height 180 --samples 8 --animation --resume \
   --output '/tmp/orrery-%04d.png'
 ```
+
+Scene animation:
+
+```bash
+./raytracer --path tests/scene_animation.cfg --cli --renderer cpu \
+  --width 320 --height 180 --samples 8 --animation \
+  --start-frame 0 --end-frame 23 --output '/tmp/scene-%04d.ppm'
+bash tests/deterministic_scene_animation.sh ./raytracer . build
+```
+
+Video output:
+
+```bash
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cpu \
+  --width 320 --height 180 --samples 8 --animation \
+  --video /tmp/orrery.mp4
+ffprobe -v error -count_frames -select_streams v:0 \
+  -show_entries stream=width,height,r_frame_rate,nb_read_frames \
+  -of default=nw=1 /tmp/orrery.mp4
+bash tests/video_output.sh ./raytracer . build
+```
+
+`tests/video_output.sh` skips with status `77` when FFmpeg is unavailable.
+Install it with your package manager or set `RAYTRACER_FFMPEG` to a custom
+binary.
 
 Texture check:
 

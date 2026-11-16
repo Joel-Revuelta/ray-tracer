@@ -57,6 +57,12 @@ class App
     int _shutterSamples = 0;
     bool _resume = false;
     bool _validate = false;
+    std::string _videoPath;
+    std::string _videoCodec;
+    int _videoCrf = -1;
+    std::string _videoPreset;
+    std::string _videoBitrate;
+    bool _keepFrames = false;
 };
 
 } // namespace RayTracer

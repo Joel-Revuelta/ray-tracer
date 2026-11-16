@@ -13,6 +13,7 @@
 #include "Scene.hpp"
 #include "render/Animation.hpp"
 #include "render/PostProcess.hpp"
+#include "render/SceneAnimation.hpp"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -41,6 +42,11 @@ struct RenderOptions
     bool resume = false;
     std::string scenePath;
     std::string rendererName;
+    std::string videoPath;
+    std::string videoCodec;
+    int videoCrf = 18;
+    std::string videoPreset = "medium";
+    std::string videoBitrate;
 };
 
 struct RenderContext
@@ -48,6 +54,7 @@ struct RenderContext
     std::shared_ptr<Scene> scene;
     std::shared_ptr<Camera> camera;
     std::shared_ptr<CameraAnimation> animation;
+    std::shared_ptr<SceneAnimation> sceneAnimation;
     std::shared_ptr<IGUI> gui;
     RenderOptions options;
 };

@@ -167,6 +167,48 @@ void RayTracer::writeSequenceMetadata(const std::string &path, const SequenceMet
          << ", \"bloomThreshold\": " << finiteNumber(metadata.postProcess.bloomThreshold)
          << ", \"bloomIntensity\": " << finiteNumber(metadata.postProcess.bloomIntensity)
          << ", \"bloomRadius\": " << metadata.postProcess.bloomRadius << "},\n";
+
+    if (metadata.video.enabled)
+    {
+        json << "  \"video\": {\"path\": \"" << jsonEscape(metadata.video.path) << "\""
+             << ", \"codec\": \"" << jsonEscape(metadata.video.codec) << "\""
+             << ", \"crf\": " << metadata.video.crf
+             << ", \"preset\": \"" << jsonEscape(metadata.video.preset) << "\""
+             << ", \"bitrate\": \"" << jsonEscape(metadata.video.bitrate) << "\""
+             << ", \"fps\": " << finiteNumber(metadata.video.fps) << "},\n";
+    }
+    else
+    {
+        json << "  \"video\": null,\n";
+    }
+
+    if (!metadata.sceneAnimation.instances.empty() || !metadata.sceneAnimation.lights.empty())
+    {
+        json << "  \"sceneAnimation\": {\"instances\": [";
+
+        for (std::size_t i = 0; i < metadata.sceneAnimation.instances.size(); ++i)
+        {
+            if (i > 0)
+                json << ", ";
+            json << "\"" << jsonEscape(metadata.sceneAnimation.instances[i]) << "\"";
+        }
+
+        json << "], \"lights\": [";
+
+        for (std::size_t i = 0; i < metadata.sceneAnimation.lights.size(); ++i)
+        {
+            if (i > 0)
+                json << ", ";
+            json << "\"" << jsonEscape(metadata.sceneAnimation.lights[i]) << "\"";
+        }
+
+        json << "]},\n";
+    }
+    else
+    {
+        json << "  \"sceneAnimation\": null,\n";
+    }
+
     json << "  \"frames\": [\n";
 
     for (std::size_t i = 0; i < metadata.frames.size(); ++i)

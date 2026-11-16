@@ -59,6 +59,7 @@ compile_commands.json
 
 # Temporary files
 *.tmp
+*.tmp.*
 *.log
 *.bak
 *.swp

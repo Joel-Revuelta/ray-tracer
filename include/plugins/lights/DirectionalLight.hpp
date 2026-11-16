@@ -34,8 +34,8 @@ class DirectionalLight : public ILight
     Vec3D getDirection(void) const;
     float getIntensity(void) const;
 
-    void setIntensity(float intensity);
-    void setColor(const Color3D &color);
+    void setIntensity(float intensity) override;
+    void setColor(const Color3D &color) override;
     void setDirection(const Vec3D &direction);
 
   private:

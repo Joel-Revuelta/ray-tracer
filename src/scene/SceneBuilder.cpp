@@ -35,13 +35,16 @@ void SceneBuilder::ensureScene(void)
  *
  * @param light The light to be added to the scene.
  */
-void SceneBuilder::addLight(std::shared_ptr<ILight> light)
+void SceneBuilder::addLight(std::shared_ptr<ILight> light, const std::string &id)
 {
     if (!light)
         return;
 
     ensureScene();
     _scene->addLight(light);
+
+    if (!id.empty())
+        _scene->associateLight(id, std::move(light));
 }
 
 void SceneBuilder::addMaterial(std::shared_ptr<IMaterial> material)
@@ -76,7 +79,8 @@ void SceneBuilder::addPrimitive(std::shared_ptr<IPrimitive> primitive)
  *
  * @param sceneToAdd The scene to add.
  */
-void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformData &transform)
+void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformPose &pose,
+                            const std::string &instanceId)
 {
     if (!sceneToAdd)
         return;
@@ -85,6 +89,8 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformDa
 
     if (sceneToAdd.get() == _scene.get())
         throw std::invalid_argument("Cannot merge a scene into itself");
+
+    const TransformData transform = makeTransform(pose);
 
     // Materials of a nested scene are appended to the parent scene, so every
     // primitive coming from that scene has to shift its material index.
@@ -102,6 +108,8 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformDa
 
         _scene->addMaterial(copy);
     }
+    InstanceGroup group;
+
     for (const auto &primitive : sceneToAdd->getPrimitives())
     {
         std::shared_ptr<IPrimitive> copy = primitive->clone();
@@ -112,11 +120,28 @@ void SceneBuilder::addScene(std::shared_ptr<Scene> sceneToAdd, const TransformDa
         copy->setMaterialIndex(copy->getMaterialIndex() + materialOffset);
         copy->shiftMaterialIndices(materialOffset);
 
-        if (!isIdentityTransform(transform))
+        if (!instanceId.empty())
+        {
+            std::shared_ptr<InstancePrimitive> instance = std::make_shared<InstancePrimitive>(copy, pose);
+
+            instance->setGroupId(instanceId);
+            group.push_back(instance);
+            copy = instance;
+        }
+        else if (!isIdentityTransform(transform))
+        {
             copy = std::make_shared<InstancePrimitive>(copy, transform);
+        }
 
         _scene->addPrimitive(copy);
     }
+    if (!instanceId.empty())
+    {
+        if (group.empty())
+            throw std::runtime_error("Animated instance '" + instanceId + "' contains no primitives");
+        _scene->addInstanceGroup(instanceId, group);
+    }
+
     for (const auto &light : sceneToAdd->getLights())
     {
         std::shared_ptr<ILight> copy = light->clone();

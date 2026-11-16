@@ -188,6 +188,21 @@ float SphereLight::getIntensity(void) const
     return _intensity;
 }
 
+void SphereLight::setIntensity(float intensity)
+{
+    _intensity = intensity;
+}
+
+void SphereLight::setColor(const Color3D &color)
+{
+    _color = color;
+}
+
+void SphereLight::setPosition(const Vec3D &position)
+{
+    _position = position;
+}
+
 extern "C" std::shared_ptr<ILight> create(Vec3D position, double radius, Color3D color, double intensity,
                                           double attenuationConstant, double attenuationLinear,
                                           double attenuationQuadratic)

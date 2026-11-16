@@ -40,9 +40,9 @@ class PointLight : public ILight
     float getAttenuationLinear(void) const;
     float getAttenuationQuadratic(void) const;
 
-    void setIntensity(float intensity);
-    void setColor(const Color3D &color);
-    void setPosition(const Vec3D &position);
+    void setIntensity(float intensity) override;
+    void setColor(const Color3D &color) override;
+    void setPosition(const Vec3D &position) override;
     void setAttenuationConstant(float attenuationConstant);
     void setAttenuationLinear(float attenuationLinear);
     void setAttenuationQuadratic(float attenuationQuadratic);

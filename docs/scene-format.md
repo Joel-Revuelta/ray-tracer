@@ -83,12 +83,12 @@ camera:
 };
 ```
 
-## Camera animation
+## Animation
 
-An optional top-level `animation` block declares a camera-only timeline. The
-top-level `camera` above remains the still-image camera; the animation is only
-played when the CLI asks for it (`--animation`, `--start-frame`, `--end-frame`
-or `--fps`).
+An optional top-level `animation` block declares camera, prefab-instance and
+light timelines. The top-level `camera` remains the still-image camera; the
+timeline is only played when the CLI asks for it (`--animation`,
+`--start-frame`, `--end-frame`, `--fps` or `--video`).
 
 ```libconfig
 animation:
@@ -151,10 +151,87 @@ CPU and CUDA render exactly the same poses, and samples outside the timeline are
 clamped to the first or last keyframe. The render cost scales with
 `shutter.samples`; shutter-off renders are unchanged.
 
-Animation is camera-only in this version. Object, light and prefab transforms
-remain static for the whole sequence, which keeps the scene, BVH and CUDA
-snapshot immutable across frames. The block is validated when the scene loads,
-so an invalid timeline fails even if only a still image is rendered.
+### Scene animation
+
+Named prefab instances and lights can be animated alongside the camera. Add an
+`id` to the instance or light definition, then reference it from the animation
+block.
+
+```libconfig
+primitives:
+{
+    instances = (
+        { prefab = "orrery"; id = "orrery"; transform = { ... }; }
+    );
+};
+
+lights:
+{
+    point = (
+        { id = "lantern"; position = { ... }; color = { ... }; intensity = 1.0; }
+    );
+};
+
+animation:
+{
+    fps = 24;
+    camera = ( ... );
+
+    instances = (
+        {
+            target = "orrery";
+            position = (
+                { time = 0.0; value = { x = 0.0; y = 0.0; z = 0.0; }; },
+                { time = 8.0; value = { x = 0.0; y = 0.4; z = 0.0; }; }
+            );
+            rotation = (
+                { time = 0.0; value = { x = 0.0; y = 0.0; z = 0.0; }; },
+                { time = 8.0; value = { x = 0.0; y = 360.0; z = 0.0; }; }
+            );
+            scale = ( ... ); # optional, inherits the instance base scale
+        }
+    );
+
+    lights = (
+        {
+            target = "lantern";
+            intensity = (
+                { time = 0.0; value = 1.0; },
+                { time = 2.0; value = 1.6; }
+            );
+            color = ( ... ); # optional
+            position = ( ... ); # optional, for point and sphere lights
+        }
+    );
+};
+```
+
+- `id` is optional; animated targets require one. IDs are unique within the
+  instance namespace and within the light namespace.
+- Only top-level prefab instances and top-level lights are targetable. Prefab
+  internals are cloned and are not separately addressable in this version.
+- An instance track requires at least one of `position`, `rotation` or `scale`.
+  Omitted channels inherit the instance's base transform.
+- A light track requires at least one of `intensity`, `color` or `position`.
+  Omitted channels leave the light at its current value.
+- Track keyframes start at `0.0`, use strictly increasing times, and must not
+  exceed the camera animation duration.
+- Translation and scale use Catmull-Rom interpolation. Rotation is interpolated
+  with quaternion slerp along the shortest path; the scene format stays in
+  Euler degrees. Intensity and color use linear interpolation.
+- Scale keyframes must be finite and non-zero. Intensity and color keyframes
+  must be finite and non-negative.
+- Animated instance transforms replace the instance's base transform for that
+  frame. Animated light position applies to point and sphere lights.
+- Scene animation is applied once per frame. The existing motion blur remains
+  camera-only; objects and lights are static within a shutter interval.
+- The block is validated when the scene loads, so an invalid timeline fails
+  even if only a still image is rendered. Still renders ignore scene animation
+  and use the base transforms and light values.
+
+The brass orrery, tidal bloom and sakura shrine scenes animate orbit groups,
+glass blooms and light intensities respectively. Their first keyframes repeat
+the base values, so frame `0` matches the still render.
 
 ## Background
 
@@ -759,6 +836,8 @@ The parser rejects:
 - a shutter angle outside `[0, 360)` or a non-positive shutter sample count,
 - an animation with fewer than two keyframes, a first keyframe not at time
   zero, or non-increasing keyframe times,
+- duplicate or unknown scene-animation targets, tracks with no channels,
+  zero scale keyframes, or track times beyond the animation duration,
 - negative material indices, or indices outside the material list.
 
 Renderer selection errors (unknown renderer names, missing plugins, unavailable
@@ -768,5 +847,6 @@ CUDA devices) are handled at runtime and are documented in [cli.md](cli.md).
 
 The renderer writes binary `P6` PPM files or 8-bit RGBA PNG files, selected by
 the output extension (`.ppm` or `.png`). The provided render scripts create 4K
-and 1080p previews. Animated renders write one file per frame; see
-[cli.md](cli.md) for frame patterns and ranges.
+and 1080p previews. Animated renders write one file per frame, or can be encoded
+directly to MP4/WebM with `--video`; see [cli.md](cli.md) for frame patterns,
+ranges and video options.

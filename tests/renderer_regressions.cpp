@@ -14,7 +14,9 @@
 #include "render/Animation.hpp"
 #include "render/Environment.hpp"
 #include "render/ImageWriter.hpp"
+#include "render/SceneAnimation.hpp"
 #include "render/Texture.hpp"
+#include "render/VideoWriter.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -395,6 +397,145 @@ int checkFramePathFormatting(void)
         return 1;
     return 0;
 }
+
+int checkQuaternionTransform(void)
+{
+    const Vec3D euler(20.0f, -35.0f, 50.0f);
+    const Vec3D translation(1.0f, 2.0f, 3.0f);
+    const Vec3D scale(2.0f, 0.5f, 1.5f);
+    const TransformData expected = makeTransform(translation, euler, scale);
+    const TransformData actual = makeTransform(translation, quaternionFromEulerDegrees(euler), scale);
+
+    for (int i = 0; i < 9; ++i)
+    {
+        if (!closeTo(actual.linear[i], expected.linear[i], 1e-4f))
+            return fail("quaternion and Euler transforms disagree");
+    }
+
+    const Quaternion first = quaternionFromEulerDegrees(Vec3D(0.0f, 350.0f, 0.0f));
+    const Quaternion second = quaternionFromEulerDegrees(Vec3D(0.0f, 10.0f, 0.0f));
+    const Quaternion midpoint = slerp(first, second, 0.5f);
+    const TransformData midpointTransform = makeTransform(Vec3D(0.0f), midpoint, Vec3D(1.0f));
+    const TransformData zeroTransform =
+        makeTransform(Vec3D(0.0f), Vec3D(0.0f), Vec3D(1.0f));
+
+    for (int i = 0; i < 9; ++i)
+    {
+        if (!closeTo(midpointTransform.linear[i], zeroTransform.linear[i], 1e-3f))
+            return fail("quaternion slerp did not take the shortest path");
+    }
+    return 0;
+}
+
+int checkSceneAnimation(void)
+{
+    Factory factory;
+    SceneBuilder builder;
+
+    builder.addMaterial(factory.create<IMaterial>("DiffuseMaterial", 0.2, 0.8, Color3D(1.0f)));
+    const std::shared_ptr<IPrimitive> sphere =
+        factory.create<IPrimitive>("Sphere", 1.0, Vec3D(0.0f), 0);
+    const std::shared_ptr<InstancePrimitive> instance = std::make_shared<InstancePrimitive>(
+        sphere, TransformPose{Vec3D(0.0f), Vec3D(0.0f), Vec3D(1.0f)});
+
+    instance->setGroupId("mover");
+    builder.addPrimitive(instance);
+
+    const std::shared_ptr<ILight> light =
+        factory.create<ILight>("PointLight", Vec3D(0.0f, 2.0f, 0.0f), Color3D(1.0f), 1.0, 1.0, 0.0, 0.0);
+    builder.addLight(light, "pulse");
+
+    const std::shared_ptr<Scene> scene = builder.build();
+    scene->addInstanceGroup("mover", {instance});
+
+    InstanceTrack instanceTrack;
+    instanceTrack.target = "mover";
+    instanceTrack.position.keyframes = {{0.0, Vec3D(0.0f)}, {2.0, Vec3D(2.0f, 0.0f, 0.0f)}};
+
+    LightTrack lightTrack;
+    lightTrack.target = "pulse";
+    lightTrack.intensity.keyframes = {{0.0, 1.0f}, {2.0, 2.0f}};
+    lightTrack.position.keyframes = {{0.0, Vec3D(0.0f, 2.0f, 0.0f)}, {2.0, Vec3D(4.0f, 2.0f, 0.0f)}};
+
+    const SceneAnimation animation({instanceTrack}, {lightTrack}, 2.0);
+
+    if (!animation.apply(*scene, 1.0))
+        return fail("scene animation did not report instance changes");
+
+    const Vec3D translated = transformPoint(instance->getTransform(), Vec3D(0.0f));
+    if (!closeTo(translated.getX(), 1.0f, 1e-4f))
+        return fail("scene animation did not interpolate the instance position");
+
+    LightData data;
+    if (!light->getData(data) || !closeTo(data.intensity, 1.5f, 1e-4f) ||
+        !closeTo(data.position.getX(), 2.0f, 1e-4f))
+        return fail("scene animation did not interpolate the light values");
+
+    try
+    {
+        const SceneAnimation invalid({}, {}, 0.0);
+        (void)invalid;
+        return fail("scene animation accepted a zero duration");
+    }
+    catch (const std::invalid_argument &)
+    {
+    }
+    return 0;
+}
+
+int checkVideoSettings(void)
+{
+    if (!isVideoExtension("out.mp4") || !isVideoExtension("out.MOV") || !isVideoExtension("out.webm") ||
+        !isVideoExtension("out.mkv") || isVideoExtension("out.png") || isVideoExtension("out.avi"))
+        return fail("video extension detection is wrong");
+
+    if (defaultVideoCodec("out.mp4") != "h264" || defaultVideoCodec("out.mkv") != "h264" ||
+        defaultVideoCodec("out.webm") != "vp9")
+        return fail("video codec defaults are wrong");
+
+    VideoSettings valid{"out.mp4", "h264", 18, "medium", "", 24.0, 640, 360};
+
+    if (!validateVideoSettings(valid).empty())
+        return fail("a valid H.264 video configuration was rejected");
+
+    valid.codec = "vp9";
+    if (validateVideoSettings(valid).empty())
+        return fail("VP9 was accepted in an MP4 container");
+
+    valid = {"out.webm", "vp9", 32, "medium", "", 24.0, 640, 360};
+    if (!validateVideoSettings(valid).empty())
+        return fail("a valid VP9 video configuration was rejected");
+
+    valid.codec = "h264";
+    if (validateVideoSettings(valid).empty())
+        return fail("H.264 was accepted in a WebM container");
+
+    valid = {"out.mp4", "h264", 52, "medium", "", 24.0, 640, 360};
+    if (validateVideoSettings(valid).empty())
+        return fail("an out-of-range H.264 CRF was accepted");
+
+    valid = {"out.webm", "vp9", 64, "medium", "", 24.0, 640, 360};
+    if (validateVideoSettings(valid).empty())
+        return fail("an out-of-range VP9 CRF was accepted");
+
+    valid = {"out.mp4", "h264", 18, "turbo", "", 24.0, 640, 360};
+    if (validateVideoSettings(valid).empty())
+        return fail("an unknown H.264 preset was accepted");
+
+    valid = {"out.mp4", "h264", 18, "medium", "bananas", 24.0, 640, 360};
+    if (validateVideoSettings(valid).empty())
+        return fail("an invalid video bitrate was accepted");
+
+    valid = {"out.mp4", "h264", 18, "medium", "", 0.0, 640, 360};
+    if (validateVideoSettings(valid).empty())
+        return fail("a non-positive video frame rate was accepted");
+
+    valid = {"out.mp4", "h264", 18, "medium", "", 24.0, 0, 360};
+    if (validateVideoSettings(valid).empty())
+        return fail("an empty video width was accepted");
+
+    return 0;
+}
 } // namespace
 
 int main(int ac, char **av)
@@ -420,6 +561,12 @@ int main(int ac, char **av)
     if (const int status = checkCameraAnimation(); status != 0)
         return status;
     if (const int status = checkFramePathFormatting(); status != 0)
+        return status;
+    if (const int status = checkQuaternionTransform(); status != 0)
+        return status;
+    if (const int status = checkSceneAnimation(); status != 0)
+        return status;
+    if (const int status = checkVideoSettings(); status != 0)
         return status;
 
     std::cout << "renderer_regressions: all checks passed" << std::endl;

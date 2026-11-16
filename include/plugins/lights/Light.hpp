@@ -50,6 +50,21 @@ class ILight : public ITransformable
         (void)transform;
     }
 
+    virtual void setIntensity(float intensity)
+    {
+        (void)intensity;
+    }
+
+    virtual void setColor(const Color3D &color)
+    {
+        (void)color;
+    }
+
+    virtual void setPosition(const Vec3D &position)
+    {
+        (void)position;
+    }
+
     virtual Color3D calculateLighting(const HitPayload &payload) const = 0;
     virtual bool isPointInShadow(const HitPayload &payload, const Scene &scene) const = 0;
 

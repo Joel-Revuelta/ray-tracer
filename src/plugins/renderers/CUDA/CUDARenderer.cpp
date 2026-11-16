@@ -14,6 +14,7 @@
 #include "render/PostProcess.hpp"
 #include "render/SequenceMetadata.hpp"
 #include "render/Texture.hpp"
+#include "render/VideoWriter.hpp"
 #include "scene/BVHBuilder.hpp"
 #include "scene/Transform.hpp"
 #include <algorithm>
@@ -218,27 +219,35 @@ std::vector<Cuda::Material> convertMaterials(const SceneSnapshot &snapshot)
     return materials;
 }
 
-std::vector<Cuda::Light> convertLights(const SceneSnapshot &snapshot)
+Cuda::Light toDevice(const LightData &light)
+{
+    Cuda::Light converted;
+
+    converted.type = static_cast<int>(light.type);
+    converted.color = toDevice(light.color);
+    converted.position = toDevice(light.position);
+    converted.direction = toDevice(light.direction);
+    converted.radius = light.radius;
+    converted.intensity = light.intensity;
+    converted.attenuationConstant = light.attenuationConstant;
+    converted.attenuationLinear = light.attenuationLinear;
+    converted.attenuationQuadratic = light.attenuationQuadratic;
+    return converted;
+}
+
+std::vector<Cuda::Light> convertLights(const std::vector<LightData> &source)
 {
     std::vector<Cuda::Light> lights;
 
-    lights.reserve(snapshot.lights.size());
-    for (const LightData &light : snapshot.lights)
-    {
-        Cuda::Light converted;
-
-        converted.type = static_cast<int>(light.type);
-        converted.color = toDevice(light.color);
-        converted.position = toDevice(light.position);
-        converted.direction = toDevice(light.direction);
-        converted.radius = light.radius;
-        converted.intensity = light.intensity;
-        converted.attenuationConstant = light.attenuationConstant;
-        converted.attenuationLinear = light.attenuationLinear;
-        converted.attenuationQuadratic = light.attenuationQuadratic;
-        lights.push_back(converted);
-    }
+    lights.reserve(source.size());
+    for (const LightData &light : source)
+        lights.push_back(toDevice(light));
     return lights;
+}
+
+std::vector<Cuda::Light> convertLights(const SceneSnapshot &snapshot)
+{
+    return convertLights(snapshot.lights);
 }
 
 struct HostBVH
@@ -555,6 +564,20 @@ class CudaRenderSession
         _view.seed = seed;
     }
 
+    void updateLights(const std::vector<LightData> &lights)
+    {
+        finishBatch();
+        if (lights.size() != _lights.size())
+            throw std::runtime_error("CUDA light count cannot change during an animation");
+
+        const std::vector<Cuda::Light> converted = convertLights(lights);
+
+        _deviceLights.upload(converted);
+        _lights = converted;
+        _view.lights = _deviceLights.get();
+        _view.lightCount = static_cast<int>(converted.size());
+    }
+
     void refreshOutput(int renderedSamples)
     {
         if (renderedSamples <= 0)
@@ -854,8 +877,28 @@ void CUDARenderer::run(const RenderContext &context)
         const bool motionBlur = shutter.angle > 0.0f && shutter.samples > 1;
         const int subframes = motionBlur ? shutter.samples : 1;
         const int totalFrames = endFrame - startFrame + 1;
-        const std::string pattern =
-            context.options.outputPath.empty() ? "frame-%04d.ppm" : context.options.outputPath;
+        const bool writeFrames = !context.options.outputPath.empty();
+        const std::string pattern = writeFrames ? context.options.outputPath : std::string();
+        const bool writeVideo = !context.options.videoPath.empty();
+        const bool sceneInstances = context.sceneAnimation && context.sceneAnimation->animatesInstances();
+        const bool sceneLights = context.sceneAnimation && context.sceneAnimation->animatesLights();
+
+        if (!writeFrames && !writeVideo)
+            throw std::invalid_argument("CUDA animation requires a frame pattern or a video path");
+        if (writeVideo && context.options.resume)
+            throw std::invalid_argument("CUDA video output cannot be resumed");
+
+        std::unique_ptr<VideoWriter> video;
+
+        if (writeVideo)
+        {
+            const VideoSettings videoSettings{context.options.videoPath, context.options.videoCodec,
+                                              context.options.videoCrf,   context.options.videoPreset,
+                                              context.options.videoBitrate, fps, context.options.width,
+                                              context.options.height};
+
+            video = std::make_unique<VideoWriter>(videoSettings);
+        }
 
         auto frameSeed = [&](int frame) {
             return context.options.seed + static_cast<uint32_t>(frame) * 0x9e3779b9u;
@@ -883,6 +926,21 @@ void CUDARenderer::run(const RenderContext &context)
             metadata.shutterAngle = shutter.angle;
             metadata.shutterSamples = shutter.samples;
             metadata.postProcess = context.options.postProcess;
+            metadata.video.path = context.options.videoPath;
+            metadata.video.codec = context.options.videoCodec;
+            metadata.video.crf = context.options.videoCrf;
+            metadata.video.preset = context.options.videoPreset;
+            metadata.video.bitrate = context.options.videoBitrate;
+            metadata.video.fps = fps;
+            metadata.video.enabled = writeVideo;
+
+            if (context.sceneAnimation)
+            {
+                for (const InstanceTrack &track : context.sceneAnimation->getInstanceTracks())
+                    metadata.sceneAnimation.instances.push_back(track.target);
+                for (const LightTrack &track : context.sceneAnimation->getLightTracks())
+                    metadata.sceneAnimation.lights.push_back(track.target);
+            }
 
             for (int frame = startFrame; frame <= endFrame; ++frame)
             {
@@ -894,13 +952,15 @@ void CUDARenderer::run(const RenderContext &context)
                 if (context.options.focusDistanceOverride > 0.0f)
                     camera->setFocusDistance(context.options.focusDistanceOverride);
 
-                const std::string path = formatFramePath(pattern, frame);
+                const std::string path = writeFrames ? formatFramePath(pattern, frame) : std::string();
+                const bool rendered = writeFrames ? frameFileExists(path) : true;
 
                 metadata.frames.push_back(
-                    makeFrameMetadata(frame, frameTime, path, frameSeed(frame), *camera, frameFileExists(path)));
+                    makeFrameMetadata(frame, frameTime, path, frameSeed(frame), *camera, rendered));
             }
 
-            const std::string metadataPath = sequenceMetadataPath(pattern);
+            const std::string metadataPath =
+                writeFrames ? sequenceMetadataPath(pattern) : sequenceMetadataPath(context.options.videoPath);
 
             writeSequenceMetadata(metadataPath, metadata);
             std::clog << "Wrote sequence metadata -> " << metadataPath << std::endl;
@@ -908,7 +968,7 @@ void CUDARenderer::run(const RenderContext &context)
 
         int firstRendered = startFrame;
 
-        if (context.options.resume)
+        if (writeFrames && context.options.resume)
         {
             while (firstRendered <= endFrame && frameFileExists(formatFramePath(pattern, firstRendered)))
                 ++firstRendered;
@@ -930,25 +990,65 @@ void CUDARenderer::run(const RenderContext &context)
         if (context.options.focusDistanceOverride > 0.0f)
             firstCamera->setFocusDistance(context.options.focusDistanceOverride);
 
-        const SceneSnapshot snapshot = buildSceneSnapshot(*context.scene, *firstCamera);
-        CudaRenderSession session(snapshot, context.options.postProcess, subframeSeed(firstRendered, 0));
+        std::unique_ptr<CudaRenderSession> session;
+
+        if (!sceneInstances)
+        {
+            const SceneSnapshot snapshot = buildSceneSnapshot(*context.scene, *firstCamera);
+
+            session = std::make_unique<CudaRenderSession>(snapshot, context.options.postProcess,
+                                                          subframeSeed(firstRendered, 0));
+        }
+
         const auto sequenceStart = std::chrono::steady_clock::now();
         int completedFrames = 0;
 
         for (int frame = startFrame; frame <= endFrame; ++frame)
         {
-            const std::string path = formatFramePath(pattern, frame);
+            const std::string path = writeFrames ? formatFramePath(pattern, frame) : std::string();
             const double frameTime = context.animation->timeAtFrame(frame, fps);
 
-            if (context.options.resume && frameFileExists(path))
+            if (writeFrames && context.options.resume && frameFileExists(path))
             {
                 ++completedFrames;
                 std::clog << "Skipped existing animation frame " << frame << " -> " << path << std::endl;
                 continue;
             }
 
+            if (context.sceneAnimation)
+                context.sceneAnimation->apply(*context.scene, frameTime);
+
+            std::unique_ptr<CudaRenderSession> frameSession;
+            CudaRenderSession *active = session.get();
+
+            if (sceneInstances)
+            {
+                std::shared_ptr<Camera> nominalCamera = context.animation->cameraAt(frameTime);
+
+                nominalCamera->initialize(context.options.width, context.options.height, nominalCamera->getLookAt(),
+                                          nominalCamera->getLookFrom(), nominalCamera->getVerticalFovDegree());
+
+                if (context.options.lensRadiusOverride >= 0.0f)
+                    nominalCamera->setLensRadius(context.options.lensRadiusOverride);
+                if (context.options.focusDistanceOverride > 0.0f)
+                    nominalCamera->setFocusDistance(context.options.focusDistanceOverride);
+
+                const SceneSnapshot frameSnapshot = buildSceneSnapshot(*context.scene, *nominalCamera);
+
+                frameSession = std::make_unique<CudaRenderSession>(frameSnapshot, context.options.postProcess,
+                                                                  subframeSeed(frame, 0));
+                active = frameSession.get();
+            }
+            else if (sceneLights)
+            {
+                active->updateLights(collectLights(*context.scene));
+            }
+
+            if (!active)
+                throw std::runtime_error("CUDA animation session was not initialized");
+
             if (motionBlur)
-                session.beginShutter();
+                active->beginShutter();
 
             for (int subframe = 0; subframe < subframes; ++subframe)
             {
@@ -963,8 +1063,8 @@ void CUDARenderer::run(const RenderContext &context)
                 if (context.options.focusDistanceOverride > 0.0f)
                     camera->setFocusDistance(context.options.focusDistanceOverride);
 
-                session.updateCamera(makeCameraData(*camera));
-                session.setSeed(subframeSeed(frame, subframe));
+                active->updateCamera(makeCameraData(*camera));
+                active->setSeed(subframeSeed(frame, subframe));
 
                 constexpr int batchSize = 16;
 
@@ -972,30 +1072,42 @@ void CUDARenderer::run(const RenderContext &context)
                 {
                     const int count = std::min(batchSize, context.options.frames - start);
 
-                    session.renderBatch(start, count);
+                    active->renderBatch(start, count);
                 }
 
                 if (motionBlur)
-                    session.accumulateShutter();
+                    active->accumulateShutter();
             }
 
             if (motionBlur)
-                session.refreshShutterOutput(context.options.frames * subframes);
+                active->refreshShutterOutput(context.options.frames * subframes);
             else if (context.options.postProcess.bloom)
-                session.refreshOutput(context.options.frames);
+                active->refreshOutput(context.options.frames);
 
-            const std::vector<uint32_t> &pixels = session.copyImage();
+            const std::vector<uint32_t> &pixels = active->copyImage();
 
-            writeImageFileAtomic(path, session.width(), session.height(), pixels);
+            if (writeFrames)
+                writeImageFileAtomic(path, active->width(), active->height(), pixels);
+            if (video)
+                video->writeFrame(pixels);
             ++completedFrames;
 
             const double elapsed =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - sequenceStart).count();
             const double average = completedFrames > 0 ? elapsed / completedFrames : 0.0;
             const double eta = average * (totalFrames - completedFrames);
+            const std::string &target = writeFrames ? path : context.options.videoPath;
 
-            std::clog << "[" << completedFrames << "/" << totalFrames << "] frame " << frame << " -> " << path
+            std::clog << "[" << completedFrames << "/" << totalFrames << "] frame " << frame << " -> " << target
                       << " (elapsed " << formatDuration(elapsed) << ", ETA " << formatDuration(eta) << ")"
+                      << std::endl;
+        }
+
+        if (video)
+        {
+            video->finish();
+            std::clog << "Wrote video -> " << context.options.videoPath << " (" << context.options.videoCodec
+                      << ", " << context.options.width << "x" << context.options.height << ", " << fps << " fps)"
                       << std::endl;
         }
 

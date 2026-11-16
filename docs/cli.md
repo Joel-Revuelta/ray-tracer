@@ -46,6 +46,12 @@ At least one of `--cli`, `--gui` or `--sfml` is required. `--help` and
 | `--shutter-samples` | positive integer | Deterministic subframe count for motion blur. | scene value |
 | `--resume` | — | Skip animation frames whose output files already exist. | off |
 | `--validate` | — | Parse the scene/animation, print a summary and exit without rendering. | off |
+| `--video` | video path | Encode the animation to `.mp4`, `.m4v`, `.mov`, `.mkv` or `.webm`. | off |
+| `--video-codec` | `h264` or `vp9` | Encoder family; defaults by container. | `h264`, or `vp9` for WebM |
+| `--video-crf` | integer | Quality target; H.264 `0–51`, VP9 `0–63`. | `18` / `32` |
+| `--video-preset` | preset name | H.264 speed/quality preset. | `medium` |
+| `--video-bitrate` | rate | Target bitrate such as `800k` or `8M`; overrides CRF. | unset |
+| `--keep-frames` | — | Also write numbered frames when using `--video`. | off |
 | `--output` | path or pattern | PPM/PNG output file, or a frame pattern for animation. | stdout in CLI mode; `frame-%04d.ppm` for animation |
 | `--list-guis` | — | Print GUI backends and exit `0`. | |
 | `--help`, `-h` | — | Print usage and exit `0`. | |
@@ -60,7 +66,7 @@ not controlled by this flag; use `--start-frame` and `--end-frame`.
 ### Animation
 
 Camera animations are declared in the scene file; see
-[scene-format.md](scene-format.md#camera-animation). Animation is CLI-only in
+[scene-format.md](scene-format.md#animation). Animation is CLI-only in
 this version.
 
 - `--animation` renders the scene animation.
@@ -77,6 +83,10 @@ this version.
   count.
 - `--lens-radius` and `--focus-distance` override the keyframed values for every
   frame. Leave them unset to use the animation timeline.
+- Scenes can also declare animated prefab instances and lights. They play
+  alongside the camera; still renders ignore them and use the base scene.
+- Camera motion blur does not blur object or light motion; those values are
+  constant within a shutter interval.
 - `--shutter-angle 0` disables motion blur, even when the scene enables it.
   Otherwise, motion blur renders `--shutter-samples` deterministic subframes per
   frame and averages them in linear HDR before post-processing. Render cost
@@ -86,18 +96,65 @@ this version.
   so interrupted renders never leave a partial final image. If every frame
   already exists, the existing metadata sidecar is left untouched.
 - `--validate` prints the resolved resolution, samples, duration, frame count,
-  output pattern and shutter settings, then exits without rendering. It also
-  reports an available animation when no animation flags were passed.
+  output pattern, shutter settings and scene-animation targets, then exits
+  without rendering. It also reports an available animation when no animation
+  flags were passed.
 
 For an animation output pattern such as `frames/orrery-%04d.png`, the renderer
 also writes `frames/orrery.json` after the run. Keep the frame conversion in
 the filename so the sidecar name is predictable. The sidecar records a schema
 version, the scene, renderer, resolution, samples, seed, FPS, frame range,
 shutter and post-process settings, plus the interpolated camera pose, path and
-seed for every frame. It is updated when `--resume` completes a partially
-rendered sequence.
+seed for every frame. When scene animation is active, `sceneAnimation`
+lists the animated instance and light targets. It is updated when `--resume`
+completes a partially rendered sequence.
 
 The renderer prints per-frame progress with elapsed time and an ETA.
+
+### Video output
+
+`--video <path>` encodes the rendered animation directly to a video file. It
+implies `--animation` and streams RGBA frames to the `ffmpeg` executable.
+
+```bash
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --samples 128 --animation \
+  --shutter-angle 180 --shutter-samples 8 \
+  --video orrery.mp4
+```
+
+- Supported containers: `.mp4`, `.m4v`, `.mov`, `.mkv` and `.webm`.
+- MP4/MOV/MKV default to H.264; WebM defaults to VP9.
+- Video-only mode writes no frame files. Add `--output 'frames/f-%04d.png'` or
+  `--keep-frames` to write them as well.
+- `--keep-frames` without `--output` uses `frame-%04d.ppm`.
+- `--resume` is rejected with `--video`; resuming a partially encoded stream is
+  not reliable. Render frames with `--output` and encode afterwards when
+  resumability matters.
+- `--output` is for frame sequences. A video extension in `--output` is rejected
+  with a hint to use `--video`.
+- Odd widths and heights are padded to even dimensions for `yuv420p`
+  compatibility.
+- Video is intended for HD and 4K output. 8K video is limited by the encoder
+  and pipe bandwidth; use a frame sequence for the master render.
+- A JSON sidecar is written next to the video or frame pattern, recording the
+  video settings and per-frame camera metadata.
+
+FFmpeg must be installed at render time. The renderer searches `PATH` and
+honours `RAYTRACER_FFMPEG` for a non-standard binary. `--validate` reports the
+resolved FFmpeg path and video settings without encoding.
+
+```bash
+# MP4 with explicit quality settings
+./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cpu \
+  --width 1280 --height 720 --samples 32 --animation \
+  --video sakura.mp4 --video-crf 20 --video-preset slow
+
+# WebM/VP9 plus the numbered PNG frames
+./raytracer --path scenes/tidal_bloom.cfg --cli --renderer cuda \
+  --width 1280 --height 720 --samples 32 --animation \
+  --video tidal.webm --keep-frames
+```
 
 Output paths support one printf-style integer conversion, such as `%d` or
 `%04d`. A path without a conversion gets a zero-padded `-NNNN` suffix before
@@ -144,8 +201,8 @@ mkdir -p frames
 - CLI mode with `--output` writes one file per render, or one numbered file per
   animation frame. Final files are written atomically via a temporary file.
 - CLI mode without `--output` writes a still PPM to standard output. Animation
-  defaults to `frame-%04d.ppm` in the current directory and writes a
-  `frame.json` metadata sidecar.
+  without `--video` defaults to `frame-%04d.ppm` in the current directory and
+  writes a `frame.json` metadata sidecar. Video-only renders write no frames.
 - GUI mode writes an image only when `--output` is provided; interactive
   `P` screenshots remain timestamped PPM files.
 - Parent directories are not created automatically.
@@ -315,9 +372,11 @@ in-source layout is not present.
 | `SHUTTER_SAMPLES` | scene value |
 | `RESUME` | `0`; set to `1` to skip existing frames |
 | `VALIDATE` | `1`; set to `0` to skip the pre-render validation pass |
+| `VIDEO` | unset; set to a path to encode video directly |
+| `KEEP_FRAMES` | `1`; set to `0` for video-only output |
 | `OUT_DIR` | `animations/<scene>` |
 | `PATTERN` | `<OUT_DIR>/frame-%04d.png` |
-| `FFMPEG` | `0`; set to `1` to assemble an MP4 |
+| `FFMPEG` | `0`; set to `1` to assemble an MP4 from frames when `VIDEO` is unset |
 | `TONEMAP`, `EXPOSURE`, `BLOOM`, `BLOOM_THRESHOLD`, `BLOOM_INTENSITY` | unset; passed through when set |
 
 ## Renderer environment variables
@@ -327,6 +386,7 @@ in-source layout is not present.
 | `RAYTRACER_DISABLE_BVH` | Set to a non-zero value to force the linear primitive scan. Useful for benchmarks and parity tests. |
 | `RAYTRACER_BVH_STATS` | Set to a non-zero value to print bounded/unbounded counts, node count and build time to stderr. |
 | `RAYTRACER_PLUGIN_DIR` | Override the plugin directory (also used by the install bundle). |
+| `RAYTRACER_FFMPEG` | Override the `ffmpeg` executable used for video output. |
 
 See [performance.md](performance.md) for benchmark methodology and numbers.
 
@@ -342,6 +402,11 @@ See [performance.md](performance.md) for benchmark methodology and numbers.
 | `Shutter angle must be less than 360 degrees.` | Use an angle in `[0, 360)`; `0` disables motion blur. |
 | `Shutter samples must be positive.` | Use `--shutter-samples 1` or more. |
 | `Failed to finalize metadata file: ...` | Check that the output directory exists and is writable. |
+| `ffmpeg was not found; install it or set RAYTRACER_FFMPEG.` | Install FFmpeg or point `RAYTRACER_FFMPEG` at the binary. |
+| `--resume cannot be used with --video` | Render frames with `--output` for resumable workflows. |
+| `--output is for frame sequences; use --video` | Pass video paths through `--video`, not `--output`. |
+| `WebM output requires the vp9 codec` | Use `--video-codec vp9` or an MP4/MKV container. |
+| `ffmpeg stopped while receiving frames` | Check the FFmpeg encoder install and the error output. |
 | `Unknown renderer: <name>` | Use `--list-renderers` to see valid names. |
 | `Renderer '<name>' is unavailable: ...` | The plugin is missing or the runtime/device is unavailable. |
 | `Cannot open output file: ...` | Ensure the parent directory exists and is writable. |

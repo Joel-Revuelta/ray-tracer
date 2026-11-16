@@ -10,11 +10,13 @@
 #include "render/ImageWriter.hpp"
 #include "render/PostProcess.hpp"
 #include "render/SequenceMetadata.hpp"
+#include "render/VideoWriter.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -81,22 +83,48 @@ void CPURenderer::run(const RenderContext &context)
         const int width = context.options.width;
         const int height = context.options.height;
         const std::size_t pixelCount = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-        const std::string pattern =
-            context.options.outputPath.empty() ? "frame-%04d.ppm" : context.options.outputPath;
+        const bool writeFrames = !context.options.outputPath.empty();
+        const std::string pattern = writeFrames ? context.options.outputPath : std::string();
+        const bool writeVideo = !context.options.videoPath.empty();
+
+        if (!writeFrames && !writeVideo)
+            throw std::invalid_argument("CPU animation requires a frame pattern or a video path");
+        if (writeVideo && context.options.resume)
+            throw std::invalid_argument("CPU video output cannot be resumed");
+
+        std::unique_ptr<VideoWriter> video;
+
+        if (writeVideo)
+        {
+            const VideoSettings videoSettings{context.options.videoPath, context.options.videoCodec,
+                                              context.options.videoCrf,   context.options.videoPreset,
+                                              context.options.videoBitrate, fps, width, height};
+
+            video = std::make_unique<VideoWriter>(videoSettings);
+        }
+
         const auto sequenceStart = std::chrono::steady_clock::now();
         int completedFrames = 0;
         int renderedFrames = 0;
 
         for (int frame = startFrame; frame <= endFrame; ++frame)
         {
-            const std::string path = formatFramePath(pattern, frame);
+            const std::string path = writeFrames ? formatFramePath(pattern, frame) : std::string();
             const double frameTime = context.animation->timeAtFrame(frame, fps);
 
-            if (context.options.resume && frameFileExists(path))
+            if (writeFrames && context.options.resume && frameFileExists(path))
             {
                 ++completedFrames;
                 std::clog << "Skipped existing animation frame " << frame << " -> " << path << std::endl;
                 continue;
+            }
+
+            if (context.sceneAnimation)
+            {
+                const bool instancesChanged = context.sceneAnimation->apply(*context.scene, frameTime);
+
+                if (instancesChanged)
+                    context.scene->buildAcceleration();
             }
 
             std::vector<Color3D> frameHDR(pixelCount, Color3D(0.0f));
@@ -135,17 +163,28 @@ void CPURenderer::run(const RenderContext &context)
             const std::vector<uint32_t> pixels =
                 postProcessToRGBA(std::move(frameHDR), width, height, context.options.postProcess);
 
-            writeImageFileAtomic(path, width, height, pixels);
+            if (writeFrames)
+                writeImageFileAtomic(path, width, height, pixels);
+            if (video)
+                video->writeFrame(pixels);
             ++completedFrames;
             ++renderedFrames;
 
             const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - sequenceStart).count();
             const double average = completedFrames > 0 ? elapsed / completedFrames : 0.0;
             const double eta = average * (totalFrames - completedFrames);
+            const std::string &target = writeFrames ? path : context.options.videoPath;
 
-            std::clog << "[" << completedFrames << "/" << totalFrames << "] frame " << frame << " -> " << path
+            std::clog << "[" << completedFrames << "/" << totalFrames << "] frame " << frame << " -> " << target
                       << " (elapsed " << formatDuration(elapsed) << ", ETA " << formatDuration(eta) << ")"
                       << std::endl;
+        }
+
+        if (video)
+        {
+            video->finish();
+            std::clog << "Wrote video -> " << context.options.videoPath << " (" << context.options.videoCodec
+                      << ", " << width << "x" << height << ", " << fps << " fps)" << std::endl;
         }
 
         if (context.options.resume && renderedFrames == 0)
@@ -168,6 +207,21 @@ void CPURenderer::run(const RenderContext &context)
         metadata.shutterAngle = shutter.angle;
         metadata.shutterSamples = shutter.samples;
         metadata.postProcess = context.options.postProcess;
+        metadata.video.path = context.options.videoPath;
+        metadata.video.codec = context.options.videoCodec;
+        metadata.video.crf = context.options.videoCrf;
+        metadata.video.preset = context.options.videoPreset;
+        metadata.video.bitrate = context.options.videoBitrate;
+        metadata.video.fps = fps;
+        metadata.video.enabled = writeVideo;
+
+        if (context.sceneAnimation)
+        {
+            for (const InstanceTrack &track : context.sceneAnimation->getInstanceTracks())
+                metadata.sceneAnimation.instances.push_back(track.target);
+            for (const LightTrack &track : context.sceneAnimation->getLightTracks())
+                metadata.sceneAnimation.lights.push_back(track.target);
+        }
 
         for (int frame = startFrame; frame <= endFrame; ++frame)
         {
@@ -179,13 +233,15 @@ void CPURenderer::run(const RenderContext &context)
             if (context.options.focusDistanceOverride > 0.0f)
                 camera->setFocusDistance(context.options.focusDistanceOverride);
 
-            const std::string path = formatFramePath(pattern, frame);
+            const std::string path = writeFrames ? formatFramePath(pattern, frame) : std::string();
             const uint32_t seed = context.options.seed + static_cast<uint32_t>(frame) * 0x9e3779b9u;
+            const bool rendered = writeFrames ? frameFileExists(path) : true;
 
-            metadata.frames.push_back(makeFrameMetadata(frame, frameTime, path, seed, *camera, frameFileExists(path)));
+            metadata.frames.push_back(makeFrameMetadata(frame, frameTime, path, seed, *camera, rendered));
         }
 
-        const std::string metadataPath = sequenceMetadataPath(pattern);
+        const std::string metadataPath =
+            writeFrames ? sequenceMetadataPath(pattern) : sequenceMetadataPath(context.options.videoPath);
 
         writeSequenceMetadata(metadataPath, metadata);
         std::clog << "Wrote sequence metadata -> " << metadataPath << std::endl;

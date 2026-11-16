@@ -40,6 +40,10 @@ class SphereLight : public ILight
     const Color3D &getColor(void) const;
     float getIntensity(void) const;
 
+    void setIntensity(float intensity) override;
+    void setColor(const Color3D &color) override;
+    void setPosition(const Vec3D &position) override;
+
   private:
     float attenuationAt(float distance) const;
 

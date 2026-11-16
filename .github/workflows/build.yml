@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang cmake pkg-config libconfig++-dev
+          sudo apt-get install -y build-essential clang cmake ffmpeg pkg-config libconfig++-dev
 
       - name: Configure
         run: |
@@ -73,7 +73,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config libconfig++-dev
+          sudo apt-get install -y build-essential cmake ffmpeg pkg-config libconfig++-dev
 
       - name: Configure
         run: |
@@ -120,8 +120,8 @@ jobs:
       - name: Build
         run: cmake --build build -j"$(nproc)"
 
-      - name: CPU/CUDA parity
-        run: ctest --test-dir build --output-on-failure -L parity
+      - name: CPU/CUDA parity and video
+        run: ctest --test-dir build --output-on-failure -L "parity|video"
 
       - name: CUDA memory check
         run: |

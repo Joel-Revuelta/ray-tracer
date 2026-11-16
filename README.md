@@ -27,9 +27,11 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
   camera-relative movement, look controls, FOV zoom, reset and camera locks.
 - **Headless CLI** — binary PPM or PNG output, stdout support, configurable
   resolution/samples, exposure and tonemapping.
-- **Camera animation** — keyframed position/look-at/FOV/lens/focus timelines,
+- **Animation** — keyframed camera, prefab-instance and light timelines,
   deterministic numbered frame sequences, camera motion blur, resumable
   rendering and JSON sequence metadata, with CPU/CUDA playback from the CLI.
+- **Video output** — direct MP4/H.264 and WebM/VP9 encoding through FFmpeg,
+  with optional simultaneous frame output.
 - **Visual pipeline** — exact sRGB output, optional Reinhard/ACES tonemapping,
   and scene background gradients for reflections.
 - **Materials** — diffuse, emissive, flat-colour, Fresnel glass and GGX-rough
@@ -138,11 +140,12 @@ sheet links to the 8K, 4K and 1080p versions in `screenshots/8k/`.
 | CUDA Toolkit | Optional. Tested with CUDA 13.4. |
 | NVIDIA driver | Required for the CUDA renderer. |
 | Python 3 + Pillow | Used by the render scripts for PNG and preview conversion. |
+| `ffmpeg` | Optional runtime dependency for `--video` output and video tests. |
 
 For Debian/Ubuntu, the package names are typically `build-essential`, `cmake`,
 `pkg-config`, `libconfig++-dev`, `libsfml-dev`, `libglfw3-dev` and `libglew-dev`;
 make sure `libsfml-dev` provides SFML 3.0.x, or build SFML 3 from source.
-`python3-pil` provides Pillow.
+`python3-pil` provides Pillow and `ffmpeg` provides the video encoder.
 
 Install the native dependencies with your package manager. SFML and the
 OpenGL GUI are optional; each plugin is built only when its dependencies are
@@ -238,9 +241,24 @@ ffmpeg -framerate 24 -i 'frames/orrery-%04d.png' \
 
 `--start-frame`, `--end-frame` and `--fps` select a sub-range and override the
 scene frame rate. Add `--shutter-angle 180 --shutter-samples 8` for camera
-motion blur. `--resume` skips completed frames, and `--validate` prints the
-resolved frame range and output pattern without rendering. Animation is
-CLI-only; still renders of the same scene are unchanged.
+motion blur. Scenes can also animate named prefab instances and lights through
+the `animation` block; see [docs/scene-format.md](docs/scene-format.md). `--resume`
+skips completed frames, and `--validate` prints the resolved frame range,
+output pattern and animated targets without rendering. Animation is CLI-only;
+still renders of the same scene are unchanged.
+
+Encode the animation directly to a video file:
+
+```bash
+./raytracer --path scenes/brass_orrery.cfg --cli --renderer cuda \
+  --width 1920 --height 1080 --samples 128 --animation \
+  --shutter-angle 180 --shutter-samples 8 \
+  --video orrery.mp4
+```
+
+FFmpeg must be installed (`sudo apt install ffmpeg` on Debian/Ubuntu). Video
+output is video-only by default; add `--keep-frames` or `--output` to also write
+the numbered frames. WebM/VP9 is selected by the `.webm` extension.
 
 Open the interactive SFML window:
 
@@ -292,7 +310,10 @@ Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
        [--threads N] [--seed N] [--device N]
        [--lens-radius R] [--focus-distance D] [--exposure E]
        [--tonemap none|reinhard|aces]
-       [--animation [--start-frame N] [--end-frame N] [--fps F]]
+       [--animation [--start-frame N] [--end-frame N] [--fps F]
+        [--shutter-angle A] [--shutter-samples N] [--resume] [--validate]]
+       [--video out.mp4|out.webm [--video-codec h264|vp9] [--video-crf N]
+        [--video-preset P] [--video-bitrate R] [--keep-frames]]
        [--output out.ppm|out.png|frame-%04d.png]
        [--list-renderers] [--list-guis]
 ```
@@ -324,6 +345,12 @@ Usage: ./raytracer --path <scene.cfg> --cli|--gui sfml|opengl
 | `--shutter-samples <N>` | Deterministic motion-blur subframe count. | scene value |
 | `--resume` | Skip animation frames that already exist. | off |
 | `--validate` | Parse and print the resolved render settings, then exit. | off |
+| `--video <file>` | Encode the animation to MP4/MOV/MKV/WebM. | off |
+| `--video-codec <name>` | `h264` or `vp9`. | by container |
+| `--video-crf <N>` | Quality target; H.264 `0–51`, VP9 `0–63`. | `18` / `32` |
+| `--video-preset <name>` | H.264 speed/quality preset. | `medium` |
+| `--video-bitrate <rate>` | Target bitrate such as `8M`; overrides CRF. | unset |
+| `--keep-frames` | Also write numbered frames with `--video`. | off |
 | `--output <file>` | Output PPM/PNG path or animation frame pattern. | stdout; `frame-%04d.ppm` for animation |
 | `--list-renderers` | List renderer plugins and exit. | |
 | `--list-guis` | List GUI backends and exit. | |
@@ -338,12 +365,16 @@ Important details:
   8-bit RGBA. PPM keeps 8K images around 95 MB instead of several hundred MB of
   ASCII.
 - In CLI mode, omitting `--output` writes a still PPM to standard output.
-  Animated renders default to `frame-%04d.ppm` in the current directory.
+  Animated renders without `--video` default to `frame-%04d.ppm`; video-only
+  renders write no frame files.
 - In GUI mode, no file is written unless `--output` is provided. Animation is
   rejected in GUI mode.
 - Animation frames are written atomically and produce a JSON metadata sidecar.
   Use `--resume` to complete an interrupted sequence and `--validate` to check
   the resolved settings first.
+- `--video` streams frames to an FFmpeg subprocess and writes a temporary file
+  that is renamed on success. `--resume` is not supported with video; use a
+  frame sequence for resumable renders.
 - Errors exit with status `1` and do not write an image.
 - `--list-renderers` and `--help` exit with status `0`.
 
@@ -406,9 +437,9 @@ architecture and CUDA build details.
 | `crystal_garden.cfg` | Crystal spires, metallic shards and floating orbs. |
 | `chrome_singularity.cfg` | Chrome world with a tilted accretion ring. |
 | `solar_bloom.cfg` | Amber sun over a mirror sea. |
-| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns; camera dolly. |
-| `brass_orrery.cfg` | Brass orbit rings, glass planets and a glowing sun; camera orbit. |
-| `tidal_bloom.cfg` | Bioluminescent glass flowers over a lagoon; camera glide. |
+| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns; camera dolly and light pulse. |
+| `brass_orrery.cfg` | Brass orbit rings, glass planets and a glowing sun; camera orbit, rotating rings and sun pulse. |
+| `tidal_bloom.cfg` | Bioluminescent glass flowers over a lagoon; camera glide, bobbing blooms and pulsing lights. |
 | `obsidian_aurora.cfg` | Monolith silhouettes under luminous aurora ribbons. |
 | `frozen_cathedral.cfg` | Ice pillars, a glowing altar and a reflective frozen nave. |
 
@@ -421,10 +452,11 @@ architecture and CUDA build details.
 | `crystal_superbloom.cfg` | Dense field of giant crystal spires. |
 | `solar_eclipse.cfg` | Eclipse with a particle corona over a mirror sea. |
 
-### Camera animations
+### Animations
 
-`sakura_shrine`, `brass_orrery` and `tidal_bloom` include camera-only
-`animation` blocks. Render a numbered sequence with `--animation`:
+`sakura_shrine`, `brass_orrery` and `tidal_bloom` include `animation` blocks
+that move the camera, named prefab instances and light intensities. Render a
+numbered sequence with `--animation`:
 
 ```bash
 mkdir -p frames
@@ -528,7 +560,7 @@ Key directories:
 | Path | Contents |
 | --- | --- |
 | `src/` | Executable entry point and application flow. |
-| `src/render/` | Renderer registry, animation timeline, PPM/PNG output, camera controller, scene snapshot. |
+| `src/render/` | Renderer registry, animation timeline, PPM/PNG/video output, camera controller, scene snapshot. |
 | `src/plugins/renderers/` | CPU and CUDA renderer plugins. |
 | `src/plugins/primitives/` | Sphere, plane, cylinder and cone plugins. |
 | `src/plugins/materials/` | Material plugins. |

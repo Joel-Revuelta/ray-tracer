@@ -21,6 +21,8 @@ SHUTTER_SAMPLES="${SHUTTER_SAMPLES:-}"
 RESUME="${RESUME:-0}"
 VALIDATE="${VALIDATE:-1}"
 FFMPEG="${FFMPEG:-0}"
+VIDEO="${VIDEO:-}"
+KEEP_FRAMES="${KEEP_FRAMES:-1}"
 OUT_DIR="${OUT_DIR:-animations/${SCENE}}"
 PATTERN="${PATTERN:-${OUT_DIR}/frame-%04d.png}"
 
@@ -61,6 +63,22 @@ if [ "$RESUME" = "1" ]; then
     RANGE_FLAGS+=(--resume)
 fi
 
+OUTPUT_FLAGS=()
+if [ -n "$VIDEO" ]; then
+    OUTPUT_FLAGS+=(--video "$VIDEO")
+fi
+if [ "$KEEP_FRAMES" = "1" ]; then
+    OUTPUT_FLAGS+=(--output "$PATTERN")
+fi
+if [ ${#OUTPUT_FLAGS[@]} -eq 0 ]; then
+    echo "Enable KEEP_FRAMES=1 or set VIDEO to produce an output." >&2
+    exit 1
+fi
+if [ -n "$VIDEO" ] && [ "$RESUME" = "1" ]; then
+    echo "RESUME=1 is not supported with VIDEO; resume the frame sequence instead." >&2
+    exit 1
+fi
+
 mkdir -p "$OUT_DIR"
 
 if [ ! -f "scenes/${SCENE}.cfg" ]; then
@@ -74,15 +92,15 @@ if [ "$VALIDATE" = "1" ]; then
     "$RAYTRACER_BIN" --path "scenes/${SCENE}.cfg" --cli --renderer "$RENDERER" \
         --width "$WIDTH" --height "$HEIGHT" --samples "$SAMPLES" \
         ${TONE_FLAGS[@]+"${TONE_FLAGS[@]}"} --animation \
-        ${RANGE_FLAGS[@]+"${RANGE_FLAGS[@]}"} --output "$PATTERN" --validate >/dev/null
+        ${RANGE_FLAGS[@]+"${RANGE_FLAGS[@]}"} ${OUTPUT_FLAGS[@]+"${OUTPUT_FLAGS[@]}"} --validate >/dev/null
 fi
 
 "$RAYTRACER_BIN" --path "scenes/${SCENE}.cfg" --cli --renderer "$RENDERER" \
     --width "$WIDTH" --height "$HEIGHT" --samples "$SAMPLES" \
     ${TONE_FLAGS[@]+"${TONE_FLAGS[@]}"} --animation \
-    ${RANGE_FLAGS[@]+"${RANGE_FLAGS[@]}"} --output "$PATTERN"
+    ${RANGE_FLAGS[@]+"${RANGE_FLAGS[@]}"} ${OUTPUT_FLAGS[@]+"${OUTPUT_FLAGS[@]}"}
 
-if [ "$FFMPEG" = "1" ]; then
+if [ "$FFMPEG" = "1" ] && [ -z "$VIDEO" ]; then
     effective_fps="$FPS"
 
     if [ -z "$effective_fps" ]; then
@@ -92,15 +110,18 @@ if [ "$FFMPEG" = "1" ]; then
     fi
 
     video="${OUT_DIR}/${SCENE}.mp4"
+    ffmpeg_bin="${RAYTRACER_FFMPEG:-ffmpeg}"
 
-    if ! command -v ffmpeg >/dev/null 2>&1; then
+    if ! command -v "$ffmpeg_bin" >/dev/null 2>&1; then
         echo "ffmpeg is not installed; frames are in ${OUT_DIR}/" >&2
         exit 0
     fi
 
-    ffmpeg -y -framerate "$effective_fps" -i "$PATTERN" \
+    "$ffmpeg_bin" -y -hide_banner -loglevel error -framerate "$effective_fps" -i "$PATTERN" \
         -c:v libx264 -pix_fmt yuv420p "$video"
     echo "Video: ${video}"
+elif [ -n "$VIDEO" ]; then
+    echo "Video: ${VIDEO}"
 else
     echo "Frames are in ${OUT_DIR}/"
 fi

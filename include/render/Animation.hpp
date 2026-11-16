@@ -64,6 +64,9 @@ class CameraAnimation
  */
 double shutterSampleTime(double frameTime, double fps, const ShutterSettings &shutter, int sample);
 
+/** Catmull-Rom interpolation shared by camera and scene tracks. */
+Vec3D catmullRom(const Vec3D &p0, const Vec3D &p1, const Vec3D &p2, const Vec3D &p3, float t);
+
 } // namespace RayTracer
 
 #endif // ANIMATION_HPP_

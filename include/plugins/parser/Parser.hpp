@@ -18,6 +18,7 @@
 #include "MtlLoader.hpp"
 #include "SceneBuilder.hpp"
 #include "render/Animation.hpp"
+#include "render/SceneAnimation.hpp"
 #include <libconfig.h++>
 #include <unordered_map>
 
@@ -40,6 +41,8 @@ class Parser
 
     std::shared_ptr<Camera> parseCamera(const libconfig::Setting &cameraSetting);
     std::shared_ptr<CameraAnimation> parseAnimation(const libconfig::Setting &animationSetting);
+    std::shared_ptr<SceneAnimation> parseSceneAnimation(const libconfig::Setting &animationSetting,
+                                                        const Scene &scene);
     void parseMaterials(SceneBuilder &scene, const libconfig::Setting &primitiveSetting);
 
     void parseLights(SceneBuilder &scene, const libconfig::Setting &lightSetting);
@@ -61,6 +64,7 @@ class Parser
     Point3D parsePoint(const libconfig::Setting &pointSetting);
     Vec3D parseVector(const libconfig::Setting &vectorSetting);
     TransformData parseTransform(const libconfig::Setting &transformSetting);
+    TransformPose parseTransformPose(const libconfig::Setting &transformSetting);
     Background parseBackground(const libconfig::Setting &backgroundSetting);
 
     std::shared_ptr<IPrimitive> applyTransform(std::shared_ptr<IPrimitive> primitive,
@@ -68,6 +72,7 @@ class Parser
 
     std::shared_ptr<Camera> getParsedCamera(void) const;
     std::shared_ptr<CameraAnimation> getParsedAnimation(void) const;
+    std::shared_ptr<SceneAnimation> getParsedSceneAnimation(void) const;
 
   private:
     std::string resolveAssetPath(const std::string &path) const;
@@ -77,6 +82,7 @@ class Parser
     Factory _factory;
     std::shared_ptr<Camera> _camera;
     std::shared_ptr<CameraAnimation> _animation;
+    std::shared_ptr<SceneAnimation> _sceneAnimation;
     libconfig::Config _config;
     std::string _sceneDirectory = ".";
     std::unordered_map<std::string, std::shared_ptr<const MeshAsset>> _meshCache;

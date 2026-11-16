@@ -9,6 +9,7 @@
 #include "plugins/renderers/IRenderer.hpp"
 #include "plugins/renderers/RendererRegistry.hpp"
 #include "render/ImageWriter.hpp"
+#include "render/VideoWriter.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -30,8 +31,17 @@ const char *const USAGE =
     "[--seed N] [--device N] [--lens-radius R] [--focus-distance D] [--exposure E] "
     "[--tonemap none|reinhard|aces] [--bloom [--bloom-threshold T] [--bloom-intensity I] "
     "[--bloom-radius R]] [--animation [--start-frame N] [--end-frame N] [--fps F] "
-    "[--shutter-angle A] [--shutter-samples N] [--resume] [--validate]] "
+    "[--shutter-angle A] [--shutter-samples N] [--resume] [--validate] "
+    "[--video out.mp4|out.webm [--video-codec h264|vp9] [--video-crf N] "
+    "[--video-preset P] [--video-bitrate R] [--keep-frames]]] "
     "[--output out.ppm|out.png|frame-%04d.png] [--list-renderers] [--list-guis]";
+
+std::string lowerCase(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return value;
+}
 
 std::string normalizeGuiName(std::string name)
 {
@@ -237,6 +247,12 @@ App::App(int ac, char **av)
                                       {"shutter-samples", required_argument, NULL, 30},
                                       {"resume", 0, NULL, 31},
                                       {"validate", 0, NULL, 32},
+                                      {"video", required_argument, NULL, 33},
+                                      {"video-codec", required_argument, NULL, 34},
+                                      {"video-crf", required_argument, NULL, 35},
+                                      {"video-preset", required_argument, NULL, 36},
+                                      {"video-bitrate", required_argument, NULL, 37},
+                                      {"keep-frames", 0, NULL, 38},
                                       {NULL, 0, NULL, 0}};
 
     // Let the application report unknown options consistently.
@@ -362,6 +378,24 @@ App::App(int ac, char **av)
         case 32:
             _validate = true;
             break;
+        case 33:
+            _videoPath = optarg;
+            break;
+        case 34:
+            _videoCodec = optarg;
+            break;
+        case 35:
+            _videoCrf = parseNonNegativeInt(optarg, "video CRF");
+            break;
+        case 36:
+            _videoPreset = optarg;
+            break;
+        case 37:
+            _videoBitrate = optarg;
+            break;
+        case 38:
+            _keepFrames = true;
+            break;
         case '?':
         default:
             std::cerr << "Unknown or incomplete option." << std::endl;
@@ -424,13 +458,16 @@ void App::run(void)
             camera->setFocusDistance(_focusDistance);
 
         std::shared_ptr<CameraAnimation> animation = _parser->getParsedAnimation();
+        std::shared_ptr<SceneAnimation> sceneAnimation = _parser->getParsedSceneAnimation();
+        const bool videoRequested = !_videoPath.empty();
         const bool animationRequested = _animation || _startFrame >= 0 || _endFrame >= 0 || _fps > 0.0 ||
-                                        _shutterAngle >= 0.0f || _shutterSamples > 0;
+                                        _shutterAngle >= 0.0f || _shutterSamples > 0 || videoRequested;
         int startFrame = 0;
         int endFrame = 0;
         double animationFps = 24.0;
         float shutterAngle = 0.0f;
         int shutterSamples = 1;
+        VideoSettings video;
 
         if (animationRequested)
         {
@@ -484,6 +521,46 @@ void App::run(void)
             }
         }
 
+        if (!_output.empty() && isVideoExtension(_output))
+        {
+            std::cerr << "--output is for frame sequences; use --video for video output: " << _output << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+
+        if (videoRequested)
+        {
+            if (_resume)
+            {
+                std::cerr << "--resume cannot be used with --video; render frames with --output and encode later."
+                          << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+
+            video.path = _videoPath;
+            video.codec = lowerCase(_videoCodec.empty() ? defaultVideoCodec(_videoPath) : _videoCodec);
+            video.crf = _videoCrf >= 0 ? _videoCrf : (video.codec == "vp9" ? 32 : 18);
+            video.preset = lowerCase(_videoPreset.empty() ? "medium" : _videoPreset);
+            video.bitrate = _videoBitrate;
+            video.fps = animationFps;
+            video.width = _width;
+            video.height = _height;
+
+            const std::string validationError = validateVideoSettings(video);
+
+            if (!validationError.empty())
+            {
+                std::cerr << validationError << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+            if (findFFmpeg().empty())
+            {
+                std::cerr << "ffmpeg was not found; install it or set RAYTRACER_FFMPEG." << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
+            if (_output.empty() && _keepFrames)
+                _output = "frame-%04d.ppm";
+        }
+
         const RendererEntry *rendererEntry = findRenderer(_rendererName);
         if (!rendererEntry)
         {
@@ -501,18 +578,61 @@ void App::run(void)
 
             if (animationRequested)
             {
-                const std::string pattern = _output.empty() ? "frame-%04d.ppm" : _output;
-                const std::string firstPath = formatFramePath(pattern, startFrame);
-                const std::string lastPath = formatFramePath(pattern, endFrame);
+                const bool writeFrames = !_output.empty() || !videoRequested;
 
                 std::cout << std::fixed << std::setprecision(3);
                 std::cout << "Animation: " << animation->getFrameCount(animationFps) << " frames at "
                           << animationFps << " fps, duration " << animation->getDuration() << " s" << std::endl;
                 std::cout << "Frame range: " << startFrame << "-" << endFrame << std::endl;
-                std::cout << "Output pattern: " << pattern << std::endl;
-                std::cout << "First frame: " << firstPath << std::endl;
-                std::cout << "Last frame: " << lastPath << std::endl;
+
+                if (writeFrames)
+                {
+                    const std::string pattern = _output.empty() ? "frame-%04d.ppm" : _output;
+                    const std::string firstPath = formatFramePath(pattern, startFrame);
+                    const std::string lastPath = formatFramePath(pattern, endFrame);
+
+                    std::cout << "Output pattern: " << pattern << std::endl;
+                    std::cout << "First frame: " << firstPath << std::endl;
+                    std::cout << "Last frame: " << lastPath << std::endl;
+                }
+                else
+                {
+                    std::cout << "Output pattern: none" << std::endl;
+                }
+
                 std::cout << "Shutter: " << shutterAngle << " deg, " << shutterSamples << " samples" << std::endl;
+
+                if (videoRequested)
+                {
+                    std::cout << "Video: " << video.path << " (" << video.codec << ", CRF " << video.crf
+                              << ", preset " << video.preset << ")" << std::endl;
+                    std::cout << "Video size: " << video.width << "x" << video.height << " at " << video.fps
+                              << " fps" << std::endl;
+                    std::cout << "FFmpeg: " << findFFmpeg() << std::endl;
+                    std::cout << "Frames output: " << (_output.empty() ? "none" : _output) << std::endl;
+                }
+
+                if (sceneAnimation)
+                {
+                    std::cout << "Scene animation: " << sceneAnimation->getInstanceTracks().size()
+                              << " instance tracks, " << sceneAnimation->getLightTracks().size()
+                              << " light tracks" << std::endl;
+
+                    if (!sceneAnimation->getInstanceTracks().empty())
+                    {
+                        std::cout << "Instance targets:";
+                        for (const InstanceTrack &track : sceneAnimation->getInstanceTracks())
+                            std::cout << " " << track.target;
+                        std::cout << std::endl;
+                    }
+                    if (!sceneAnimation->getLightTracks().empty())
+                    {
+                        std::cout << "Light targets:";
+                        for (const LightTrack &track : sceneAnimation->getLightTracks())
+                            std::cout << " " << track.target;
+                        std::cout << std::endl;
+                    }
+                }
             }
             else
             {
@@ -528,6 +648,11 @@ void App::run(void)
                               << std::endl;
                     std::cout << "Shutter: " << sceneShutter.angle << " deg, " << sceneShutter.samples
                               << " samples" << std::endl;
+
+                    if (sceneAnimation)
+                        std::cout << "Scene animation: " << sceneAnimation->getInstanceTracks().size()
+                                  << " instance tracks, " << sceneAnimation->getLightTracks().size()
+                                  << " light tracks" << std::endl;
                     std::cout << "Pass --animation to render it." << std::endl;
                 }
             }
@@ -560,6 +685,7 @@ void App::run(void)
         context.scene = scene;
         context.camera = camera;
         context.animation = animation;
+        context.sceneAnimation = sceneAnimation;
         context.options.width = _width;
         context.options.height = _height;
         context.options.frames = _frames;
@@ -573,7 +699,7 @@ void App::run(void)
         context.options.endFrame = endFrame;
         context.options.animationFps = animationFps;
 
-        if (animationRequested && context.options.outputPath.empty())
+        if (animationRequested && context.options.outputPath.empty() && !videoRequested)
             context.options.outputPath = "frame-%04d.ppm";
         context.options.shutterAngle = shutterAngle;
         context.options.shutterSamples = shutterSamples;
@@ -582,6 +708,11 @@ void App::run(void)
         context.options.resume = _resume;
         context.options.scenePath = _filepath;
         context.options.rendererName = rendererEntry->name;
+        context.options.videoPath = video.path;
+        context.options.videoCodec = video.codec;
+        context.options.videoCrf = video.crf;
+        context.options.videoPreset = video.preset;
+        context.options.videoBitrate = video.bitrate;
 
         if (_interface == Interface::GUI)
         {

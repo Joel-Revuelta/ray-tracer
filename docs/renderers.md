@@ -59,6 +59,11 @@ struct RenderOptions
     bool resume;
     std::string scenePath;
     std::string rendererName;
+    std::string videoPath;
+    std::string videoCodec;
+    int videoCrf;
+    std::string videoPreset;
+    std::string videoBitrate;
 };
 
 struct RenderContext
@@ -290,7 +295,10 @@ Both renderers share the same output pipeline:
 2. exposure multiplier,
 3. tonemapping: `none`, `reinhard`, or `aces`,
 4. sRGB transfer,
-5. 8-bit PPM or PNG output.
+5. 8-bit PPM, PNG or video output.
+
+Video frames use the same display-referred pixels, streamed as RGBA to FFmpeg
+and converted to BT.709 `yuv420p`. MP4/MOV/MKV use H.264; WebM uses VP9.
 
 The defaults are exposure `1.0` and tonemapping `none`. Use `--tonemap aces`
 for a softer highlight roll-off and `--exposure` to adjust the overall level.
@@ -316,13 +324,24 @@ seed formula `seed + frame * 0x9e3779b9u`.
   writes never leave partial final frames.
 - `--resume` skips frames whose final output already exists. The CUDA session
   is initialized from the first frame that will actually render.
-- A JSON sidecar records the resolved settings and per-frame camera poses; both
-  renderers produce the same schema.
+- Named prefab-instance transforms and light values can also animate. CPU
+  rebuilds the BVH only when instance transforms change; CUDA reuses the session
+  for light-only animation and rebuilds the snapshot/session per frame when
+  instances move. Camera-only sequences keep the original fast path.
+- Motion blur is camera-only; object and light values are constant within a
+  shutter interval.
+- A JSON sidecar records the resolved settings, video settings, scene-animation
+  targets and per-frame camera poses; both renderers produce the same schema.
+- `--video` streams final frames to the same `VideoWriter` in both renderers.
+  Video-only mode writes no frame files; `--output` or `--keep-frames` enables
+  them. Video output uses an FFmpeg subprocess and requires the `ffmpeg`
+  executable at render time.
 - Animation is CLI-only. GUI renderers reject animation flags so interactive
   camera control cannot fight the timeline.
 - CPU/CUDA sequences match within normal Monte Carlo noise when the sample
   count and seed are identical. Camera-only animation does not change scene
-  ordering, so parity behavior is unchanged from still rendering.
+  ordering; scene animation keeps the same primitive and light order on both
+  renderers, so parity behavior is unchanged from still rendering.
 
 ## Troubleshooting
 

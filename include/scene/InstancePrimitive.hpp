@@ -11,6 +11,7 @@
 #include "Primitive.hpp"
 #include "Transform.hpp"
 #include <memory>
+#include <string>
 
 namespace RayTracer
 {
@@ -24,6 +25,7 @@ class InstancePrimitive : public IPrimitive
 {
   public:
     InstancePrimitive(std::shared_ptr<IPrimitive> child, const TransformData &transform);
+    InstancePrimitive(std::shared_ptr<IPrimitive> child, const TransformPose &pose);
 
     void doTransformation(const ITransformation &t) override;
     bool hit(const Ray &ray, HitPayload &payload, size_t i) const override;
@@ -37,10 +39,20 @@ class InstancePrimitive : public IPrimitive
     void setMaterialIndex(const uint &index) override;
 
     const TransformData &getTransform(void) const;
+    const TransformPose &getPose(void) const;
+    bool hasPose(void) const;
+
+    void setTransform(const TransformData &transform);
+    void setPose(const TransformPose &pose);
+    void setGroupId(const std::string &groupId);
+    const std::string &getGroupId(void) const;
 
   private:
     std::shared_ptr<IPrimitive> _child;
     TransformData _transform;
+    TransformPose _pose;
+    bool _hasPose = false;
+    std::string _groupId;
 };
 
 } // namespace RayTracer

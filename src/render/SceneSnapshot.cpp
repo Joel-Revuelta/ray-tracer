@@ -34,6 +34,22 @@ CameraData RayTracer::makeCameraData(const Camera &camera)
     return data;
 }
 
+std::vector<LightData> RayTracer::collectLights(const Scene &scene)
+{
+    std::vector<LightData> lights;
+
+    lights.reserve(scene.getLights().size());
+    for (const auto &light : scene.getLights())
+    {
+        LightData data;
+
+        if (!light->getData(data))
+            throw std::runtime_error("A light does not support renderer-neutral snapshots");
+        lights.push_back(data);
+    }
+    return lights;
+}
+
 SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &camera)
 {
     SceneSnapshot snapshot;
@@ -83,15 +99,7 @@ SceneSnapshot RayTracer::buildSceneSnapshot(const Scene &scene, const Camera &ca
         snapshot.background.environmentTextureIndex = inserted.first->second;
     }
 
-    for (const auto &light : scene.getLights())
-    {
-        LightData data;
-
-        if (!light->getData(data))
-            throw std::runtime_error("A light does not support renderer-neutral snapshots");
-
-        snapshot.lights.push_back(data);
-    }
+    snapshot.lights = collectLights(scene);
 
     std::unordered_map<const MeshAsset *, std::uint32_t> meshIndices;
 

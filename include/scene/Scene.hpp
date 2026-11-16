@@ -10,6 +10,7 @@
 
 #include "Color.hpp"
 #include "IMaterial.hpp"
+#include "InstancePrimitive.hpp"
 #include "Light.hpp"
 #include "Primitive.hpp"
 #include "Background.hpp"
@@ -17,6 +18,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace RayTracer
@@ -25,6 +28,7 @@ namespace RayTracer
 using Lights = std::vector<std::shared_ptr<ILight>>;
 using Primitives = std::vector<std::shared_ptr<IPrimitive>>;
 using Materials = std::vector<std::shared_ptr<IMaterial>>;
+using InstanceGroup = std::vector<std::shared_ptr<InstancePrimitive>>;
 
 class Scene : public IPrimitive
 {
@@ -42,12 +46,18 @@ class Scene : public IPrimitive
     void addLight(std::shared_ptr<ILight> light);
     void addMaterial(std::shared_ptr<IMaterial> material);
     void addPrimitive(std::shared_ptr<IPrimitive> primitive);
+    void addInstanceGroup(const std::string &id, const InstanceGroup &instances);
+    void associateLight(const std::string &id, std::shared_ptr<ILight> light);
 
     const Lights &getLights(void) const;
     const Materials &getMaterials(void) const;
     const Primitives &getPrimitives(void) const;
     const Background &getBackground(void) const;
     void setBackground(const Background &background);
+    const std::unordered_map<std::string, InstanceGroup> &getInstanceGroups(void) const;
+    const InstanceGroup *findInstanceGroup(const std::string &id) const;
+    const std::unordered_map<std::string, std::shared_ptr<ILight>> &getLightsById(void) const;
+    std::shared_ptr<ILight> findLight(const std::string &id) const;
 
     uint getMaterialIndex(void) const override;
     void setMaterialIndex(const uint &index) override;
@@ -59,6 +69,8 @@ class Scene : public IPrimitive
     Lights _lights;
     Materials _materials;
     Primitives _primitives;
+    std::unordered_map<std::string, InstanceGroup> _instanceGroups;
+    std::unordered_map<std::string, std::shared_ptr<ILight>> _lightsById;
     Background _background;
     std::vector<BVHNode> _bvhNodes;
     std::vector<std::uint32_t> _bvhIndices;

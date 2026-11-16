@@ -6,6 +6,7 @@
 */
 
 #include "Transform.hpp"
+#include <algorithm>
 #include <cmath>
 
 using namespace RayTracer;
@@ -108,14 +109,55 @@ void rotationMatrix(const Vec3D &rotationDegrees, float result[9])
     multiplyMatrix(rotationZ, rotationY, temporary);
     multiplyMatrix(temporary, rotationX, result);
 }
-} // namespace
 
-TransformData RayTracer::makeTransform(const Vec3D &translation, const Vec3D &rotationDegrees, const Vec3D &scale)
+Quaternion quaternionMultiply(const Quaternion &left, const Quaternion &right)
+{
+    return Quaternion{left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
+                      left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+                      left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+                      left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w};
+}
+
+Quaternion quaternionNormalize(const Quaternion &value)
+{
+    const float length =
+        std::sqrt(value.w * value.w + value.x * value.x + value.y * value.y + value.z * value.z);
+
+    if (!std::isfinite(length) || length < 1e-12f)
+        return Quaternion{};
+
+    const float inverse = 1.0f / length;
+
+    return Quaternion{value.w * inverse, value.x * inverse, value.y * inverse, value.z * inverse};
+}
+
+void rotationMatrix(const Quaternion &rotation, float result[9])
+{
+    const Quaternion q = quaternionNormalize(rotation);
+    const float xx = q.x * q.x;
+    const float yy = q.y * q.y;
+    const float zz = q.z * q.z;
+    const float xy = q.x * q.y;
+    const float xz = q.x * q.z;
+    const float yz = q.y * q.z;
+    const float wx = q.w * q.x;
+    const float wy = q.w * q.y;
+    const float wz = q.w * q.z;
+
+    result[0] = 1.0f - 2.0f * (yy + zz);
+    result[1] = 2.0f * (xy - wz);
+    result[2] = 2.0f * (xz + wy);
+    result[3] = 2.0f * (xy + wz);
+    result[4] = 1.0f - 2.0f * (xx + zz);
+    result[5] = 2.0f * (yz - wx);
+    result[6] = 2.0f * (xz - wy);
+    result[7] = 2.0f * (yz + wx);
+    result[8] = 1.0f - 2.0f * (xx + yy);
+}
+
+TransformData buildTransform(const float rotation[9], const Vec3D &translation, const Vec3D &scale)
 {
     TransformData transform;
-    float rotation[9];
-
-    rotationMatrix(rotationDegrees, rotation);
 
     for (int row = 0; row < 3; ++row)
     {
@@ -129,6 +171,77 @@ TransformData RayTracer::makeTransform(const Vec3D &translation, const Vec3D &ro
     transform.translation[2] = translation.getZ();
     updateInverse(transform);
     return transform;
+}
+} // namespace
+
+TransformData RayTracer::makeTransform(const Vec3D &translation, const Vec3D &rotationDegrees, const Vec3D &scale)
+{
+    float rotation[9];
+
+    rotationMatrix(rotationDegrees, rotation);
+    return buildTransform(rotation, translation, scale);
+}
+
+TransformData RayTracer::makeTransform(const TransformPose &pose)
+{
+    return makeTransform(pose.translation, pose.rotation, pose.scale);
+}
+
+TransformData RayTracer::makeTransform(const Vec3D &translation, const Quaternion &rotation, const Vec3D &scale)
+{
+    float matrix[9];
+
+    rotationMatrix(rotation, matrix);
+    return buildTransform(matrix, translation, scale);
+}
+
+RayTracer::Quaternion RayTracer::quaternionFromEulerDegrees(const Vec3D &rotationDegrees)
+{
+    const float halfX = degreesToRadians(rotationDegrees.getX()) * 0.5f;
+    const float halfY = degreesToRadians(rotationDegrees.getY()) * 0.5f;
+    const float halfZ = degreesToRadians(rotationDegrees.getZ()) * 0.5f;
+    const Quaternion rotationX{std::cos(halfX), std::sin(halfX), 0.0f, 0.0f};
+    const Quaternion rotationY{std::cos(halfY), 0.0f, std::sin(halfY), 0.0f};
+    const Quaternion rotationZ{std::cos(halfZ), 0.0f, 0.0f, std::sin(halfZ)};
+
+    return quaternionNormalize(quaternionMultiply(rotationZ, quaternionMultiply(rotationY, rotationX)));
+}
+
+RayTracer::Quaternion RayTracer::slerp(const Quaternion &first, const Quaternion &second, float amount)
+{
+    const float clampedAmount = std::clamp(amount, 0.0f, 1.0f);
+    Quaternion target = second;
+    float dot = first.w * second.w + first.x * second.x + first.y * second.y + first.z * second.z;
+
+    if (dot < 0.0f)
+    {
+        target = Quaternion{-second.w, -second.x, -second.y, -second.z};
+        dot = -dot;
+    }
+
+    if (dot > 0.9995f)
+    {
+        return quaternionNormalize(
+            Quaternion{first.w + (target.w - first.w) * clampedAmount,
+                       first.x + (target.x - first.x) * clampedAmount,
+                       first.y + (target.y - first.y) * clampedAmount,
+                       first.z + (target.z - first.z) * clampedAmount});
+    }
+
+    const float theta = std::acos(std::clamp(dot, -1.0f, 1.0f));
+    const float sine = std::sin(theta);
+
+    if (!std::isfinite(sine) || std::fabs(sine) < 1e-12f)
+        return quaternionNormalize(first);
+
+    const float firstWeight = std::sin((1.0f - clampedAmount) * theta) / sine;
+    const float secondWeight = std::sin(clampedAmount * theta) / sine;
+
+    return quaternionNormalize(
+        Quaternion{first.w * firstWeight + target.w * secondWeight,
+                   first.x * firstWeight + target.x * secondWeight,
+                   first.y * firstWeight + target.y * secondWeight,
+                   first.z * firstWeight + target.z * secondWeight});
 }
 
 TransformData RayTracer::composeTransforms(const TransformData &parent, const TransformData &child)

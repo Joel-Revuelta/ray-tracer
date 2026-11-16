@@ -70,6 +70,7 @@ struct SceneSnapshot
 };
 
 CameraData makeCameraData(const Camera &camera);
+std::vector<LightData> collectLights(const Scene &scene);
 SceneSnapshot buildSceneSnapshot(const Scene &scene, const Camera &camera);
 
 } // namespace RayTracer

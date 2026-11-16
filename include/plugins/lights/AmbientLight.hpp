@@ -34,8 +34,8 @@ class AmbientLight : public ILight
     Color3D getColor(void) const;
     float getIntensity(void) const;
 
-    void setIntensity(float intensity);
-    void setColor(const Color3D &color);
+    void setIntensity(float intensity) override;
+    void setColor(const Color3D &color) override;
 
   private:
     // Color of the light

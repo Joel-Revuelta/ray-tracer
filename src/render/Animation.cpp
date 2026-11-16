@@ -16,7 +16,13 @@ using namespace RayTracer;
 
 namespace
 {
-Vec3D catmullRom(const Vec3D &p0, const Vec3D &p1, const Vec3D &p2, const Vec3D &p3, float t)
+float lerp(float first, float second, float amount)
+{
+    return first + (second - first) * amount;
+}
+} // namespace
+
+Vec3D RayTracer::catmullRom(const Vec3D &p0, const Vec3D &p1, const Vec3D &p2, const Vec3D &p3, float t)
 {
     const float t2 = t * t;
     const float t3 = t2 * t;
@@ -32,12 +38,6 @@ Vec3D catmullRom(const Vec3D &p0, const Vec3D &p1, const Vec3D &p2, const Vec3D 
                 (2.0f * p0.getZ() - 5.0f * p1.getZ() + 4.0f * p2.getZ() - p3.getZ()) * t2 +
                 (-p0.getZ() + 3.0f * p1.getZ() - 3.0f * p2.getZ() + p3.getZ()) * t3));
 }
-
-float lerp(float first, float second, float amount)
-{
-    return first + (second - first) * amount;
-}
-} // namespace
 
 CameraAnimation::CameraAnimation(std::vector<CameraKeyframe> keyframes, int fps, ShutterSettings shutter)
     : _keyframes(std::move(keyframes)), _fps(fps), _shutter(shutter)

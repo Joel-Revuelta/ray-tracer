@@ -73,9 +73,9 @@ letterboxes it to preserve aspect ratio.
 | `mtl_materials.cfg` | Automatic OBJ/MTL material import, including a textured face |
 | `group_transform.cfg` | A nested scene of spheres and a point light transformed as a group |
 | `prefabs.cfg` | One lamp prefab instantiated three times with different transforms |
-| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns; camera dolly |
-| `brass_orrery.cfg` | Brass orbit rings, glass planets and a layered glowing sun; camera orbit |
-| `tidal_bloom.cfg` | Bioluminescent glass flowers over a mirror lagoon; camera glide |
+| `sakura_shrine.cfg` | Blue-hour shrine with torii, cherry trees and warm lanterns; camera dolly and pulsing shrine light |
+| `brass_orrery.cfg` | Brass orbit rings, glass planets and a glowing sun; camera orbit, rotating rings and sun pulse |
+| `tidal_bloom.cfg` | Bioluminescent glass flowers over a mirror lagoon; camera glide, bobbing blooms and pulsing lights |
 | `obsidian_aurora.cfg` | Monolith silhouettes under luminous aurora ribbons |
 | `frozen_cathedral.cfg` | Ice pillars, a glowing altar and a reflective frozen nave |
 
@@ -95,14 +95,15 @@ bloom: `sakura_shrine` at exposure `1.25`, `brass_orrery` at `0.85`,
 
 `obsidian_aurora` is composed for 8K; the other four are composed for 16:9 HD.
 
-## Camera animations
+## Animations
 
-`sakura_shrine`, `brass_orrery` and `tidal_bloom` include camera-only
-`animation` blocks. Still renders are unchanged; pass `--animation` to play the
-timeline. `--start-frame`, `--end-frame` and `--fps` select a sub-range and can
-override the scene frame rate. `--shutter-angle` and `--shutter-samples` add
-camera motion blur, `--resume` skips frames already on disk, and `--validate`
-prints the resolved settings without rendering.
+`sakura_shrine`, `brass_orrery` and `tidal_bloom` include `animation` blocks.
+They animate the camera, named prefab instances and light intensities. Still
+renders are unchanged; pass `--animation` to play the timeline.
+`--start-frame`, `--end-frame` and `--fps` select a sub-range and can override
+the scene frame rate. `--shutter-angle` and `--shutter-samples` add camera
+motion blur, `--resume` skips frames already on disk, and `--validate` prints
+the resolved settings without rendering.
 
 ```bash
 # Brass Orrery: 8-second arc at 24 fps, full sequence
@@ -123,7 +124,22 @@ mkdir -p frames
   --width 1280 --height 720 --samples 64 --animation \
   --shutter-angle 180 --shutter-samples 8 --resume \
   --output 'frames/sakura-%04d.png'
+
+# Encode directly to MP4; add --keep-frames to retain the source frames
+./raytracer --path scenes/sakura_shrine.cfg --cli --renderer cuda \
+  --width 1280 --height 720 --samples 64 --animation \
+  --shutter-angle 180 --shutter-samples 8 \
+  --video sakura.mp4
+
+# WebM/VP9 is selected by the extension
+./raytracer --path scenes/tidal_bloom.cfg --cli --renderer cuda \
+  --width 1280 --height 720 --samples 64 --animation \
+  --video tidal.webm
 ```
+
+Video output requires the `ffmpeg` executable (or `RAYTRACER_FFMPEG`).
+`--resume` is not supported with video; use the frame-sequence commands above
+for resumable renders.
 
 Assemble PNG frames with `ffmpeg` after rendering, or use
 `scenes/render_animation.sh`:
@@ -131,6 +147,9 @@ Assemble PNG frames with `ffmpeg` after rendering, or use
 ```bash
 SCENE=sakura_shrine SAMPLES=64 WIDTH=1280 HEIGHT=720 ./scenes/render_animation.sh
 FFMPEG=1 ./scenes/render_animation.sh brass_orrery
+
+# Direct video encoding; KEEP_FRAMES=1 also writes the frame sequence
+VIDEO=sakura.mp4 KEEP_FRAMES=0 ./scenes/render_animation.sh sakura_shrine
 ```
 
 All render scripts accept `RAYTRACER_BIN` when the executable lives outside the

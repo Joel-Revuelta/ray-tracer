@@ -781,6 +781,42 @@ add_test(
             --output ${CMAKE_BINARY_DIR}/animation_shutter_smoke-%02d.ppm
 )
 add_test(
+    NAME scene_animation_smoke
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/scene_animation.cfg
+            --cli --renderer cpu --width 64 --height 36 --samples 2
+            --animation --start-frame 0 --end-frame 1
+            --output ${CMAKE_BINARY_DIR}/scene_animation_smoke-%02d.ppm
+)
+add_test(
+    NAME deterministic_scene_animation
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_scene_animation.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+add_test(
+    NAME parser_rejects_invalid_scene_animation_target
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_scene_animation_target.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_scene_animation_target.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_scene_animation_times
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_scene_animation_times.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_scene_animation_times.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_scene_animation_empty
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_scene_animation_empty.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_scene_animation_empty.ppm
+)
+add_test(
+    NAME parser_rejects_invalid_scene_animation_duplicate
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/tests/invalid_scene_animation_duplicate.cfg
+            --cli --renderer cpu --width 16 --height 9 --frames 1
+            --output ${CMAKE_BINARY_DIR}/invalid_scene_animation_duplicate.ppm
+)
+add_test(
     NAME deterministic_motion_blur
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/deterministic_motion_blur.sh $<TARGET_FILE:raytracer>
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
@@ -828,6 +864,59 @@ add_test(
             --cli --animation --output ${CMAKE_BINARY_DIR}/validate-%s.png --validate
 )
 add_test(
+    NAME video_output_smoke
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/video_output.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(video_output_smoke PROPERTIES
+    SKIP_RETURN_CODE 77
+    LABELS "video;output"
+    WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR}
+)
+add_test(
+    NAME cli_rejects_resume_video
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --video ${CMAKE_BINARY_DIR}/resume.mp4 --resume
+)
+add_test(
+    NAME cli_rejects_output_video_extension
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --output ${CMAKE_BINARY_DIR}/output.mp4
+)
+add_test(
+    NAME cli_rejects_invalid_video_container
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --video ${CMAKE_BINARY_DIR}/video.avi
+)
+add_test(
+    NAME cli_rejects_invalid_video_codec
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --video ${CMAKE_BINARY_DIR}/video.mp4 --video-codec vp8
+)
+add_test(
+    NAME cli_rejects_invalid_video_crf
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --video ${CMAKE_BINARY_DIR}/video.mp4 --video-crf 99
+)
+add_test(
+    NAME cli_rejects_invalid_video_bitrate
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --video ${CMAKE_BINARY_DIR}/video.mp4 --video-bitrate bananas
+)
+add_test(
+    NAME cli_rejects_webm_h264
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --video ${CMAKE_BINARY_DIR}/video.webm --video-codec h264
+)
+add_test(
+    NAME cli_rejects_missing_ffmpeg
+    COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/brass_orrery.cfg
+            --cli --animation --end-frame 0 --video ${CMAKE_BINARY_DIR}/video.mp4 --validate
+)
+set_tests_properties(cli_rejects_missing_ffmpeg PROPERTIES
+    ENVIRONMENT "RAYTRACER_FFMPEG=/nonexistent"
+)
+add_test(
     NAME cli_rejects_invalid_bloom_radius
     COMMAND $<TARGET_FILE:raytracer> --path ${CMAKE_SOURCE_DIR}/scenes/showcase.cfg
             --cli --renderer cpu --width 16 --height 9 --frames 1
@@ -857,8 +946,8 @@ set_tests_properties(cli_cpu_smoke list_renderers deterministic_cpu_render post_
     sakura_shrine_smoke brass_orrery_smoke tidal_bloom_smoke obsidian_aurora_smoke
     frozen_cathedral_smoke deterministic_scene_pack_render
     bloom_smoke deterministic_bloom_render
-    animation_smoke implicit_animation_smoke animation_shutter_smoke
-    deterministic_animation_render deterministic_motion_blur
+    animation_smoke implicit_animation_smoke animation_shutter_smoke scene_animation_smoke
+    deterministic_animation_render deterministic_motion_blur deterministic_scene_animation
     validate_still_smoke validate_animation_smoke
     png_output_smoke
     PROPERTIES WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR})
@@ -881,7 +970,15 @@ set_tests_properties(cli_rejects_invalid_threads cli_rejects_invalid_seed
     parser_rejects_invalid_animation_shutter_angle
     parser_rejects_invalid_animation_shutter_samples
     cli_rejects_invalid_shutter_angle cli_rejects_invalid_shutter_samples
-    cli_rejects_validate_bad_pattern PROPERTIES
+    cli_rejects_validate_bad_pattern
+    cli_rejects_resume_video cli_rejects_output_video_extension
+    cli_rejects_invalid_video_container cli_rejects_invalid_video_codec
+    cli_rejects_invalid_video_crf cli_rejects_invalid_video_bitrate
+    cli_rejects_webm_h264 cli_rejects_missing_ffmpeg
+    parser_rejects_invalid_scene_animation_target
+    parser_rejects_invalid_scene_animation_times
+    parser_rejects_invalid_scene_animation_empty
+    parser_rejects_invalid_scene_animation_duplicate PROPERTIES
     WILL_FAIL TRUE
     WORKING_DIRECTORY ${RAYTRACER_RUNTIME_DIR}
 )
@@ -909,7 +1006,10 @@ set_tests_properties(
 set_tests_properties(animation_smoke implicit_animation_smoke animation_shutter_smoke PROPERTIES
     LABELS "smoke;animation"
 )
-set_tests_properties(deterministic_motion_blur PROPERTIES LABELS "scene;animation")
+set_tests_properties(scene_animation_smoke PROPERTIES LABELS "smoke;animation;scene")
+set_tests_properties(deterministic_motion_blur deterministic_scene_animation PROPERTIES
+    LABELS "scene;animation"
+)
 set_tests_properties(png_output_smoke PROPERTIES LABELS "output;smoke")
 set_tests_properties(
     deterministic_cpu_render seed_deterministic_cpu_render deterministic_dof_render
@@ -945,7 +1045,18 @@ set_tests_properties(
     parser_rejects_invalid_animation_shutter_samples
     cli_rejects_invalid_shutter_angle cli_rejects_invalid_shutter_samples
     cli_rejects_validate_bad_pattern
+    parser_rejects_invalid_scene_animation_target
+    parser_rejects_invalid_scene_animation_times
+    parser_rejects_invalid_scene_animation_empty
+    parser_rejects_invalid_scene_animation_duplicate
     PROPERTIES LABELS "negative;animation"
+)
+set_tests_properties(
+    cli_rejects_resume_video cli_rejects_output_video_extension
+    cli_rejects_invalid_video_container cli_rejects_invalid_video_codec
+    cli_rejects_invalid_video_crf cli_rejects_invalid_video_bitrate
+    cli_rejects_webm_h264 cli_rejects_missing_ffmpeg
+    PROPERTIES LABELS "negative;video"
 )
 
 # Install a self-contained bundle: executable and core in bin/, plugins in

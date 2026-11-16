@@ -31,6 +31,23 @@ struct FrameMetadata
     bool rendered = false;
 };
 
+struct VideoMetadata
+{
+    bool enabled = false;
+    std::string path;
+    std::string codec;
+    int crf = 0;
+    std::string preset;
+    std::string bitrate;
+    double fps = 24.0;
+};
+
+struct SceneAnimationMetadata
+{
+    std::vector<std::string> instances;
+    std::vector<std::string> lights;
+};
+
 struct SequenceMetadata
 {
     std::string scenePath;
@@ -45,6 +62,8 @@ struct SequenceMetadata
     float shutterAngle = 0.0f;
     int shutterSamples = 1;
     PostProcessSettings postProcess;
+    VideoMetadata video;
+    SceneAnimationMetadata sceneAnimation;
     std::vector<FrameMetadata> frames;
 };
 

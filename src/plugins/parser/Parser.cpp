@@ -197,6 +197,7 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
     SceneBuilder sceneBuilder;
     _camera.reset();
     _animation.reset();
+    _sceneAnimation.reset();
     _materialCount = 0;
     _mtlMaterialIndices.clear();
     _prefabScenes.clear();
@@ -215,7 +216,12 @@ std::shared_ptr<Scene> Parser::init(const std::string &filename)
         parseLights(sceneBuilder, _config.lookup("lights"));
         if (_config.exists("background"))
             sceneBuilder.setBackground(parseBackground(_config.lookup("background")));
-        return sceneBuilder.build();
+
+        std::shared_ptr<Scene> scene = sceneBuilder.build();
+
+        if (_config.exists("animation") && scene)
+            _sceneAnimation = parseSceneAnimation(_config.lookup("animation"), *scene);
+        return scene;
     }
     catch (const libconfig::SettingNotFoundException &e)
     {
@@ -397,6 +403,138 @@ std::shared_ptr<CameraAnimation> Parser::parseAnimation(const libconfig::Setting
 }
 
 /**
+ * Parses animated prefab-instance transforms and light values. The scene must
+ * already be built so targets can be validated against the registered ids.
+ */
+std::shared_ptr<SceneAnimation> Parser::parseSceneAnimation(const libconfig::Setting &animationSetting,
+                                                             const Scene &scene)
+{
+    if (!_animation)
+        throw std::runtime_error("Scene animation requires a camera animation timeline");
+
+    auto forEach = [](const libconfig::Setting &setting, auto callback) {
+        if (setting.isList())
+        {
+            for (int i = 0; i < setting.getLength(); ++i)
+                callback(setting[i]);
+        }
+        else
+            callback(setting);
+    };
+
+    auto parseVec3Track = [&](const libconfig::Setting &trackSetting, const std::string &name) {
+        Vec3Track track;
+
+        forEach(trackSetting, [&](const libconfig::Setting &keyframe) {
+            const double time = settingAsDouble(keyframe.lookup("time"), name + " keyframe time");
+
+            requireFinite(time, name + " keyframe time");
+            track.keyframes.push_back(Vec3Keyframe{time, parsePoint(keyframe.lookup("value"))});
+        });
+        return track;
+    };
+
+    auto parseRotationTrack = [&](const libconfig::Setting &trackSetting, const std::string &name) {
+        RotationTrack track;
+        const Vec3Track values = parseVec3Track(trackSetting, name);
+
+        track.keyframes = values.keyframes;
+        return track;
+    };
+
+    auto parseFloatTrack = [&](const libconfig::Setting &trackSetting, const std::string &name) {
+        FloatTrack track;
+
+        forEach(trackSetting, [&](const libconfig::Setting &keyframe) {
+            const double time = settingAsDouble(keyframe.lookup("time"), name + " keyframe time");
+            const double value = settingAsDouble(keyframe.lookup("value"), name + " keyframe value");
+
+            requireFinite(time, name + " keyframe time");
+            requireFinite(value, name + " keyframe value");
+            track.keyframes.push_back(FloatKeyframe{time, static_cast<float>(value)});
+        });
+        return track;
+    };
+
+    auto parseColorTrack = [&](const libconfig::Setting &trackSetting, const std::string &name) {
+        ColorTrack track;
+
+        forEach(trackSetting, [&](const libconfig::Setting &keyframe) {
+            const double time = settingAsDouble(keyframe.lookup("time"), name + " keyframe time");
+
+            requireFinite(time, name + " keyframe time");
+            track.keyframes.push_back(ColorKeyframe{time, parseColor(keyframe.lookup("value"))});
+        });
+        return track;
+    };
+
+    std::vector<InstanceTrack> instances;
+    std::vector<LightTrack> lights;
+
+    if (animationSetting.exists("instances"))
+    {
+        const libconfig::Setting &instanceTracks = animationSetting.lookup("instances");
+
+        forEach(instanceTracks, [&](const libconfig::Setting &trackSetting) {
+            InstanceTrack track;
+
+            track.target = std::string(trackSetting.lookup("target").c_str());
+            if (track.target.empty())
+                throw std::runtime_error("Instance animation target must not be empty");
+            if (!scene.findInstanceGroup(track.target))
+                throw std::runtime_error("Unknown animated instance: " + track.target);
+
+            if (trackSetting.exists("position"))
+                track.position = parseVec3Track(trackSetting.lookup("position"), "Instance position");
+            if (trackSetting.exists("rotation"))
+                track.rotation = parseRotationTrack(trackSetting.lookup("rotation"), "Instance rotation");
+            if (trackSetting.exists("scale"))
+                track.scale = parseVec3Track(trackSetting.lookup("scale"), "Instance scale");
+
+            instances.push_back(std::move(track));
+        });
+    }
+
+    if (animationSetting.exists("lights"))
+    {
+        const libconfig::Setting &lightTracks = animationSetting.lookup("lights");
+
+        forEach(lightTracks, [&](const libconfig::Setting &trackSetting) {
+            LightTrack track;
+
+            track.target = std::string(trackSetting.lookup("target").c_str());
+            if (track.target.empty())
+                throw std::runtime_error("Light animation target must not be empty");
+
+            const std::shared_ptr<ILight> light = scene.findLight(track.target);
+            if (!light)
+                throw std::runtime_error("Unknown animated light: " + track.target);
+
+            if (trackSetting.exists("intensity"))
+                track.intensity = parseFloatTrack(trackSetting.lookup("intensity"), "Light intensity");
+            if (trackSetting.exists("color"))
+                track.color = parseColorTrack(trackSetting.lookup("color"), "Light color");
+            if (trackSetting.exists("position"))
+            {
+                LightData data;
+
+                if (!light->getData(data) ||
+                    (data.type != LightType::POINT && data.type != LightType::AREA_SPHERE))
+                    throw std::runtime_error(
+                        "Light position animation is only supported for point and sphere lights");
+                track.position = parseVec3Track(trackSetting.lookup("position"), "Light position");
+            }
+
+            lights.push_back(std::move(track));
+        });
+    }
+
+    if (instances.empty() && lights.empty())
+        return nullptr;
+    return std::make_shared<SceneAnimation>(std::move(instances), std::move(lights), _animation->getDuration());
+}
+
+/**
  * Parses the material configuration from the configuration file.
  * Creates a material object with the material type and color.
  *
@@ -473,6 +611,21 @@ void Parser::parseMaterials(SceneBuilder &sceneBuilder, const libconfig::Setting
  */
 void Parser::parseLights(SceneBuilder &sceneBuilder, const libconfig::Setting &lightSetting)
 {
+    auto addLight = [&](std::shared_ptr<ILight> light, const libconfig::Setting &setting) {
+        std::string id;
+
+        if (setting.exists("id"))
+        {
+            id = std::string(setting.lookup("id").c_str());
+            if (id.empty())
+                throw std::runtime_error("Light id must not be empty");
+            if (_parsingPrefab)
+                throw std::runtime_error("Prefabs cannot contain named lights");
+        }
+
+        sceneBuilder.addLight(std::move(light), id);
+    };
+
     if (lightSetting.exists("point"))
     {
         const libconfig::Setting &pointSetting = lightSetting.lookup("point");
@@ -480,17 +633,25 @@ void Parser::parseLights(SceneBuilder &sceneBuilder, const libconfig::Setting &l
         if (pointSetting.isList())
         {
             for (int i = 0; i < pointSetting.getLength(); i++)
-                sceneBuilder.addLight(parsePointLight(pointSetting[i]));
+                addLight(parsePointLight(pointSetting[i]), pointSetting[i]);
         }
         else
-            sceneBuilder.addLight(parsePointLight(pointSetting));
+            addLight(parsePointLight(pointSetting), pointSetting);
     }
 
     if (lightSetting.exists("ambient"))
-        sceneBuilder.addLight(parseAmbientLight(lightSetting.lookup("ambient")));
+    {
+        const libconfig::Setting &ambientSetting = lightSetting.lookup("ambient");
+
+        addLight(parseAmbientLight(ambientSetting), ambientSetting);
+    }
 
     if (lightSetting.exists("directional"))
-        sceneBuilder.addLight(parseDirectionalLight(lightSetting.lookup("directional")));
+    {
+        const libconfig::Setting &directionalSetting = lightSetting.lookup("directional");
+
+        addLight(parseDirectionalLight(directionalSetting), directionalSetting);
+    }
 
     if (lightSetting.exists("spheres"))
     {
@@ -499,10 +660,10 @@ void Parser::parseLights(SceneBuilder &sceneBuilder, const libconfig::Setting &l
         if (sphereSetting.isList())
         {
             for (int i = 0; i < sphereSetting.getLength(); i++)
-                sceneBuilder.addLight(parseSphereLight(sphereSetting[i]));
+                addLight(parseSphereLight(sphereSetting[i]), sphereSetting[i]);
         }
         else
-            sceneBuilder.addLight(parseSphereLight(sphereSetting));
+            addLight(parseSphereLight(sphereSetting), sphereSetting);
     }
 }
 
@@ -665,11 +826,21 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
             if (prefab == _prefabScenes.end())
                 throw std::runtime_error("Unknown prefab: " + prefabName);
 
-            TransformData transform;
+            TransformPose pose;
             if (instance.exists("transform"))
-                transform = parseTransform(instance.lookup("transform"));
+                pose = parseTransformPose(instance.lookup("transform"));
 
-            sceneBuilder.addScene(prefab->second, transform);
+            std::string instanceId;
+            if (instance.exists("id"))
+            {
+                instanceId = std::string(instance.lookup("id").c_str());
+                if (instanceId.empty())
+                    throw std::runtime_error("Instance id must not be empty");
+                if (_parsingPrefab)
+                    throw std::runtime_error("Prefabs cannot contain named instances");
+            }
+
+            sceneBuilder.addScene(prefab->second, pose, instanceId);
             _materialCount = static_cast<uint>(sceneBuilder.getMaterialCount());
         }
     }
@@ -677,12 +848,22 @@ void Parser::parsePrimitives(SceneBuilder &sceneBuilder, libconfig::Setting &pri
     if (primitiveSetting.exists("scene"))
     {
         const libconfig::Setting &nestedScene = primitiveSetting.lookup("scene");
-        TransformData transform;
+        TransformPose pose;
 
         if (nestedScene.exists("transform"))
-            transform = parseTransform(nestedScene.lookup("transform"));
+            pose = parseTransformPose(nestedScene.lookup("transform"));
 
-        sceneBuilder.addScene(parseScene(nestedScene), transform);
+        std::string instanceId;
+        if (nestedScene.exists("id"))
+        {
+            instanceId = std::string(nestedScene.lookup("id").c_str());
+            if (instanceId.empty())
+                throw std::runtime_error("Nested scene id must not be empty");
+            if (_parsingPrefab)
+                throw std::runtime_error("Prefabs cannot contain named nested scenes");
+        }
+
+        sceneBuilder.addScene(parseScene(nestedScene), pose, instanceId);
         _materialCount = static_cast<uint>(sceneBuilder.getMaterialCount());
     }
 }
@@ -718,12 +899,20 @@ std::shared_ptr<Scene> Parser::parseScene(const libconfig::Setting &sceneSetting
     if (sceneSetting.exists("scene"))
     {
         const libconfig::Setting &nestedScene = sceneSetting.lookup("scene");
-        TransformData transform;
+        TransformPose pose;
 
         if (nestedScene.exists("transform"))
-            transform = parseTransform(nestedScene.lookup("transform"));
+            pose = parseTransformPose(nestedScene.lookup("transform"));
 
-        sceneBuilder.addScene(parseScene(nestedScene), transform);
+        std::string instanceId;
+        if (nestedScene.exists("id"))
+        {
+            instanceId = std::string(nestedScene.lookup("id").c_str());
+            if (instanceId.empty())
+                throw std::runtime_error("Nested scene id must not be empty");
+        }
+
+        sceneBuilder.addScene(parseScene(nestedScene), pose, instanceId);
         _materialCount = static_cast<uint>(sceneBuilder.getMaterialCount());
     }
 
@@ -999,13 +1188,13 @@ Vec3D Parser::parseVector(const libconfig::Setting &vectorSetting)
 }
 
 /**
- * Parses an optional primitive transform.
+ * Parses an optional primitive transform into its human-readable components.
  * Rotation values are in degrees and the scale may be a scalar or a vector.
  *
  * @param transformSetting The transform setting to parse.
- * @return The composed local-to-world transform.
+ * @return The transform pose.
  */
-TransformData Parser::parseTransform(const libconfig::Setting &transformSetting)
+TransformPose Parser::parseTransformPose(const libconfig::Setting &transformSetting)
 {
     Vec3D translation(0.0f);
     Vec3D rotation(0.0f);
@@ -1035,12 +1224,17 @@ TransformData Parser::parseTransform(const libconfig::Setting &transformSetting)
     if (scale.getX() == 0.0f || scale.getY() == 0.0f || scale.getZ() == 0.0f)
         throw std::runtime_error("Transform scale components must be non-zero");
 
-    const TransformData transform = makeTransform(translation, rotation, scale);
+    const TransformPose pose{translation, rotation, scale};
 
-    if (!isInvertibleTransform(transform))
+    if (!isInvertibleTransform(makeTransform(pose)))
         throw std::runtime_error("Transform is not invertible");
 
-    return transform;
+    return pose;
+}
+
+TransformData Parser::parseTransform(const libconfig::Setting &transformSetting)
+{
+    return makeTransform(parseTransformPose(transformSetting));
 }
 
 std::shared_ptr<IPrimitive> Parser::applyTransform(std::shared_ptr<IPrimitive> primitive,
@@ -1123,4 +1317,9 @@ std::shared_ptr<Camera> Parser::getParsedCamera(void) const
 std::shared_ptr<CameraAnimation> Parser::getParsedAnimation(void) const
 {
     return _animation;
+}
+
+std::shared_ptr<SceneAnimation> Parser::getParsedSceneAnimation(void) const
+{
+    return _sceneAnimation;
 }

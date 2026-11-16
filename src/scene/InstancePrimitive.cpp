@@ -16,6 +16,11 @@ InstancePrimitive::InstancePrimitive(std::shared_ptr<IPrimitive> child, const Tr
 {
 }
 
+InstancePrimitive::InstancePrimitive(std::shared_ptr<IPrimitive> child, const TransformPose &pose)
+    : _child(std::move(child)), _transform(makeTransform(pose)), _pose(pose), _hasPose(true)
+{
+}
+
 void InstancePrimitive::doTransformation(const ITransformation &t)
 {
     // The legacy transformation plugins mutate primitive geometry directly.
@@ -83,7 +88,13 @@ std::shared_ptr<IPrimitive> InstancePrimitive::clone(void) const
     if (!child)
         child = _child;
 
-    return std::make_shared<InstancePrimitive>(child, _transform);
+    std::shared_ptr<InstancePrimitive> copy =
+        _hasPose ? std::make_shared<InstancePrimitive>(child, _pose)
+                 : std::make_shared<InstancePrimitive>(child, _transform);
+
+    if (!_groupId.empty())
+        copy->setGroupId(_groupId);
+    return copy;
 }
 
 bool InstancePrimitive::getData(PrimitiveData &data) const
@@ -125,4 +136,36 @@ void InstancePrimitive::setMaterialIndex(const uint &index)
 const TransformData &InstancePrimitive::getTransform(void) const
 {
     return _transform;
+}
+
+const TransformPose &InstancePrimitive::getPose(void) const
+{
+    return _pose;
+}
+
+bool InstancePrimitive::hasPose(void) const
+{
+    return _hasPose;
+}
+
+void InstancePrimitive::setTransform(const TransformData &transform)
+{
+    _transform = transform;
+}
+
+void InstancePrimitive::setPose(const TransformPose &pose)
+{
+    _pose = pose;
+    _transform = makeTransform(pose);
+    _hasPose = true;
+}
+
+void InstancePrimitive::setGroupId(const std::string &groupId)
+{
+    _groupId = groupId;
+}
+
+const std::string &InstancePrimitive::getGroupId(void) const
+{
+    return _groupId;
 }
