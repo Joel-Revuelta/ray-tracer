@@ -983,6 +983,12 @@ add_test(
 )
 set_tests_properties(golden_images PROPERTIES LABELS "golden;scene")
 add_test(
+    NAME mythos_scenes_smoke
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/mythos_scenes_smoke.sh $<TARGET_FILE:raytracer>
+            ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(mythos_scenes_smoke PROPERTIES LABELS "scene;smoke")
+add_test(
     NAME atmosphere_regressions
     COMMAND bash ${CMAKE_SOURCE_DIR}/tests/atmosphere_regressions.sh $<TARGET_FILE:raytracer>
             ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}

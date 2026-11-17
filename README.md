@@ -61,7 +61,7 @@ camera-animation sequences, and scripts for full-HD and 8K still renders.
   with matching CPU/CUDA kernels, applied before exposure and tonemapping.
 - **Render scripts** — `render_hd.sh` for 1080p stills and `render_8k.sh` for
   8K renders with PNG, 4K, 1080p and contact-sheet conversion.
-- **Included scenes** — 42 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, material maps, boxes/disks, prefab scatter, environment lighting, group transforms, a five-scene hero pack and 8K renders.
+- **Included scenes** — 47 scenes, from material studies to glass showcases, mesh instancing, depth of field, soft shadows, material maps, boxes/disks, prefab scatter, environment lighting, group transforms, a five-scene hero pack, the five-scene MYTHOS pack and 8K renders.
 
 ## Screenshots
 
@@ -109,6 +109,30 @@ A nave of prefab ice pillars with glowing cores and shard bases, a gold and
 dielectric altar, a luminous rose window, floating ice orbs, and a cracked-ice
 mirror floor. It showcases layered dielectric shells, area lights, textures and
 prefab-heavy composition.
+
+### MYTHOS scene pack
+
+[![MYTHOS contact sheet](screenshots/mythos/contact.png)](screenshots/mythos/contact.png)
+
+Five new worlds built around the corrected nested-dielectric stack, animated
+prefab lights, HDR skies and volumetric-free clean reflections:
+
+- **The Last Leviathan** — a chrome-and-glass sea serpent coiled beneath an
+  eclipse halo. [Still](screenshots/mythos/last_leviathan.png)
+- **Cathedral of the Machine Sun** — a glowing orbital engine suspended in a
+  nave of dark marble pillars. [Still](screenshots/mythos/cathedral_machine_sun.png)
+- **Garden of Impossible Glass** — crystal blooms, glowing rings and bokeh
+  spores above a mirror pond. [Still](screenshots/mythos/impossible_glass_garden.png)
+  · [Film](screenshots/mythos/impossible_glass_garden.mp4)
+- **Serpent of Falling Stars** — a crystal serpent spiraling through aurora
+  shards. [Still](screenshots/mythos/serpent_of_stars.png)
+  · [Film](screenshots/mythos/serpent_of_stars.mp4)
+- **Clockwork Aurora** — a brass-and-glass orbital engine turning in an aurora
+  sky. [Still](screenshots/mythos/clockwork_aurora.png)
+  · [Film](screenshots/mythos/clockwork_aurora.mp4)
+
+The films are 8-second, 960x540, 24 fps H.264 previews rendered with ACES tone
+mapping, bloom, motion blur and the scene animation timelines.
 
 ### Material and light studies
 
