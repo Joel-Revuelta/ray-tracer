@@ -1,5 +1,7 @@
 # Ray Tracer
 
+[![build](https://github.com/Joel-Revuelta/ray-tracer/actions/workflows/build.yml/badge.svg)](https://github.com/Joel-Revuelta/ray-tracer/actions/workflows/build.yml)
+
 A C++20 ray tracer with a plugin-based architecture, interactive SFML and
 GLFW/OpenGL previewers, a multithreaded CPU renderer, and an optional CUDA GPU
 renderer.

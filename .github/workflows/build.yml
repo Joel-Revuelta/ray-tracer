@@ -47,6 +47,14 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      - name: Upload golden renders on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-images-${{ matrix.name }}
+          path: build/golden-images
+          if-no-files-found: ignore
+
       - name: Smoke-test every scene
         run: |
           for scene in scenes/*.cfg; do
@@ -152,6 +160,14 @@ jobs:
           ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
           UBSAN_OPTIONS: "halt_on_error=1:print_stacktrace=1"
         run: ctest --test-dir build --output-on-failure
+
+      - name: Upload golden renders on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-images-sanitizers
+          path: build/golden-images
+          if-no-files-found: ignore
 
       - name: Upload test logs
         if: failure()
