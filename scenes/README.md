@@ -114,18 +114,19 @@ for ACES tone mapping and bloom:
   --bloom --bloom-threshold 2.8 --bloom-intensity 0.25 --output garden.png
 ```
 
-The three films use the same look with 24 fps, 8 seconds, 960x540, motion blur
-and H.264:
+The three films use the same look at 1920x1080, 24 fps, 8 seconds, 128 samples
+per frame (32 per shutter subframe), motion blur and H.264:
 
 ```bash
 ./raytracer --path scenes/impossible_glass_garden.cfg --cli --renderer cuda \
-  --width 960 --height 540 --samples 12 --tonemap aces --exposure 0.95 \
-  --bloom --bloom-threshold 2.8 --bloom-intensity 0.25 --animation \
-  --start-frame 0 --end-frame 191 --shutter-angle 180 --shutter-samples 4 \
-  --video garden.mp4
+  --width 1920 --height 1080 --samples 32 --tonemap aces --exposure 0.95 \
+  --bloom --bloom-threshold 2.8 --bloom-intensity 0.25 --lens-radius 0.04 \
+  --animation --start-frame 0 --end-frame 191 \
+  --shutter-angle 180 --shutter-samples 4 --video garden.mp4
 ```
 
-Rendered previews and films live in `screenshots/mythos/`.
+Or render all three with `bash scenes/render_mythos.sh`. Rendered previews and
+films live in `screenshots/mythos/`.
 
 ## Hero scene pack
 

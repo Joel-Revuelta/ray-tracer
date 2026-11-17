@@ -133,8 +133,9 @@ prefab lights, HDR skies and volumetric-free clean reflections:
   sky. [Still](screenshots/mythos/clockwork_aurora.png)
   · [Film](screenshots/mythos/clockwork_aurora.mp4)
 
-The films are 8-second, 960x540, 24 fps H.264 previews rendered with ACES tone
-mapping, bloom, motion blur and the scene animation timelines.
+The films are 8-second, 1920x1080, 24 fps H.264 renders with 128 samples per
+frame (32 samples across each of four shutter subframes), ACES tone mapping,
+bloom, motion blur and reduced depth-of-field blur.
 
 ### Material and light studies
 

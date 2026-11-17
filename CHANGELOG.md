@@ -8,7 +8,8 @@ All notable changes to this project are documented here.
 
 - Five-scene MYTHOS pack: The Last Leviathan, Cathedral of the Machine Sun,
   Garden of Impossible Glass, Serpent of Falling Stars and Clockwork Aurora.
-- Three 8-second, 24 fps MYTHOS films and a generated contact sheet.
+- Three 8-second, 1920x1080, 24 fps MYTHOS films at 128 samples per frame and a
+  generated contact sheet.
 - Procedural shard/petal meshes and eclipse/aurora/forge HDR skies.
 - Versioned CMake package (`raytracerConfigVersion.cmake`) and
   `tests/package_consumer.sh` for downstream `find_package` checks.
