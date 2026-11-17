@@ -127,7 +127,10 @@ mean = total / (count * 3.0)
 p99 = per_pixel[int(0.99 * (count - 1))]
 print(f"{name}: mean={mean:.4f}/255 p99={p99} max={maximum}")
 
-if mean > 1.0 or p99 > 8 or maximum > 64:
+# Mean and p99 catch structural regressions. A single HDR firefly can still
+# shift one channel on a different libm/CPU implementation, so allow a larger
+# isolated per-pixel outlier than the broad-difference limits.
+if mean > 1.0 or p99 > 8 or maximum > 160:
     raise SystemExit(f"{name}: golden image thresholds exceeded")
 PY
 }
